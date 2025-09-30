@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Framework Detection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .test-url {
+            font-family: monospace;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .framework-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .framework-item {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .confidence {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .confidence.high {
+            background: #d4edda;
+            color: #155724;
+        }
+        .confidence.medium {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .confidence.low {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Framework Detection Test</h1>
+        <p>This page tests the comprehensive framework detection system with real websites.</p>
+
+        <div class="test-section">
+            <h3>Test URLs</h3>
+            <p>Click the buttons below to test framework detection on real websites:</p>
+            
+            <div class="test-url">
+                <strong>React App:</strong> https://reactjs.org
+                <button onclick="testFramework('https://reactjs.org')">Test React</button>
+            </div>
+            
+            <div class="test-url">
+                <strong>Vue.js App:</strong> https://vuejs.org
+                <button onclick="testFramework('https://vuejs.org')">Test Vue</button>
+            </div>
+            
+            <div class="test-url">
+                <strong>WordPress Site:</strong> https://wordpress.org
+                <button onclick="testFramework('https://wordpress.org')">Test WordPress</button>
+            </div>
+            
+            <div class="test-url">
+                <strong>Shopify Store:</strong> https://shopify.com
+                <button onclick="testFramework('https://shopify.com')">Test Shopify</button>
+            </div>
+            
+            <div class="test-url">
+                <strong>Next.js App:</strong> https://nextjs.org
+                <button onclick="testFramework('https://nextjs.org')">Test Next.js</button>
+            </div>
+            
+            <div class="test-url">
+                <strong>Custom URL:</strong>
+                <input type="text" id="customUrl" placeholder="Enter URL to test" style="width: 300px; padding: 5px; margin: 0 10px;">
+                <button onclick="testCustomUrl()">Test Custom</button>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Test Results</h3>
+            <div id="results"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>WSL Integration Test</h3>
+            <p>Test WSL and Kali Linux integration (requires WSL to be installed):</p>
+            <button onclick="testWSLIntegration()">Test WSL Integration</button>
+            <div id="wslResults"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import the framework detector
+        import FrameworkDetector from './src/scanners/framework-detection.js';
+        import WSLFrameworkDetector from './src/scanners/wsl-integration.js';
+
+        // Make functions globally available
+        window.testFramework = async function(url) {
+            const resultsDiv = document.getElementById('results');
+            const button = event.target;
+            const originalText = button.textContent;
+            
+            button.disabled = true;
+            button.innerHTML = '<div class="loading"></div> Testing...';
+            
+            try {
+                resultsDiv.innerHTML = '<div class="info">🔍 Starting framework detection...</div>';
+                
+                const detector = new FrameworkDetector();
+                const result = await detector.detectFramework(url);
+                
+                displayResults(result, resultsDiv);
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        };
+
+        window.testCustomUrl = function() {
+            const url = document.getElementById('customUrl').value.trim();
+            if (!url) {
+                alert('Please enter a URL');
+                return;
+            }
+            
+            // Add protocol if missing
+            const testUrl = url.startsWith('http') ? url : `https://${url}`;
+            testFramework(testUrl);
+        };
+
+        window.testWSLIntegration = async function() {
+            const wslResultsDiv = document.getElementById('wslResults');
+            const button = event.target;
+            const originalText = button.textContent;
+            
+            button.disabled = true;
+            button.innerHTML = '<div class="loading"></div> Testing WSL...';
+            
+            try {
+                wslResultsDiv.innerHTML = '<div class="info">🔍 Checking WSL availability...</div>';
+                
+                const wslDetector = new WSLFrameworkDetector();
+                
+                // Check WSL availability
+                const wslAvailable = await wslDetector.checkWSLAvailability();
+                wslResultsDiv.innerHTML += `<div class="${wslAvailable ? 'success' : 'error'}">
+                    WSL Available: ${wslAvailable ? '✅ Yes' : '❌ No'}
+                </div>`;
+                
+                if (wslAvailable) {
+                    // Check Kali availability
+                    const kaliAvailable = await wslDetector.checkKaliAvailability();
+                    wslResultsDiv.innerHTML += `<div class="${kaliAvailable ? 'success' : 'error'}">
+                        Kali Linux Available: ${kaliAvailable ? '✅ Yes' : '❌ No'}
+                    </div>`;
+                    
+                    if (kaliAvailable) {
+                        // Check available tools
+                        const tools = await wslDetector.checkAvailableTools();
+                        wslResultsDiv.innerHTML += '<div class="info"><strong>Available Tools:</strong></div>';
+                        
+                        for (const [tool, available] of Object.entries(tools)) {
+                            wslResultsDiv.innerHTML += `<div class="${available ? 'success' : 'error'}">
+                                ${tool}: ${available ? '✅ Available' : '❌ Not Available'}
+                            </div>`;
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                wslResultsDiv.innerHTML += `<div class="error">❌ WSL Test Error: ${error.message}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        };
+
+        function displayResults(result, container) {
+            const confidenceClass = result.confidence >= 80 ? 'high' : 
+                                  result.confidence >= 60 ? 'medium' : 'low';
+            
+            let html = `
+                <div class="result success">
+                    <h4>✅ Framework Detection Results</h4>
+                    <div class="framework-info">
+                        <div class="framework-item">
+                            <strong>Framework:</strong> ${result.framework}<br>
+                            <strong>CMS:</strong> ${result.cms}<br>
+                            <strong>Hosting:</strong> ${result.hosting}
+                        </div>
+                        <div class="framework-item">
+                            <strong>Confidence:</strong> 
+                            <span class="confidence ${confidenceClass}">${result.confidence}%</span><br>
+                            <strong>Technologies:</strong> ${result.technologies.join(', ') || 'None detected'}
+                        </div>
+                    </div>
+            `;
+            
+            if (result.detectionMethods) {
+                html += '<h5>Detection Methods Used:</h5><ul>';
+                for (const [method, methodResult] of Object.entries(result.detectionMethods)) {
+                    if (methodResult.error) {
+                        html += `<li>${method}: ❌ ${methodResult.error}</li>`;
+                    } else {
+                        html += `<li>${method}: ✅ Success</li>`;
+                    }
+                }
+                html += '</ul>';
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // Test a few URLs automatically on page load
+        window.addEventListener('load', function() {
+            console.log('Framework Detection Test Page Loaded');
+            console.log('Available test functions: testFramework(url), testCustomUrl(), testWSLIntegration()');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+Network Port Scan Results for webnox.in
+Scan started at: 2025-09-27T09:38:50.720Z
+Total ports to scan: 43
+Scan type: Service/Version Detection (-sV equivalent)
+============================================================
+
+21/tcp filtered filtered
+
+22/tcp filtered filtered
+
+23/tcp filtered filtered
+
+25/tcp filtered filtered
+
+53/tcp filtered filtered
+
+80/tcp filtered filtered
+
+110/tcp filtered filtered
+
+135/tcp filtered filtered
+
+139/tcp filtered filtered
+
+143/tcp filtered filtered
+
+443/tcp open https nginx
+Banner: HTTP/1.1 400 Bad Request
+Server: nginx
+Date: Sat, 27 Sep 2025 09:39:39 GMT
+
+993/tcp filtered filtered
+
+995/tcp filtered filtered
+
+1723/tcp filtered filtered
+
+3389/tcp filtered filtered
+
+5432/tcp filtered filtered
+
+5900/tcp filtered filtered
+
+8080/tcp filtered filtered
+
+8443/tcp filtered filtered
+
+8888/tcp filtered filtered
+
+9000/tcp filtered filtered
+
+9090/tcp filtered filtered
+
+3000/tcp closed closed
+
+5000/tcp filtered filtered
+
+8000/tcp filtered filtered
+
+8001/tcp filtered filtered
+
+8008/tcp filtered filtered
+
+8081/tcp filtered filtered
+
+8443/tcp filtered filtered
+
+8888/tcp filtered filtered
+
+9000/tcp filtered filtered
+
+9090/tcp filtered filtered
+
+10000/tcp filtered filtered
+
+10443/tcp filtered filtered
+
+18080/tcp filtered filtered
+
+28080/tcp filtered filtered
+
+38080/tcp filtered filtered
+
+48080/tcp filtered filtered
+
+58080/tcp filtered filtered
+
+Port 68080: ERROR - Port should be >= 0 and < 65536. Received type number (68080).
+
+Port 78080: ERROR - Port should be >= 0 and < 65536. Received type number (78080).
+
+Port 88080: ERROR - Port should be >= 0 and < 65536. Received type number (88080).
+
+Port 98080: ERROR - Port should be >= 0 and < 65536. Received type number (98080).
+
+============================================================
+SCAN SUMMARY & TIMING
+============================================================
+Nmap done: 1 IP address (1 host up) scanned in 187.68 seconds
+Total ports scanned: 43
+Open ports: 3
+Closed ports: 1
+Filtered ports: 41
+Packets sent: 43
+Packets received: 6
+Scan completed at: 2025-09-27T09:41:58.404Z
+
+SERVICE DETECTION SUMMARY:
+========================================
+443/tcp open https nginx

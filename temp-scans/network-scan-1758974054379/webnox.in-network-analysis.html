@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Analysis Report - webnox.in</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; border-bottom: 2px solid #007acc; padding-bottom: 20px; margin-bottom: 30px; }
+        .header h1 { color: #007acc; margin: 0; }
+        .header p { color: #666; margin: 5px 0; }
+        .section { margin: 30px 0; }
+        .section h2 { color: #333; border-left: 4px solid #007acc; padding-left: 15px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #28a745; }
+        .summary-card h3 { margin: 0 0 10px 0; color: #333; }
+        .summary-card p { margin: 0; color: #666; }
+        .findings-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .findings-table th, .findings-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        .findings-table th { background: #f8f9fa; font-weight: bold; }
+        .status-open { color: #28a745; font-weight: bold; }
+        .status-closed { color: #dc3545; font-weight: bold; }
+        .status-filtered { color: #ffc107; font-weight: bold; }
+        .recommendations { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 15px; }
+        .recommendations h3 { margin-top: 0; color: #856404; }
+        .recommendations ul { margin: 0; }
+        .recommendations li { margin: 5px 0; }
+        .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Network Analysis Report</h1>
+            <p><strong>Target:</strong> webnox.in</p>
+            <p><strong>Scan Date:</strong> 27/9/2025, 5:27:22 pm</p>
+            <p><strong>Scan Type:</strong> Network Analysis</p>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Executive Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Total Files Generated</h3>
+                    <p>8</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Service Detection</h3>
+                    <p>Completed</p>
+                </div>
+                <div class="summary-card">
+                    <h3>OS Detection</h3>
+                    <p>Completed</p>
+                </div>
+                <div class="summary-card">
+                    <h3>MAC Detection</h3>
+                    <p>Completed</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Packet Capture</h3>
+                    <p>Completed</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Traceroute</h3>
+                    <p>Not performed</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔍 Network Findings</h2>
+            
+            <h3>Port Scan Results</h3>
+            <div class="summary-grid" style="margin-bottom: 20px;">
+                <div class="summary-card">
+                    <h3>Total Ports Scanned</h3>
+                    <p>40</p>
+                </div>
+                <div class="summary-card" style="border-left-color: #28a745;">
+                    <h3>Open Ports</h3>
+                    <p>2</p>
+                </div>
+                <div class="summary-card" style="border-left-color: #dc3545;">
+                    <h3>Closed Ports</h3>
+                    <p>1</p>
+                </div>
+                <div class="summary-card" style="border-left-color: #ffc107;">
+                    <h3>Filtered Ports</h3>
+                    <p>37</p>
+                </div>
+            </div>
+            <table class="findings-table">
+                <thead>
+                    <tr>
+                        <th>Port</th>
+                        <th>Status</th>
+                        <th>Service</th>
+                        <th>Banner/Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    
+                    <tr>
+                        <td>21</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>22</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>23</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>25</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>53</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>80</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>110</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>135</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>139</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>143</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>443</td>
+                        <td><span class="status-open">OPEN</span></td>
+                        <td>https</td>
+                        <td>HTTP/1.1 400 Bad Request</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>993</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>995</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>1723</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>3389</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>5432</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>5900</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8080</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8443</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8888</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>9000</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>9090</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>3000</td>
+                        <td><span class="status-closed">CLOSED</span></td>
+                        <td>closed</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>5000</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8000</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8001</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8008</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8081</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8443</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>8888</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>9000</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>9090</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>10000</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>10443</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>18080</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>28080</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>38080</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>48080</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>58080</td>
+                        <td><span class="status-filtered">FILTERED</span></td>
+                        <td>filtered</td>
+                        <td>N/A</td>
+                    </tr>
+                    
+                    <tr>
+                        <td>443</td>
+                        <td><span class="status-open">OPEN</span></td>
+                        <td>https</td>
+                        <td>nginx</td>
+                    </tr>
+                    
+                </tbody>
+            </table>
+            
+            
+            
+            
+            
+            <h3>Operating System Detection</h3>
+            <div style="background: #e8f4fd; padding: 15px; border-radius: 6px; border-left: 4px solid #007acc;">
+                <p><strong>OS Family:</strong> Windows</p>
+                <p><strong>OS Version:</strong> Windows 10/11 (estimated)</p>
+                <p><strong>Confidence:</strong> 100%</p>
+                <p><strong>Details:</strong> TCP/IP fingerprint suggests modern Windows version</p>
+            </div>
+            
+            
+            
+            <h3>MAC Address & Vendor Detection</h3>
+            <div style="background: #f0f8e8; padding: 15px; border-radius: 6px; border-left: 4px solid #28a745;">
+                <p><strong>MAC Address:</strong> 52:54:00:12:34:56</p>
+                <p><strong>Vendor:</strong> QEMU/KVM</p>
+                <p><strong>Device Type:</strong> Virtual Machine</p>
+                <p><strong>Detection Method:</strong> ARP Table Lookup</p>
+                <p><strong>OUI:</strong> 52:54:00</p>
+                <p><strong>Country:</strong> France</p>
+            </div>
+            
+            
+            
+            <h3>Scan Statistics & Timing</h3>
+            <div style="background: #fff3cd; padding: 15px; border-radius: 6px; border-left: 4px solid #ffc107;">
+                <p><strong>Scan Duration:</strong> 187.65 seconds</p>
+                <p><strong>Packets Sent:</strong> 43</p>
+                <p><strong>Packets Received:</strong> 6</p>
+                <p><strong>Scan Start:</strong> 27/9/2025, 5:24:14 pm</p>
+                <p><strong>Scan End:</strong> 27/9/2025, 5:27:22 pm</p>
+            </div>
+            
+        </div>
+        
+        <div class="section">
+            <h2>📁 Generated Files</h2>
+            <ul>
+                
+                <li><strong>bannerFile:</strong> D:\Ganesh\Ganesh\product\cyberix\temp-scans\network-scan-1758974054379\webnox.in-banners-2025-09-27T11-54-14-382Z.txt</li>
+                
+                <li><strong>serviceDetections:</strong> [object Object]</li>
+                
+                <li><strong>scanStats:</strong> [object Object]</li>
+                
+                <li><strong>osDetection:</strong> [object Object]</li>
+                
+                <li><strong>osFile:</strong> D:\Ganesh\Ganesh\product\cyberix\temp-scans\network-scan-1758974054379\os_detection.txt</li>
+                
+                <li><strong>macDetection:</strong> [object Object]</li>
+                
+                <li><strong>macFile:</strong> D:\Ganesh\Ganesh\product\cyberix\temp-scans\network-scan-1758974054379\mac_detection.txt</li>
+                
+                <li><strong>captureFile:</strong> D:\Ganesh\Ganesh\product\cyberix\temp-scans\network-scan-1758974054379\webnox.in-packet-capture-2025-09-27T11-57-22-040Z.pcap</li>
+                
+            </ul>
+        </div>
+        
+        
+        <div class="section">
+            <h2>💡 Security Recommendations</h2>
+            <div class="recommendations">
+                <h3>Recommended Actions</h3>
+                <ul>
+                    <li>Review open ports and ensure only necessary services are exposed</li><li>Implement proper firewall rules to restrict access to sensitive ports</li><li>Some ports appear to be filtered by firewall - verify this is intentional</li>
+                </ul>
+            </div>
+        </div>
+        
+        
+        <div class="footer">
+            <p>Report generated by Cyber Guard Network Analysis Module</p>
+            <p>Generated on 27/9/2025, 5:27:22 pm</p>
+        </div>
+    </div>
+</body>
+</html>
