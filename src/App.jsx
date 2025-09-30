@@ -1,24 +1,20 @@
 import { useState } from 'react'
 import "./index.css"
-import Dashboard from './Dashboard.jsx'
+import Dashboard from './Dashboard'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
-  console.log('AppContent rendering...')
   const { showError, showSuccess, showLoading, dismissToast } = useToast()
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     rememberMe: false
   })
-  
   const [isLoading, setIsLoading] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentToastId, setCurrentToastId] = useState(null)
-
-  console.log('AppContent state:', { isAuthenticated, isLoading })
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -92,6 +88,32 @@ const AppContent = () => {
         rememberMe: false
       })
     }, 500)
+  }
+
+  const handlePrefillCredentials = () => {
+    setFormData(prev => ({
+      ...prev,
+      username: 'admin',
+      password: 'admin@123'
+    }))
+    
+    // Show success toast
+    showSuccess('✅ Demo credentials filled! Ready to sign in.', {
+      duration: 2000
+    })
+  }
+
+  const handleClearCredentials = () => {
+    setFormData(prev => ({
+      ...prev,
+      username: '',
+      password: ''
+    }))
+    
+    // Show info toast
+    showSuccess('🗑️ Credentials cleared!', {
+      duration: 1500
+    })
   }
 
   if (isAuthenticated) {
@@ -168,23 +190,51 @@ const AppContent = () => {
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? (
-                <div className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            <div className="space-y-3">
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Signing in...
+                  </div>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrefillCredentials}
+                  disabled={isLoading}
+                  className="flex justify-center py-2 px-4 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  Signing in...
-                </div>
-              ) : (
-                'Sign in'
-              )}
-            </button>
+                  Fill Demo
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={handleClearCredentials}
+                  disabled={isLoading}
+                  className="flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Clear
+                </button>
+              </div>
+            </div>
           </form>
 
           <div className="mt-6 text-center">
@@ -208,25 +258,13 @@ const AppContent = () => {
 }
 
 function App() {
-  try {
-    return (
-      <ToastProvider>
-        <ScanningProvider>
-          <AppContent />
-        </ScanningProvider>
-      </ToastProvider>
-    )
-  } catch (error) {
-    console.error('App Error:', error)
-    return (
-      <div className="min-h-screen bg-red-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-4xl font-bold text-red-900 mb-4">Error</h1>
-          <p className="text-red-600">App failed to load: {error.message}</p>
-        </div>
-      </div>
-    )
-  }
+  return (
+    <ToastProvider>
+      <ScanningProvider>
+        <AppContent />
+      </ScanningProvider>
+    </ToastProvider>
+  )
 }
 
 export default App

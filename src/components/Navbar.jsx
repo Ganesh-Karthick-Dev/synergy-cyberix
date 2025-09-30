@@ -8,9 +8,19 @@ function Navbar({ onLogout, currentView }) {
     kali: 'Checking...',
     platform: 'Unknown'
   })
+  const [networkSignal, setNetworkSignal] = useState({
+    strength: 0,
+    status: 'Checking...',
+    speed: '0 Mbps'
+  })
 
   useEffect(() => {
     checkSystemStatus()
+    checkNetworkSignal()
+    
+    // Update network signal every 5 seconds
+    const interval = setInterval(checkNetworkSignal, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   const checkSystemStatus = async () => {
@@ -34,6 +44,61 @@ function Navbar({ onLogout, currentView }) {
       }
     } catch (error) {
       console.error('System status check error:', error)
+    }
+  }
+
+  const checkNetworkSignal = async () => {
+    try {
+      // Simulate network signal check
+      const startTime = performance.now()
+      
+      // Try to fetch a small resource to test connectivity
+      const response = await fetch('https://www.google.com/favicon.ico', { 
+        method: 'HEAD',
+        mode: 'no-cors',
+        cache: 'no-cache'
+      })
+      
+      const endTime = performance.now()
+      const latency = Math.round(endTime - startTime)
+      
+      // Calculate signal strength based on latency
+      let strength = 0
+      let status = 'Connected'
+      
+      if (latency < 100) {
+        strength = 4
+        status = 'Excellent'
+      } else if (latency < 200) {
+        strength = 3
+        status = 'Good'
+      } else if (latency < 500) {
+        strength = 2
+        status = 'Fair'
+      } else if (latency < 1000) {
+        strength = 1
+        status = 'Poor'
+      } else {
+        strength = 0
+        status = 'Disconnected'
+      }
+      
+      // Simulate speed based on signal strength
+      const speeds = ['0 Mbps', '25 Mbps', '50 Mbps', '100 Mbps', '200+ Mbps']
+      const speed = speeds[strength]
+      
+      setNetworkSignal({
+        strength,
+        status,
+        speed
+      })
+    } catch (error) {
+      // Network is down
+      setNetworkSignal({
+        strength: 0,
+        status: 'Disconnected',
+        speed: '0 Mbps'
+      })
     }
   }
 
@@ -65,10 +130,59 @@ function Navbar({ onLogout, currentView }) {
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-200 shadow-sm">
       <div className="px-6 py-4">
         <div className="flex items-center justify-between">
-          {/* Left Section - Current View */}
-          <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-gray-900">{currentView}</h1>
-            <div className="ml-4 flex items-center text-sm text-gray-500">
+          {/* Left Section - Network Signal Indicator */}
+          <div className="flex items-center space-x-4">
+            {/* Network Signal Indicator */}
+            <div className="flex items-center space-x-3 px-4 py-2 bg-gray-50 rounded-lg border">
+              {/* Signal Bars */}
+              <div className="flex items-end space-x-1">
+                {[1, 2, 3, 4].map((bar) => (
+                  <div
+                    key={bar}
+                    className={`w-1 transition-all duration-300 ${
+                      bar <= networkSignal.strength
+                        ? networkSignal.strength === 4
+                          ? 'bg-green-500'
+                          : networkSignal.strength === 3
+                          ? 'bg-blue-500'
+                          : networkSignal.strength === 2
+                          ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                        : 'bg-gray-300'
+                    }`}
+                    style={{
+                      height: `${bar * 4 + 4}px`
+                    }}
+                  />
+                ))}
+              </div>
+              
+              {/* Signal Info */}
+              <div className="flex flex-col">
+                <div className="flex items-center space-x-2">
+                  <span className={`text-sm font-medium ${
+                    networkSignal.strength === 4
+                      ? 'text-green-600'
+                      : networkSignal.strength === 3
+                      ? 'text-blue-600'
+                      : networkSignal.strength === 2
+                      ? 'text-yellow-600'
+                      : networkSignal.strength === 1
+                      ? 'text-red-600'
+                      : 'text-gray-500'
+                  }`}>
+                    {networkSignal.status}
+                  </span>
+                  {/* <span className="text-xs text-gray-500">{networkSignal.speed}</span> */}
+                </div>
+                <div className="text-xs text-gray-400">
+                  Network Signal
+                </div>
+              </div>
+            </div>
+
+            {/* Date */}
+            <div className="flex items-center text-sm text-gray-500">
               <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>

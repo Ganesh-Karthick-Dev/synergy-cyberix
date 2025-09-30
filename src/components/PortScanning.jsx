@@ -11,6 +11,7 @@ function PortScanning() {
     filteredPorts: 0,
     services: 0
   })
+  const [portFilter, setPortFilter] = useState('all') // 'all', 'open', 'closed', 'filtered'
 
   const { scanStatus, scanProgress, startPortScan, abortScan } = useScanning()
 
@@ -116,14 +117,160 @@ function PortScanning() {
   const downloadResults = () => {
     if (!scanResults) return
     
-    const dataStr = JSON.stringify(scanResults, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(dataBlob)
+    // Generate PDF content
+    const pdfContent = generatePDFReport(scanResults, target)
+    const pdfBlob = new Blob([pdfContent], { type: 'application/pdf' })
+    const url = URL.createObjectURL(pdfBlob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `port-scan-${target}-${Date.now()}.json`
+    link.download = 'port-scan-' + target + '-' + Date.now() + '.pdf'
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  const generatePDFReport = (data, targetHost) => {
+    let pdfContent = ''
+    
+    // PDF Header
+    pdfContent += '%PDF-1.4\n'
+    pdfContent += '1 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Type /Catalog\n'
+    pdfContent += '/Pages 2 0 R\n'
+    pdfContent += '>>\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Pages object
+    pdfContent += '2 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Type /Pages\n'
+    pdfContent += '/Kids [3 0 R]\n'
+    pdfContent += '/Count 1\n'
+    pdfContent += '>>\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Page object
+    pdfContent += '3 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Type /Page\n'
+    pdfContent += '/Parent 2 0 R\n'
+    pdfContent += '/MediaBox [0 0 612 792]\n'
+    pdfContent += '/Contents 4 0 R\n'
+    pdfContent += '/Resources <<\n'
+    pdfContent += '/Font <<\n'
+    pdfContent += '/F1 <<\n'
+    pdfContent += '/Type /Font\n'
+    pdfContent += '/Subtype /Type1\n'
+    pdfContent += '/BaseFont /Helvetica-Bold\n'
+    pdfContent += '>>\n'
+    pdfContent += '/F2 <<\n'
+    pdfContent += '/Type /Font\n'
+    pdfContent += '/Subtype /Type1\n'
+    pdfContent += '/BaseFont /Helvetica\n'
+    pdfContent += '>>\n'
+    pdfContent += '>>\n'
+    pdfContent += '>>\n'
+    pdfContent += '>>\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Content stream
+    const content = generatePDFContent(data, targetHost)
+    pdfContent += '4 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Length ' + content.length + '\n'
+    pdfContent += '>>\n'
+    pdfContent += 'stream\n'
+    pdfContent += content
+    pdfContent += 'endstream\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Xref table
+    pdfContent += 'xref\n'
+    pdfContent += '0 5\n'
+    pdfContent += '0000000000 65535 f \n'
+    pdfContent += '0000000009 00000 n \n'
+    pdfContent += '0000000058 00000 n \n'
+    pdfContent += '0000000115 00000 n \n'
+    pdfContent += '0000000204 00000 n \n'
+    pdfContent += 'trailer\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Size 5\n'
+    pdfContent += '/Root 1 0 R\n'
+    pdfContent += '>>\n'
+    pdfContent += 'startxref\n'
+    pdfContent += '500\n'
+    pdfContent += '%%EOF'
+    
+    return pdfContent
+  }
+
+  const generatePDFContent = (data, targetHost) => {
+    let content = 'BT\n'
+    
+    // Title
+    content += '/F1 18 Tf\n'
+    content += '72 720 Td\n'
+    content += '(PORT SCAN REPORT) Tj\n'
+    content += '0 -30 Td\n'
+    content += '/F2 12 Tf\n'
+    content += '(Target: ' + targetHost + ') Tj\n'
+    content += '0 -20 Td\n'
+    content += '(Generated: ' + new Date().toLocaleString() + ') Tj\n'
+    content += '0 -40 Td\n'
+    
+    // Summary
+    if (data.findings && Array.isArray(data.findings)) {
+      const openPorts = data.findings.filter(port => port.state === 'open').length
+      const closedPorts = data.findings.filter(port => port.state === 'closed').length
+      const filteredPorts = data.findings.filter(port => port.state === 'filtered').length
+      
+      content += '/F1 14 Tf\n'
+      content += '(SCAN SUMMARY) Tj\n'
+      content += '0 -20 Td\n'
+      content += '/F2 12 Tf\n'
+      content += '(Total Ports Scanned: ' + data.findings.length + ') Tj\n'
+      content += '0 -15 Td\n'
+      content += '(Open Ports: ' + openPorts + ') Tj\n'
+      content += '0 -15 Td\n'
+      content += '(Closed Ports: ' + closedPorts + ') Tj\n'
+      content += '0 -15 Td\n'
+      content += '(Filtered Ports: ' + filteredPorts + ') Tj\n'
+      content += '0 -30 Td\n'
+      
+      // Port details
+      content += '/F1 14 Tf\n'
+      content += '(PORT DETAILS) Tj\n'
+      content += '0 -20 Td\n'
+      content += '/F2 10 Tf\n'
+      
+      data.findings.forEach((port, index) => {
+        if (index < 20) { // Limit to first 20 ports to fit on page
+          const portInfo = 'Port ' + port.port + ' - ' + port.protocol.toUpperCase() + ' - ' + port.state.toUpperCase() + ' - ' + (port.service || 'Unknown')
+          content += '(' + portInfo + ') Tj\n'
+          content += '0 -12 Td\n'
+        }
+      })
+      
+      if (data.findings.length > 20) {
+        content += '(... and ' + (data.findings.length - 20) + ' more ports) Tj\n'
+      }
+    }
+    
+    content += 'ET\n'
+    return content
+  }
+
+  // Filter ports based on selected filter
+  const getFilteredPorts = () => {
+    if (!scanResults || !scanResults.findings || !Array.isArray(scanResults.findings)) {
+      return []
+    }
+    
+    if (portFilter === 'all') {
+      return scanResults.findings
+    }
+    
+    return scanResults.findings.filter(port => port.state === portFilter)
   }
 
   return (
@@ -239,7 +386,7 @@ function PortScanning() {
       </div>
 
       {/* Scan Statistics */}
-            {scanStatus.isScanning && (
+      {(scanStatus.isScanning || scanResults) && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
             <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -248,23 +395,46 @@ function PortScanning() {
             <span>Scan Statistics</span>
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-green-50 rounded-lg">
+            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
               <div className="text-2xl font-bold text-green-600">{scanStats.openPorts}</div>
               <div className="text-sm text-green-700">Open Ports</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-green-600 mt-1 animate-pulse">Live count</div>
+              )}
             </div>
-            <div className="text-center p-4 bg-red-50 rounded-lg">
+            <div className="text-center p-4 bg-red-50 rounded-lg border border-red-200">
               <div className="text-2xl font-bold text-red-600">{scanStats.closedPorts}</div>
               <div className="text-sm text-red-700">Closed Ports</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-red-600 mt-1 animate-pulse">Live count</div>
+              )}
             </div>
-            <div className="text-center p-4 bg-yellow-50 rounded-lg">
+            <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
               <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
               <div className="text-sm text-yellow-700">Filtered</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-yellow-600 mt-1 animate-pulse">Live count</div>
+              )}
             </div>
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
+            <div className="text-center p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="text-2xl font-bold text-blue-600">{scanStats.services}</div>
               <div className="text-sm text-blue-700">Services</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-blue-600 mt-1 animate-pulse">Live count</div>
+              )}
             </div>
           </div>
+          
+          {scanStatus.isScanning && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <svg className="w-4 h-4 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="text-sm text-blue-800 font-medium">Scan in progress - Statistics updating in real-time</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -311,7 +481,7 @@ function PortScanning() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <span>Download</span>
+              <span>Download PDF</span>
             </button>
           </div>
           
@@ -325,7 +495,8 @@ function PortScanning() {
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-6">
+              {/* Success Message */}
               <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                 <div className="flex items-center space-x-2 mb-2">
                   <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,23 +509,182 @@ function PortScanning() {
                 </p>
               </div>
               
-              {scanResults.summary && (
+              {/* Results Summary */}
+              {scanResults.findings && Array.isArray(scanResults.findings) && (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h4 className="font-medium text-blue-900 mb-2 flex items-center space-x-2">
+                  <h4 className="font-medium text-blue-900 mb-4 flex items-center space-x-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span>Summary</span>
+                    <span>Scan Summary</span>
                   </h4>
-                  <p className="text-blue-800">{scanResults.summary}</p>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-white rounded-lg border border-blue-200">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {scanResults.findings.filter(port => port.state === 'open').length}
+                      </div>
+                      <div className="text-sm text-blue-700">Open Ports</div>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded-lg border border-red-200">
+                      <div className="text-2xl font-bold text-red-600">
+                        {scanResults.findings.filter(port => port.state === 'closed').length}
+                      </div>
+                      <div className="text-sm text-red-700">Closed Ports</div>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded-lg border border-yellow-200">
+                      <div className="text-2xl font-bold text-yellow-600">
+                        {scanResults.findings.filter(port => port.state === 'filtered').length}
+                      </div>
+                      <div className="text-sm text-yellow-700">Filtered Ports</div>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded-lg border border-gray-200">
+                      <div className="text-2xl font-bold text-gray-600">
+                        {scanResults.findings.length}
+                      </div>
+                      <div className="text-sm text-gray-700">Total Ports</div>
+                    </div>
+                  </div>
+                  
+                  {scanResults.summary && (
+                    <div className="mt-4 p-3 bg-white rounded-lg border border-blue-200">
+                      <p className="text-blue-800 text-sm">{scanResults.summary}</p>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Detailed Results Table */}
+              {scanResults.findings && Array.isArray(scanResults.findings) && scanResults.findings.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                  <div className="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Port Scan Results</span>
+                        </h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Showing {getFilteredPorts().length} of {scanResults.findings.length} ports
+                        </p>
+                      </div>
+                      
+                      {/* Filter Buttons */}
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => setPortFilter('all')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'all' 
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          All ({scanResults.findings.length})
+                        </button>
+                        <button
+                          onClick={() => setPortFilter('open')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'open' 
+                              ? 'bg-green-100 text-green-800 border border-green-200' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          Open ({scanResults.findings.filter(p => p.state === 'open').length})
+                        </button>
+                        <button
+                          onClick={() => setPortFilter('closed')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'closed' 
+                              ? 'bg-red-100 text-red-800 border border-red-200' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          Closed ({scanResults.findings.filter(p => p.state === 'closed').length})
+                        </button>
+                        <button
+                          onClick={() => setPortFilter('filtered')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'filtered' 
+                              ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          Filtered ({scanResults.findings.filter(p => p.state === 'filtered').length})
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Port</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protocol</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {getFilteredPorts().map((port, index) => (
+                          <tr key={index} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="flex-shrink-0 h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <span className="text-sm font-medium text-blue-800">{port.port}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                              {port.protocol ? port.protocol.toUpperCase() : 'TCP'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                port.state === 'open' ? 'bg-green-100 text-green-800' :
+                                port.state === 'closed' ? 'bg-red-100 text-red-800' :
+                                port.state === 'filtered' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {port.state ? port.state.toUpperCase() : 'UNKNOWN'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {port.service || 'Unknown'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {getFilteredPorts().length === 0 && portFilter !== 'all' && (
+                    <div className="bg-gray-50 px-6 py-8 text-center">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-gray-500 text-sm">No {portFilter} ports found</p>
+                    </div>
+                  )}
+                  
+                  {getFilteredPorts().length > 10 && (
+                    <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
+                      <p className="text-sm text-gray-500 text-center">
+                        Showing {getFilteredPorts().length} {portFilter === 'all' ? 'total' : portFilter} ports
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
         </div>
       )}
 
-      {/* Information Panel */}
+      {/* Information Panel - Only show when no scan results */}
+      {!scanResults && (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
           <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,6 +732,7 @@ function PortScanning() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

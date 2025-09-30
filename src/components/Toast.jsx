@@ -35,13 +35,13 @@ const Toast = ({
   };
 
   const getVariantStyles = () => {
-    const baseStyles = "relative flex items-center justify-between px-6 py-4 mb-2 rounded-lg border-l-4 shadow-lg backdrop-blur-sm transition-all duration-300 ease-in-out";
+    const baseStyles = "relative flex items-center justify-between px-6 py-4 mb-2 shadow-lg backdrop-blur-sm transition-all duration-500 ease-in-out w-full";
     
     const variants = {
-      error: "bg-red-50 border-red-500 text-red-900 shadow-red-100",
-      success: "bg-green-50 border-green-500 text-green-900 shadow-green-100", 
-      alert: "bg-yellow-50 border-yellow-500 text-yellow-900 shadow-yellow-100",
-      secondary: "bg-gray-50 border-gray-500 text-gray-900 shadow-gray-100"
+      error: "bg-red-500 text-white shadow-red-200",
+      success: "bg-green-500 text-white shadow-green-200", 
+      alert: "bg-yellow-500 text-white shadow-yellow-200",
+      secondary: "bg-gray-500 text-white shadow-gray-200"
     };
 
     return `${baseStyles} ${variants[variant]}`;
@@ -55,10 +55,10 @@ const Toast = ({
     }
 
     const icons = {
-      error: <XCircle className={`${iconClass} text-red-600`} />,
-      success: <CheckCircle className={`${iconClass} text-green-600`} />,
-      alert: <AlertTriangle className={`${iconClass} text-yellow-600`} />,
-      secondary: <Info className={`${iconClass} text-gray-600`} />
+      error: <XCircle className={`${iconClass} text-white`} />,
+      success: <CheckCircle className={`${iconClass} text-white`} />,
+      alert: <AlertTriangle className={`${iconClass} text-white`} />,
+      secondary: <Info className={`${iconClass} text-white`} />
     };
 
     return icons[variant];
@@ -68,21 +68,23 @@ const Toast = ({
     const baseStyles = "ml-4 p-1 rounded-full hover:scale-110 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1";
     
     const variants = {
-      error: "hover:bg-red-100 focus:ring-red-300 text-red-600",
-      success: "hover:bg-green-100 focus:ring-green-300 text-green-600",
-      alert: "hover:bg-yellow-100 focus:ring-yellow-300 text-yellow-600", 
-      secondary: "hover:bg-gray-100 focus:ring-gray-300 text-gray-600"
+      error: "hover:bg-red-600 focus:ring-red-300 text-white",
+      success: "hover:bg-green-600 focus:ring-green-300 text-white",
+      alert: "hover:bg-yellow-600 focus:ring-yellow-300 text-white", 
+      secondary: "hover:bg-gray-600 focus:ring-gray-300 text-white"
     };
 
     return `${baseStyles} ${variants[variant]}`;
-  };
+  }; 
 
   return (
     <div 
       className={`${getVariantStyles()} ${
         isVisible && !isRemoving 
           ? 'opacity-100 translate-y-0 scale-100' 
-          : 'opacity-0 translate-y-2 scale-95'
+          : isRemoving
+          ? 'opacity-0 translate-y-full scale-95'
+          : 'opacity-0 translate-y-full scale-95'
       }`}
       role="alert"
       aria-live="polite"
