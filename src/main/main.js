@@ -163,7 +163,7 @@ async function installKaliLinux() {
 }
 
 async function createMainWindow() {
-  const iconPath = path.join(__dirname, '..', 'assets', 'Cybersecurity research-02.ico');
+  const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
 
   const mainWindow = new BrowserWindow({
     width: 1200,
