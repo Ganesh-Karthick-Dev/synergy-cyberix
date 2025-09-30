@@ -1,0 +1,16 @@
+MAC Address Detection Results for webnox.in
+Detection started at: 2025-09-27T10:41:02.099Z
+==================================================
+
+MAC ADDRESS DETECTED:
+==============================
+MAC Address: 08:00:27:12:34:56
+Vendor: Oracle VirtualBox
+Device Type: Virtual Machine
+Detection Method: ARP Table Lookup
+
+VENDOR INFORMATION:
+==============================
+Company: Oracle VirtualBox
+OUI: 08:00:27
+Country: Ireland

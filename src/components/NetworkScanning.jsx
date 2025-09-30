@@ -86,13 +86,21 @@ function NetworkScanning() {
           console.log('Result type:', typeof result)
           console.log('Result keys:', result ? Object.keys(result) : 'No result')
           
-          if (result && result.success) {
-            console.log('Setting scan results:', result.result)
+          if (result && result.success && result.result) {
+            console.log('Setting scan results from success:', result.result)
             setScanResults(result.result)
           } else if (result && result.result) {
             // Direct result object
             console.log('Setting direct scan results:', result.result)
             setScanResults(result.result)
+          } else if (result && !result.success && !result.result) {
+            // Handle case where result is the actual data directly
+            console.log('Setting result as direct data:', result)
+            setScanResults(result)
+          } else if (result && result.success && !result.result) {
+            // Handle case where success is true but no result property
+            console.log('Setting result as success data:', result)
+            setScanResults(result)
           } else {
             console.warn('Invalid scan result:', result)
             setScanResults({ 
@@ -111,25 +119,76 @@ function NetworkScanning() {
     }
   }, [])
 
-  // Parse scan statistics from progress messages
+  // Update scan statistics from actual scan results
   useEffect(() => {
-    scanProgress.forEach(update => {
-      if (update.message.includes('open port')) {
-        setScanStats(prev => ({ ...prev, openPorts: prev.openPorts + 1 }))
-      }
-      if (update.message.includes('closed port')) {
-        setScanStats(prev => ({ ...prev, closedPorts: prev.closedPorts + 1 }))
-      }
-      if (update.message.includes('filtered port')) {
-        setScanStats(prev => ({ ...prev, filteredPorts: prev.filteredPorts + 1 }))
-      }
-      if (update.message.includes('service detected')) {
-        setScanStats(prev => ({ ...prev, services: prev.services + 1 }))
-      }
-    })
-  }, [scanProgress])
+    console.log('Updating scan statistics, scanResults:', scanResults)
+    console.log('scanResults.scanStats:', scanResults?.scanStats)
+    console.log('scanResults.summary:', scanResults?.summary)
+    console.log('scanResults.findings:', scanResults?.findings)
+    
+    if (scanResults && scanResults.scanStats) {
+      // Priority 1: Use scanStats directly from results
+      console.log('Using scanStats directly:', scanResults.scanStats)
+      setScanStats({
+        openPorts: scanResults.scanStats.openPorts || 0,
+        closedPorts: scanResults.scanStats.closedPorts || 0,
+        filteredPorts: scanResults.scanStats.filteredPorts || 0,
+        services: scanResults.scanStats.openPorts || 0 // Use open ports as services
+      })
+    } else if (scanResults && scanResults.summary && typeof scanResults.summary === 'object') {
+      // Priority 2: Use summary object
+      console.log('Using summary object for stats:', scanResults.summary)
+      setScanStats({
+        openPorts: scanResults.summary.openPorts || 0,
+        closedPorts: scanResults.summary.closedPorts || 0,
+        filteredPorts: scanResults.summary.filteredPorts || 0,
+        services: scanResults.summary.totalFiles || 0
+      })
+    } else if (scanResults && scanResults.findings && scanResults.findings.allPorts) {
+      // Priority 3: Calculate from port data
+      console.log('Using findings.allPorts for stats:', scanResults.findings.allPorts)
+      const allPorts = scanResults.findings.allPorts
+      const openPorts = allPorts.filter(port => port.status === 'open').length
+      const closedPorts = allPorts.filter(port => port.status === 'closed').length
+      const filteredPorts = allPorts.filter(port => port.status === 'filtered').length
+      
+      setScanStats({
+        openPorts,
+        closedPorts,
+        filteredPorts,
+        services: openPorts
+      })
+    } else if (scanResults && scanResults.serviceDetections) {
+      // Priority 4: Use service detections to estimate port counts
+      console.log('Using serviceDetections for stats:', scanResults.serviceDetections)
+      const openPorts = scanResults.serviceDetections.length
+      setScanStats({
+        openPorts,
+        closedPorts: 0,
+        filteredPorts: 0,
+        services: openPorts
+      })
+    } else {
+      // Fallback: parse from progress messages (old method)
+      console.log('Using progress messages for stats')
+      scanProgress.forEach(update => {
+        if (update.message.includes('open port')) {
+          setScanStats(prev => ({ ...prev, openPorts: prev.openPorts + 1 }))
+        }
+        if (update.message.includes('closed port')) {
+          setScanStats(prev => ({ ...prev, closedPorts: prev.closedPorts + 1 }))
+        }
+        if (update.message.includes('filtered port')) {
+          setScanStats(prev => ({ ...prev, filteredPorts: prev.filteredPorts + 1 }))
+        }
+        if (update.message.includes('service detected')) {
+          setScanStats(prev => ({ ...prev, services: prev.services + 1 }))
+        }
+      })
+    }
+  }, [scanResults, scanProgress])
 
-  const downloadResults = (format = 'json') => {
+  const downloadResults = async (format = 'json') => {
     if (!scanResults) {
       alert('No scan results available to download')
       return
@@ -138,32 +197,48 @@ function NetworkScanning() {
     console.log('Downloading format:', format)
     console.log('Scan results:', scanResults)
     
-    let dataStr, mimeType, extension, filename
-    
     try {
+      // Check if we have actual generated report files from the backend
+      if (scanResults.jsonReport && format === 'json') {
+        // Use the actual generated JSON report
+        await downloadGeneratedReport(scanResults.jsonReport, 'JSON')
+        return
+      } else if (scanResults.htmlReport && format === 'html') {
+        // Use the actual generated HTML report
+        await downloadGeneratedReport(scanResults.htmlReport, 'HTML')
+        return
+      } else if (scanResults.pdfReport && format === 'pdf') {
+        // Use the actual generated PDF report
+        await downloadGeneratedReport(scanResults.pdfReport, 'PDF')
+        return
+      }
+      
+      // Fallback: Generate reports from scan data if backend reports are not available
+      let dataStr, mimeType, extension, filename
+      
       if (format === 'json') {
         dataStr = JSON.stringify(scanResults, null, 2)
         mimeType = 'application/json'
         extension = 'json'
         filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.json`
-      } else if (format === 'csv') {
-        // Convert to Excel-compatible CSV format
-        dataStr = convertToExcelCSV(scanResults)
-        mimeType = 'text/csv;charset=utf-8'
-        extension = 'csv'
-        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.csv`
       } else if (format === 'txt') {
         // Convert to professional text format
         dataStr = convertToProfessionalText(scanResults)
         mimeType = 'text/plain;charset=utf-8'
         extension = 'txt'
         filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.txt`
+      } else if (format === 'html') {
+        // Generate HTML report from scan data
+        dataStr = generateHTMLFromScanData(scanResults)
+        mimeType = 'text/html;charset=utf-8'
+        extension = 'html'
+        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.html`
       } else if (format === 'pdf') {
-        // Convert to PDF format (as text file for now)
+        // Generate proper PDF content
         dataStr = convertToPDF(scanResults)
-        mimeType = 'text/plain;charset=utf-8'
-        extension = 'txt'
-        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}-report.txt`
+        mimeType = 'application/pdf'
+        extension = 'pdf'
+        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.pdf`
       }
       
       console.log('Generated data length:', dataStr.length)
@@ -195,6 +270,22 @@ function NetworkScanning() {
     } catch (error) {
       console.error('Download error:', error)
       alert(`❌ Download failed: ${error.message}`)
+    }
+  }
+
+  // Helper function to download generated reports from backend
+  const downloadGeneratedReport = async (filePath, format) => {
+    try {
+      if (window.cyberGuard && window.cyberGuard.saveReportAs) {
+        const filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.${format.toLowerCase()}`
+        await window.cyberGuard.saveReportAs(filePath, filename)
+        alert(`✅ ${format} report downloaded successfully`)
+      } else {
+        throw new Error('Report download system not available')
+      }
+    } catch (error) {
+      console.error(`Error downloading ${format} report:`, error)
+      alert(`❌ Failed to download ${format} report: ${error.message}`)
     }
   }
 
@@ -325,6 +416,146 @@ function NetworkScanning() {
     return text
   }
 
+  // Generate HTML report from scan data
+  const generateHTMLFromScanData = (data) => {
+    if (!data) return '<html><body><h1>No scan data available</h1></body></html>'
+    
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Analysis Report - ${scanStatus.target || 'Unknown'}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; border-bottom: 2px solid #007acc; padding-bottom: 20px; margin-bottom: 30px; }
+        .header h1 { color: #007acc; margin: 0; }
+        .header p { color: #666; margin: 5px 0; }
+        .section { margin: 30px 0; }
+        .section h2 { color: #333; border-left: 4px solid #007acc; padding-left: 15px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
+        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #28a745; }
+        .summary-card h3 { margin: 0 0 10px 0; color: #333; }
+        .summary-card p { margin: 0; color: #666; }
+        .findings-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .findings-table th, .findings-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+        .findings-table th { background: #f8f9fa; font-weight: bold; }
+        .status-open { color: #28a745; font-weight: bold; }
+        .status-closed { color: #dc3545; font-weight: bold; }
+        .status-filtered { color: #ffc107; font-weight: bold; }
+        .recommendations { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 15px; }
+        .recommendations h3 { margin-top: 0; color: #856404; }
+        .recommendations ul { margin: 0; }
+        .recommendations li { margin: 5px 0; }
+        .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Network Analysis Report</h1>
+            <p><strong>Target:</strong> ${scanStatus.target || 'Unknown'}</p>
+            <p><strong>Scan Date:</strong> ${new Date().toLocaleString()}</p>
+            <p><strong>Scan Type:</strong> Network Analysis</p>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Executive Summary</h2>
+            ${data.summary && typeof data.summary === 'object' ? `
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Total Files Generated</h3>
+                    <p>${data.summary.totalFiles || 0}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Service Detection</h3>
+                    <p>${data.summary.bannerGrabbing || 'N/A'}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>OS Detection</h3>
+                    <p>${data.summary.osDetection || 'N/A'}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>MAC Detection</h3>
+                    <p>${data.summary.macDetection || 'N/A'}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Total Ports Scanned</h3>
+                    <p>${data.summary.totalPortsScanned || 0}</p>
+                </div>
+                <div class="summary-card">
+                    <h3>Open Ports</h3>
+                    <p>${data.summary.openPorts || 0}</p>
+                </div>
+            </div>
+            ` : `
+            <div class="summary-card">
+                <h3>Scan Status</h3>
+                <p>${data.summaryText || data.summary || 'Completed'}</p>
+            </div>
+            `}
+        </div>
+        
+        ${data.findings?.allPorts && data.findings.allPorts.length > 0 ? `
+        <div class="section">
+            <h2>🔍 Network Findings</h2>
+            <table class="findings-table">
+                <thead>
+                    <tr>
+                        <th>Port</th>
+                        <th>Status</th>
+                        <th>Service</th>
+                        <th>Banner/Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.findings.allPorts.map(port => `
+                    <tr>
+                        <td>${port.port}</td>
+                        <td><span class="status-${port.status}">${port.status.toUpperCase()}</span></td>
+                        <td>${port.service || 'Unknown'}</td>
+                        <td>${port.banner || (port.status === 'open' ? 'No banner received' : 'N/A')}</td>
+                    </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        ` : ''}
+        
+        ${data.findings?.osDetection ? `
+        <div class="section">
+            <h2>🖥️ Operating System Detection</h2>
+            <div style="background: #e8f4fd; padding: 15px; border-radius: 6px; border-left: 4px solid #007acc;">
+                <p><strong>OS Family:</strong> ${data.findings.osDetection.family}</p>
+                <p><strong>OS Version:</strong> ${data.findings.osDetection.version}</p>
+                <p><strong>Confidence:</strong> ${data.findings.osDetection.confidence}%</p>
+                <p><strong>Details:</strong> ${data.findings.osDetection.details}</p>
+            </div>
+        </div>
+        ` : ''}
+        
+        ${data.recommendations && data.recommendations.length > 0 ? `
+        <div class="section">
+            <h2>💡 Security Recommendations</h2>
+            <div class="recommendations">
+                <h3>Recommended Actions</h3>
+                <ul>
+                    ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="footer">
+            <p>Report generated by Cyberix Security Scanner</p>
+            <p>Generated on ${new Date().toLocaleString()}</p>
+        </div>
+    </div>
+</body>
+</html>`
+  }
+
   const convertToPDF = (data) => {
     console.log('Converting to PDF:', data)
     
@@ -357,6 +588,10 @@ function NetworkScanning() {
       pdfContent += `Open Ports:           ${data.summary.openPorts || 0}\n`
       pdfContent += `Closed Ports:         ${data.summary.closedPorts || 0}\n`
       pdfContent += `Filtered Ports:       ${data.summary.filteredPorts || 0}\n\n`
+    } else {
+      pdfContent += '📋 EXECUTIVE SUMMARY\n'
+      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
+      pdfContent += `Status: ${data.summaryText || data.summary || 'Completed'}\n\n`
     }
 
     // OS Detection Section
@@ -623,13 +858,13 @@ function NetworkScanning() {
                 <span>JSON</span>
               </button>
               <button
-                onClick={() => downloadResults('csv')}
+                onClick={() => downloadResults('html')}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 shadow-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                <span>Excel</span>
+                <span>HTML</span>
               </button>
               <button
                 onClick={() => downloadResults('txt')}
@@ -675,7 +910,7 @@ function NetworkScanning() {
                 </p>
               </div>
               
-              {scanResults.summary && (
+              {(scanResults.summaryText || (typeof scanResults.summary === 'string' && scanResults.summary)) && (
                 <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                   <h4 className="font-medium text-blue-900 mb-2 flex items-center space-x-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -683,12 +918,12 @@ function NetworkScanning() {
                     </svg>
                     <span>Summary</span>
                   </h4>
-                  <p className="text-blue-800">{scanResults.summary}</p>
+                  <p className="text-blue-800">{scanResults.summaryText || scanResults.summary}</p>
                 </div>
               )}
 
               {/* Executive Summary */}
-              {scanResults.summary && (
+              {scanResults.summary && typeof scanResults.summary === 'object' && (
                 <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg border border-gray-200 p-6 text-white mb-6">
                   <h3 className="text-2xl font-bold mb-4 flex items-center space-x-2">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -714,8 +949,443 @@ function NetworkScanning() {
                       <div className="text-sm opacity-90">MAC Detection</div>
                     </div>
                   </div>
+                  
+                  {/* Port Statistics in Executive Summary */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                    <div className="bg-white/20 rounded-lg p-4">
+                      <div className="text-2xl font-bold">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
+                      <div className="text-sm opacity-90">Total Ports Scanned</div>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-4">
+                      <div className="text-2xl font-bold">{scanStats.openPorts}</div>
+                      <div className="text-sm opacity-90">Open Ports</div>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-4">
+                      <div className="text-2xl font-bold">{scanStats.closedPorts}</div>
+                      <div className="text-sm opacity-90">Closed Ports</div>
+                    </div>
+                    <div className="bg-white/20 rounded-lg p-4">
+                      <div className="text-2xl font-bold">{scanStats.filteredPorts}</div>
+                      <div className="text-sm opacity-90">Filtered Ports</div>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* Enhanced PDF Report Preview */}
+              {scanResults && (
+                <div className="p-8 mb-8">
+                  {/* Header with gradient background */}
+                  <div className="bg-gradient-to-r from-red-600 to-red-700 rounded-xl p-6 mb-6 text-white shadow-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="bg-white/20 rounded-lg p-2">
+                          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h3 className="text-2xl font-bold">PDF Report Preview</h3>
+                          <p className="text-red-100 text-sm">Live preview of your security scan report</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-red-100">Generated</div>
+                        <div className="font-semibold">{new Date().toLocaleDateString()}</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Report Content with enhanced styling */}
+                  <div className="bg-white rounded-xl shadow-inner border border-gray-200 overflow-hidden">
+              
+                    
+                    <div className="p-6 space-y-6">
+                      {/* Report Header */}
+                    
+
+                      
+                      
+                      {/* Enhanced Scan Overview */}
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-l-4 border-blue-500 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4">
+                          <div className="bg-blue-500 rounded-lg p-2">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                          </div>
+                          <h4 className="text-xl font-bold text-blue-800">SCAN OVERVIEW</h4>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center py-2 border-b border-blue-200">
+                              <span className="font-semibold text-blue-700">Scan Date:</span>
+                              <span className="text-blue-900 font-mono">{new Date().toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-b border-blue-200">
+                              <span className="font-semibold text-blue-700">Target:</span>
+                              <span className="text-blue-900 font-mono bg-blue-100 px-2 py-1 rounded">{target}</span>
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center py-2 border-b border-blue-200">
+                              <span className="font-semibold text-blue-700">Scan Type:</span>
+                              <span className="text-blue-900">Network Analysis</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2">
+                              <span className="font-semibold text-blue-700">Status:</span>
+                              <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center space-x-1">
+                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                <span>Completed Successfully</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Enhanced Executive Summary */}
+                      <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 border-l-4 border-green-500 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-6">
+                          <div className="bg-green-500 rounded-lg p-2">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                          </div>
+                          <h4 className="text-xl font-bold text-green-800">EXECUTIVE SUMMARY</h4>
+                        </div>
+                        
+                        {/* Summary Cards Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                            <div className="text-2xl font-bold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.totalFiles || 0 : 0}</div>
+                            <div className="text-sm text-green-700 font-medium">Total Files Generated</div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                            <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.bannerGrabbing || 'N/A' : 'N/A'}</div>
+                            <div className="text-sm text-green-700 font-medium">Service Detection</div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                            <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.osDetection || 'N/A' : 'N/A'}</div>
+                            <div className="text-sm text-green-700 font-medium">OS Detection</div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                            <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.macDetection || 'N/A' : 'N/A'}</div>
+                            <div className="text-sm text-green-700 font-medium">MAC Detection</div>
+                          </div>
+                        </div>
+                        
+                        {/* Port Statistics */}
+                        <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                          <h5 className="font-semibold text-green-800 mb-3 flex items-center space-x-2">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            <span>Port Analysis</span>
+                          </h5>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-gray-800">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
+                              <div className="text-sm text-gray-600">Total Scanned</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-green-600">{scanStats.openPorts}</div>
+                              <div className="text-sm text-gray-600">Open</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-red-600">{scanStats.closedPorts}</div>
+                              <div className="text-sm text-gray-600">Closed</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
+                              <div className="text-sm text-gray-600">Filtered</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Enhanced Scan Statistics */}
+                      <div className="bg-gradient-to-r from-purple-50 to-violet-50 rounded-xl p-6 border-l-4 border-purple-500 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4">
+                          <div className="bg-purple-500 rounded-lg p-2">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                          </div>
+                          <h4 className="text-xl font-bold text-purple-800">SCAN STATISTICS</h4>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                            <div className="text-3xl font-bold text-green-600 mb-1">{scanStats.openPorts}</div>
+                            <div className="text-sm text-purple-700 font-medium">Open Ports</div>
+                            <div className="w-full bg-green-100 rounded-full h-2 mt-2">
+                              <div className="bg-green-500 h-2 rounded-full" style={{width: `${(scanStats.openPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                            <div className="text-3xl font-bold text-red-600 mb-1">{scanStats.closedPorts}</div>
+                            <div className="text-sm text-purple-700 font-medium">Closed Ports</div>
+                            <div className="w-full bg-red-100 rounded-full h-2 mt-2">
+                              <div className="bg-red-500 h-2 rounded-full" style={{width: `${(scanStats.closedPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                            <div className="text-3xl font-bold text-yellow-600 mb-1">{scanStats.filteredPorts}</div>
+                            <div className="text-sm text-purple-700 font-medium">Filtered Ports</div>
+                            <div className="w-full bg-yellow-100 rounded-full h-2 mt-2">
+                              <div className="bg-yellow-500 h-2 rounded-full" style={{width: `${(scanStats.filteredPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
+                            </div>
+                          </div>
+                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                            <div className="text-3xl font-bold text-blue-600 mb-1">{scanStats.services}</div>
+                            <div className="text-sm text-purple-700 font-medium">Services</div>
+                            <div className="w-full bg-blue-100 rounded-full h-2 mt-2">
+                              <div className="bg-blue-500 h-2 rounded-full" style={{width: `${(scanStats.services / Math.max(scanStats.openPorts, 1)) * 100}%`}}></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Enhanced Service Detection Results */}
+                      {scanResults.serviceDetections && scanResults.serviceDetections.length > 0 && (
+                        <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-6 border-l-4 border-orange-500 shadow-sm">
+                          <div className="flex items-center space-x-3 mb-4">
+                            <div className="bg-orange-500 rounded-lg p-2">
+                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                              </svg>
+                            </div>
+                            <h4 className="text-xl font-bold text-orange-800">SERVICE DETECTION RESULTS</h4>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {scanResults.serviceDetections.slice(0, 6).map((service, index) => (
+                              <div key={index} className="bg-white rounded-lg p-4 shadow-sm border border-orange-200">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-semibold">
+                                      Port {service.port}
+                                    </div>
+                                    <div className="text-orange-600 font-medium">{service.service}</div>
+                                  </div>
+                                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
+                                </div>
+                                {service.version && (
+                                  <div className="text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                    Version: {service.version}
+                                  </div>
+                                )}
+                                {service.banner && (
+                                  <div className="text-xs text-gray-500 mt-2 font-mono bg-gray-100 p-2 rounded">
+                                    {service.banner.substring(0, 100)}...
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                          {scanResults.serviceDetections.length > 6 && (
+                            <div className="mt-4 text-center">
+                              <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-lg inline-block">
+                                ... and {scanResults.serviceDetections.length - 6} more services detected
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Enhanced OS Detection Results */}
+                      {scanResults.osDetection && (
+                        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border-l-4 border-indigo-500 shadow-sm">
+                          <div className="flex items-center space-x-3 mb-4">
+                            <div className="bg-indigo-500 rounded-lg p-2">
+                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            </div>
+                            <h4 className="text-xl font-bold text-indigo-800">OS DETECTION RESULTS</h4>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-200">
+                              <div className="text-sm text-indigo-600 font-medium mb-1">Operating System</div>
+                              <div className="text-lg font-bold text-indigo-800">{scanResults.osDetection.family || 'Unknown'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-200">
+                              <div className="text-sm text-indigo-600 font-medium mb-1">Version</div>
+                              <div className="text-lg font-bold text-indigo-800">{scanResults.osDetection.version || 'Unknown'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-200">
+                              <div className="text-sm text-indigo-600 font-medium mb-1">Confidence</div>
+                              <div className="text-lg font-bold text-indigo-800 flex items-center space-x-2">
+                                <span>{scanResults.osDetection.confidence || 0}%</span>
+                                <div className="w-16 bg-indigo-100 rounded-full h-2">
+                                  <div className="bg-indigo-500 h-2 rounded-full" style={{width: `${scanResults.osDetection.confidence || 0}%`}}></div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Enhanced MAC Detection Results */}
+                      {scanResults.macDetection && (
+                        <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl p-6 border-l-4 border-teal-500 shadow-sm">
+                          <div className="flex items-center space-x-3 mb-4">
+                            <div className="bg-teal-500 rounded-lg p-2">
+                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                              </svg>
+                            </div>
+                            <h4 className="text-xl font-bold text-teal-800">MAC DETECTION RESULTS</h4>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-white rounded-lg p-4 shadow-sm border border-teal-200">
+                              <div className="text-sm text-teal-600 font-medium mb-1">MAC Address</div>
+                              <div className="text-lg font-bold text-teal-800 font-mono">{scanResults.macDetection.macAddress || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border border-teal-200">
+                              <div className="text-sm text-teal-600 font-medium mb-1">Vendor</div>
+                              <div className="text-lg font-bold text-teal-800">{scanResults.macDetection.vendor || 'N/A'}</div>
+                            </div>
+                            <div className="bg-white rounded-lg p-4 shadow-sm border border-teal-200">
+                              <div className="text-sm text-teal-600 font-medium mb-1">Device Type</div>
+                              <div className="text-lg font-bold text-teal-800">{scanResults.macDetection.deviceType || 'N/A'}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Enhanced Security Recommendations */}
+                      <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-xl p-6 border-l-4 border-red-500 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4">
+                          <div className="bg-red-500 rounded-lg p-2">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                          </div>
+                          <h4 className="text-xl font-bold text-red-800">SECURITY RECOMMENDATIONS</h4>
+                        </div>
+                        <div className="space-y-3">
+                          {[
+                            { 
+                              icon: (
+                                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                                </svg>
+                              ), 
+                              text: 'Review open ports and close unnecessary services', 
+                              priority: 'High' 
+                            },
+                            { 
+                              icon: (
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                              ), 
+                              text: 'Update detected services to latest versions', 
+                              priority: 'High' 
+                            },
+                            { 
+                              icon: (
+                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                </svg>
+                              ), 
+                              text: 'Implement proper firewall rules', 
+                              priority: 'Medium' 
+                            },
+                            { 
+                              icon: (
+                                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                              ), 
+                              text: 'Monitor network traffic for anomalies', 
+                              priority: 'Medium' 
+                            },
+                            { 
+                              icon: (
+                                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                              ), 
+                              text: 'Regular security assessments recommended', 
+                              priority: 'Low' 
+                            }
+                          ].map((rec, index) => (
+                            <div key={index} className="bg-white rounded-lg p-4 shadow-sm border border-red-200 flex items-start space-x-3">
+                              <div className="flex-shrink-0 mt-1">{rec.icon}</div>
+                              <div className="flex-1">
+                                <div className="text-red-800 font-medium">{rec.text}</div>
+                                <div className="text-sm text-red-600 mt-1">
+                                  Priority: <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                                    rec.priority === 'High' ? 'bg-red-100 text-red-800' :
+                                    rec.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-green-100 text-green-800'
+                                  }`}>{rec.priority}</span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      {/* Enhanced Report Footer */}
+                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-6 border-t border-gray-200">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center space-x-2 mb-4">
+                            <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
+                              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
+                              </svg>
+                            </div>
+                            <span className="text-lg font-semibold text-gray-700">Report generated by Cyberix Security Scanner</span>
+                          </div>
+                          <div className="text-sm text-gray-600 mb-4">
+                            For detailed analysis and comprehensive data, download the complete PDF report
+                          </div>
+                          <div className="flex justify-center space-x-3">
+                            <button
+                              onClick={() => downloadResults('pdf')}
+                              className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold flex items-center space-x-2 transition-colors duration-200 shadow-lg hover:shadow-xl"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span>Download PDF</span>
+                            </button>
+                            <button
+                              onClick={() => downloadResults('html')}
+                              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold flex items-center space-x-2 transition-colors duration-200 shadow-lg hover:shadow-xl"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                              <span>Download HTML</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Debug Information - Show scan results structure */}
+              {/* {process.env.NODE_ENV === 'development' && scanResults && (
+                <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
+                  <h4 className="font-medium text-gray-900 mb-2">Debug Info - Scan Results Structure</h4>
+                  <div className="text-xs text-gray-600">
+                    <p>Scan Results Keys: {Object.keys(scanResults).join(', ')}</p>
+                    <p>Summary Type: {typeof scanResults.summary}</p>
+                    <p>Summary Keys: {scanResults.summary && typeof scanResults.summary === 'object' ? Object.keys(scanResults.summary).join(', ') : 'N/A'}</p>
+                    <p>Findings: {scanResults.findings ? 'Present' : 'Missing'}</p>
+                    <p>Findings Keys: {scanResults.findings ? Object.keys(scanResults.findings).join(', ') : 'N/A'}</p>
+                    <p>All Ports: {scanResults.findings?.allPorts ? scanResults.findings.allPorts.length : 0}</p>
+                    <p>Scan Stats: {JSON.stringify(scanStats)}</p>
+                  </div>
+                </div>
+              )} */}
 
               {/* Port Scan Results */}
               {scanResults.findings && scanResults.findings.allPorts && (
@@ -876,7 +1546,7 @@ function NetworkScanning() {
               )}
 
               {/* Debug Information */}
-              {process.env.NODE_ENV === 'development' && (
+              {/* {process.env.NODE_ENV === 'development' && (
                 <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
                   <h4 className="font-medium text-gray-900 mb-2">Debug Info</h4>
                   <div className="text-xs text-gray-600">
@@ -887,7 +1557,7 @@ function NetworkScanning() {
                     <p>Recommendations: {scanResults.recommendations ? scanResults.recommendations.length : 0}</p>
                   </div>
                 </div>
-              )}
+              )} */}
             </div>
           )}
         </div>

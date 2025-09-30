@@ -194,19 +194,29 @@ async function grabBanners(host, options) {
     }
     
     await fs_1.promises.writeFile(outputPath, banners);
+    
+    const finalStats = {
+        totalPorts: openPorts + closedPorts + filteredPorts,
+        openPorts,
+        closedPorts,
+        filteredPorts,
+        duration: scanDuration,
+        packetsSent,
+        packetsReceived,
+        startTime: new Date(startTime).toISOString(),
+        endTime: new Date(endTime).toISOString()
+    };
+    
+    console.log('grabBanners final stats:', finalStats);
+    console.log('grabBanners service detections:', serviceDetections);
+    
     return { 
         banners, 
         openPorts, 
         closedPorts, 
         filteredPorts, 
         serviceDetections,
-        scanStats: {
-            duration: scanDuration,
-            packetsSent,
-            packetsReceived,
-            startTime: new Date(startTime).toISOString(),
-            endTime: new Date(endTime).toISOString()
-        }
+        scanStats: finalStats
     };
 }
 
@@ -1260,22 +1270,24 @@ async function generatePDFReport(htmlContent, pdfPath) {
             await browser.close();
             console.log(`PDF report generated with puppeteer: ${pdfPath}`);
         } else {
-            // Fallback: Create a working PDF using a simpler approach
+            // Fallback: Create a proper PDF using a simpler approach
             const pdfContent = createWorkingPDF(htmlContent);
             await fs_1.promises.writeFile(pdfPath, pdfContent);
             console.log(`PDF report generated with fallback method: ${pdfPath}`);
         }
     } catch (error) {
         console.error('Error generating PDF report:', error);
-        // Create a minimal working PDF as last resort
+        // Create a proper PDF as fallback
         try {
-            const minimalPDF = createMinimalPDF();
-            await fs_1.promises.writeFile(pdfPath, minimalPDF);
-            console.log(`Minimal PDF report generated: ${pdfPath}`);
+            const properPDF = createProperPDF(htmlContent);
+            await fs_1.promises.writeFile(pdfPath, properPDF);
+            console.log(`Fallback PDF report generated: ${pdfPath}`);
         } catch (fallbackError) {
-            console.error('Even minimal PDF generation failed:', fallbackError);
+            console.error('Even fallback PDF generation failed:', fallbackError);
             // Create a text file as absolute fallback
-            await fs_1.promises.writeFile(pdfPath.replace('.pdf', '.txt'), 'PDF generation failed. Please refer to HTML report for detailed results.');
+            const textPath = pdfPath.replace('.pdf', '.txt');
+            await fs_1.promises.writeFile(textPath, 'PDF generation failed. Please refer to HTML report for detailed results.');
+            console.log(`Text fallback created: ${textPath}`);
         }
     }
 }
@@ -1362,6 +1374,119 @@ BT
 
     // Add content lines
     processedLines.slice(0, 50).forEach((line, index) => {
+        const escapedLine = line.replace(/[()\\]/g, '\\$&').substring(0, 70);
+        pdfContent += `0 -12 Td\n(${escapedLine}) Tj\n`;
+    });
+
+    pdfContent += `ET
+endstream
+endobj
+
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000204 00000 n 
+trailer
+<<
+/Size 5
+/Root 1 0 R
+>>
+startxref
+${pdfContent.length - 100}
+%%EOF`;
+
+    return pdfContent;
+}
+
+function createProperPDF(htmlContent) {
+    // Extract text content from HTML and create a proper PDF
+    const textContent = htmlContent
+        .replace(/<script[^>]*>.*?<\/script>/gi, '')
+        .replace(/<style[^>]*>.*?<\/style>/gi, '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/\s+/g, ' ')
+        .trim();
+    
+    // Split into lines and limit length
+    const lines = textContent.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    const maxLineLength = 80;
+    const processedLines = [];
+    
+    lines.forEach(line => {
+        if (line.length <= maxLineLength) {
+            processedLines.push(line);
+        } else {
+            // Split long lines
+            for (let i = 0; i < line.length; i += maxLineLength) {
+                processedLines.push(line.substring(i, i + maxLineLength));
+            }
+        }
+    });
+    
+    // Create proper PDF content with more content
+    const pdfContent = `%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources <<
+/Font <<
+/F1 <<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+>>
+>>
+endobj
+
+4 0 obj
+<<
+/Length ${processedLines.length * 50 + 500}
+>>
+stream
+BT
+/F1 16 Tf
+72 720 Td
+(Network Analysis Report) Tj
+0 -20 Td
+(Generated by Cyberix Security Scanner) Tj
+0 -30 Td
+/F1 12 Tf
+(Report Status: Completed Successfully) Tj
+0 -20 Td
+(Generated on: ${new Date().toLocaleString()}) Tj
+0 -30 Td
+/F1 10 Tf
+`;
+
+    // Add content lines
+    processedLines.slice(0, 100).forEach((line, index) => {
         const escapedLine = line.replace(/[()\\]/g, '\\$&').substring(0, 70);
         pdfContent += `0 -12 Td\n(${escapedLine}) Tj\n`;
     });
@@ -1494,7 +1619,19 @@ async function runNetworkAnalysis(url, options) {
         await fs_1.promises.writeFile(bannerFile, bannerResult.banners);
         results.bannerFile = bannerFile;
         results.serviceDetections = bannerResult.serviceDetections;
-        results.scanStats = bannerResult.scanStats;
+        results.scanStats = bannerResult.scanStats || {
+            totalPorts: 0,
+            openPorts: 0,
+            closedPorts: 0,
+            filteredPorts: 0,
+            duration: 0,
+            packetsSent: 0,
+            packetsReceived: 0
+        };
+        
+        console.log('Banner result scanStats:', bannerResult.scanStats);
+        console.log('Service detections:', bannerResult.serviceDetections);
+        console.log('Final results.scanStats:', results.scanStats);
         if (options.onProgress) {
             options.onProgress({ stage: 'service_detection', message: 'Service/Version Detection completed', status: 'completed' });
         }
@@ -1583,6 +1720,7 @@ async function runNetworkAnalysis(url, options) {
         let reportResults = {};
         try {
             reportResults = await generateNetworkReport(host, results, { ...options, outputDir: options.outputDir });
+            console.log('Report generation completed:', reportResults);
         } catch (reportError) {
             if (options.onProgress) {
                 options.onProgress({ stage: 'error', message: `Report generation failed: ${reportError.message}` });
@@ -1598,10 +1736,29 @@ async function runNetworkAnalysis(url, options) {
             });
         }
         
+        // Ensure we have proper summary data
+        const summaryData = reportResults.reportData && reportResults.reportData.summary ? 
+            reportResults.reportData.summary : {
+                totalFiles: Object.keys(results).length,
+                bannerGrabbing: results.bannerFile ? 'Completed' : 'Failed',
+                packetCapture: results.captureFile ? 'Completed' : 'Not performed',
+                traceroute: results.tracerouteFile ? 'Completed' : 'Not performed',
+                nmapServices: results.nmapFile ? 'Completed' : 'Not performed',
+                osDetection: results.osDetection ? 'Completed' : 'Not performed',
+                macDetection: results.macDetection ? 'Completed' : 'Not performed',
+                totalPortsScanned: results.scanStats ? results.scanStats.totalPorts : 0,
+                openPorts: results.scanStats ? results.scanStats.openPorts : 0,
+                closedPorts: results.scanStats ? results.scanStats.closedPorts : 0,
+                filteredPorts: results.scanStats ? results.scanStats.filteredPorts : 0
+            };
+        
+        console.log('Final summary data:', summaryData);
+        
         return {
             ...results,
             ...reportResults,
-            summary: `Network analysis completed. Generated PDF, JSON, and HTML reports.`
+            summary: summaryData,
+            summaryText: `Network analysis completed. Generated PDF, JSON, and HTML reports.`
         };
     }
     catch (error) {

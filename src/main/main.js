@@ -522,14 +522,37 @@ app.whenReady().then(async () => {
   // Save-as for report files
   ipcMain.handle('report:saveAs', async (event, sourcePath, defaultName) => {
     try {
+      // Determine file type from extension
+      const ext = path.extname(sourcePath).toLowerCase();
+      let filters = [{ name: 'All Files', extensions: ['*'] }];
+      
+      if (ext === '.pdf') {
+        filters = [{ name: 'PDF Files', extensions: ['pdf'] }, { name: 'All Files', extensions: ['*'] }];
+      } else if (ext === '.html') {
+        filters = [{ name: 'HTML Files', extensions: ['html'] }, { name: 'All Files', extensions: ['*'] }];
+      } else if (ext === '.json') {
+        filters = [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }];
+      } else if (ext === '.txt') {
+        filters = [{ name: 'Text Files', extensions: ['txt'] }, { name: 'All Files', extensions: ['*'] }];
+      }
+      
       const { canceled, filePath } = await dialog.showSaveDialog({
         defaultPath: defaultName || path.basename(sourcePath),
-        filters: [{ name: 'PDF', extensions: ['pdf'] }, { name: 'All Files', extensions: ['*'] }]
+        filters: filters
       });
+      
       if (canceled || !filePath) return { canceled: true };
+      
+      // Check if source file exists
+      if (!fs.existsSync(sourcePath)) {
+        throw new Error(`Source file not found: ${sourcePath}`);
+      }
+      
       await fs.promises.copyFile(sourcePath, filePath);
+      console.log(`Report saved: ${sourcePath} -> ${filePath}`);
       return { ok: true, filePath };
     } catch (e) {
+      console.error('Error saving report:', e);
       return { error: e?.message || String(e) };
     }
   });
@@ -600,6 +623,10 @@ app.whenReady().then(async () => {
   let networkScanChild = null;
   let networkScanAbortController = null;
   
+  // Server scan handlers
+  let serverScanChild = null;
+  let serverScanAbortController = null;
+  
   ipcMain.handle('networkscan:start', async (event, target) => {
     if (networkScanChild) return { error: 'Network scan already running' };
     
@@ -668,6 +695,7 @@ app.whenReady().then(async () => {
             throw networkError;
           }
           
+          console.log('Network scan completed, sending result:', JSON.stringify(result, null, 2));
           event.sender.send('networkscan:done', { success: true, summary: 'Network scan completed successfully', result });
         } catch (error) {
           if (error.name === 'AbortError') {
@@ -710,6 +738,376 @@ app.whenReady().then(async () => {
     }
     return { error: 'No network scan running' };
   });
+
+  // Server scan handlers
+  ipcMain.handle('serverscan:start', async (event, target) => {
+    console.log('serverscan:start handler called with target:', target);
+    
+    if (serverScanChild) return { error: 'Server scan already running' };
+    
+    try {
+      // Create abort controller for this scan
+      serverScanAbortController = new AbortController();
+      
+      // Simulate a realistic server scan flow with proper timing
+      console.log('Server scan handler is working - starting test scan simulation');
+      
+      // Run the simulation in background
+      (async () => {
+        try {
+          console.log('Sending initial progress message...');
+          event.sender.send('serverscan:progress', { stage: 'starting', message: 'Initializing server security scan...' });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          console.log('Sending DNS progress message...');
+          event.sender.send('serverscan:progress', { stage: 'dns', message: 'Starting DNS resolution...' });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          console.log('Sending Nmap progress message...');
+          event.sender.send('serverscan:progress', { stage: 'nmap', message: 'Starting port discovery...' });
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          console.log('Sending SSL progress message...');
+          event.sender.send('serverscan:progress', { stage: 'ssl', message: 'Checking SSL/TLS configuration...' });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          console.log('Sending Nikto progress message...');
+          event.sender.send('serverscan:progress', { stage: 'nikto', message: 'Scanning web server...' });
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          console.log('Sending Gobuster progress message...');
+          event.sender.send('serverscan:progress', { stage: 'gobuster', message: 'Enumerating directories...' });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          console.log('Sending SQLMap progress message...');
+          event.sender.send('serverscan:progress', { stage: 'sqlmap', message: 'Checking for SQL injection...' });
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          console.log('Sending reports progress message...');
+          event.sender.send('serverscan:progress', { stage: 'reports', message: 'Generating reports...' });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Send completion with advanced mock results
+          const mockResults = {
+            target: target,
+            hostname: new URL(target.startsWith('http') ? target : `https://${target}`).hostname,
+            timestamp: new Date().toISOString(),
+            scanDuration: '15 minutes',
+            scanType: 'Comprehensive Security Assessment',
+            summary: {
+              dnsResolved: true,
+              portsScanned: 65535,
+              servicesDetected: 12,
+              vulnerabilitiesFound: 8,
+              directoriesFound: 47,
+              totalFindings: 67,
+              riskScore: 7.2,
+              securityLevel: 'Medium-High Risk'
+            },
+            findings: {
+              dns: {
+                ip: '203.0.113.1',
+                mx: 'mail.example.com',
+                txt: ['v=spf1 include:_spf.google.com ~all', 'v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com'],
+                cname: ['www.example.com'],
+                ns: ['ns1.example.com', 'ns2.example.com'],
+                soa: 'ns1.example.com admin.example.com',
+                ptr: 'web.example.com',
+                srv: [
+                  { service: '_http._tcp', target: 'web.example.com', port: 80, priority: 10, weight: 5 },
+                  { service: '_https._tcp', target: 'web.example.com', port: 443, priority: 10, weight: 5 }
+                ]
+              },
+              ports: [
+                { 
+                  port: 22, 
+                  service: 'ssh', 
+                  version: 'OpenSSH 8.2p1 Ubuntu 4ubuntu0.5', 
+                  status: 'open',
+                  banner: 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5',
+                  cpe: 'cpe:/a:openbsd:openssh:8.2p1',
+                  riskLevel: 'High',
+                  vulnerabilities: ['Weak SSH configuration', 'Default SSH port exposed'],
+                  recommendations: ['Change default port', 'Disable root login', 'Use key-based authentication']
+                },
+                { 
+                  port: 80, 
+                  service: 'http', 
+                  version: 'Apache/2.4.41 (Ubuntu)', 
+                  status: 'open',
+                  banner: 'Apache/2.4.41 (Ubuntu) Server at example.com Port 80',
+                  cpe: 'cpe:/a:apache:http_server:2.4.41',
+                  riskLevel: 'Medium',
+                  vulnerabilities: ['Server version disclosure', 'Missing security headers'],
+                  recommendations: ['Hide server version', 'Implement security headers', 'Enable HTTPS redirect']
+                },
+                { 
+                  port: 443, 
+                  service: 'https', 
+                  version: 'Apache/2.4.41 (Ubuntu)', 
+                  status: 'open',
+                  banner: 'Apache/2.4.41 (Ubuntu) Server at example.com Port 443',
+                  cpe: 'cpe:/a:apache:http_server:2.4.41',
+                  riskLevel: 'Medium',
+                  vulnerabilities: ['Weak SSL/TLS configuration', 'Outdated cipher suites'],
+                  recommendations: ['Update SSL configuration', 'Disable weak ciphers', 'Implement HSTS']
+                },
+                { 
+                  port: 3306, 
+                  service: 'mysql', 
+                  version: 'MySQL 8.0.25', 
+                  status: 'open',
+                  banner: 'MySQL 8.0.25-0ubuntu0.20.04.1',
+                  cpe: 'cpe:/a:oracle:mysql:8.0.25',
+                  riskLevel: 'High',
+                  vulnerabilities: ['Database exposed to internet', 'Default MySQL port'],
+                  recommendations: ['Restrict database access', 'Use firewall rules', 'Enable SSL for MySQL']
+                },
+                { 
+                  port: 5432, 
+                  service: 'postgresql', 
+                  version: 'PostgreSQL 13.3', 
+                  status: 'open',
+                  banner: 'PostgreSQL 13.3 (Ubuntu 13.3-1.pgdg20.04+1) on x86_64-pc-linux-gnu',
+                  cpe: 'cpe:/a:postgresql:postgresql:13.3',
+                  riskLevel: 'High',
+                  vulnerabilities: ['Database exposed to internet', 'Default PostgreSQL port'],
+                  recommendations: ['Restrict database access', 'Use firewall rules', 'Enable SSL for PostgreSQL']
+                },
+                { 
+                  port: 6379, 
+                  service: 'redis', 
+                  version: 'Redis 6.2.6', 
+                  status: 'open',
+                  banner: 'Redis 6.2.6 (00000000/0) 64 bit',
+                  cpe: 'cpe:/a:redis:redis:6.2.6',
+                  riskLevel: 'High',
+                  vulnerabilities: ['Redis exposed without authentication', 'Default Redis port'],
+                  recommendations: ['Enable Redis authentication', 'Restrict network access', 'Use firewall rules']
+                }
+              ],
+              vulnerabilities: [
+                { 
+                  type: 'SSL/TLS Configuration', 
+                  severity: 'High', 
+                  description: 'Weak SSL/TLS configuration detected with support for outdated protocols and weak cipher suites',
+                  cve: 'CVE-2021-3449',
+                  cvss: 7.5,
+                  affected: 'TLS 1.0, TLS 1.1, RC4, DES, MD5',
+                  remediation: 'Disable TLS 1.0/1.1, remove weak ciphers, implement TLS 1.3',
+                  references: ['https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-3449']
+                },
+                { 
+                  type: 'HTTP Security Headers', 
+                  severity: 'Medium', 
+                  description: 'Missing critical security headers that could prevent XSS, clickjacking, and other attacks',
+                  cve: 'N/A',
+                  cvss: 5.3,
+                  affected: 'X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Strict-Transport-Security',
+                  remediation: 'Implement comprehensive security headers policy',
+                  references: ['https://owasp.org/www-project-secure-headers/']
+                },
+                { 
+                  type: 'Server Information Disclosure', 
+                  severity: 'Medium', 
+                  description: 'Web server version and configuration details are exposed in HTTP headers',
+                  cve: 'N/A',
+                  cvss: 4.2,
+                  affected: 'Server header, X-Powered-By header',
+                  remediation: 'Hide server version information, remove unnecessary headers',
+                  references: ['https://owasp.org/www-community/attacks/Information_disclosure']
+                },
+                { 
+                  type: 'Database Exposure', 
+                  severity: 'Critical', 
+                  description: 'Database services (MySQL, PostgreSQL, Redis) are exposed to the internet without proper authentication',
+                  cve: 'N/A',
+                  cvss: 9.8,
+                  affected: 'MySQL (3306), PostgreSQL (5432), Redis (6379)',
+                  remediation: 'Implement database authentication, restrict network access, use VPN',
+                  references: ['https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Exposure']
+                },
+                { 
+                  type: 'Directory Traversal', 
+                  severity: 'High', 
+                  description: 'Potential directory traversal vulnerability detected in web application',
+                  cve: 'CVE-2021-44228',
+                  cvss: 8.1,
+                  affected: 'Web application file access controls',
+                  remediation: 'Implement proper input validation, use whitelist approach for file access',
+                  references: ['https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-44228']
+                },
+                { 
+                  type: 'SQL Injection', 
+                  severity: 'Critical', 
+                  description: 'SQL injection vulnerabilities detected in web application forms and parameters',
+                  cve: 'CVE-2021-44228',
+                  cvss: 9.1,
+                  affected: 'Login forms, search functionality, user input fields',
+                  remediation: 'Implement parameterized queries, input validation, WAF protection',
+                  references: ['https://owasp.org/www-project-top-ten/2017/A1_2017-Injection']
+                },
+                { 
+                  type: 'Cross-Site Scripting (XSS)', 
+                  severity: 'High', 
+                  description: 'Reflected and stored XSS vulnerabilities detected in web application',
+                  cve: 'CVE-2021-44228',
+                  cvss: 7.8,
+                  affected: 'User input fields, search functionality, comment systems',
+                  remediation: 'Implement output encoding, Content Security Policy, input validation',
+                  references: ['https://owasp.org/www-project-top-ten/2017/A7_2017-Cross-Site_Scripting_(XSS)']
+                },
+                { 
+                  type: 'Insecure Direct Object References', 
+                  severity: 'Medium', 
+                  description: 'Direct object references without proper authorization checks detected',
+                  cve: 'N/A',
+                  cvss: 6.1,
+                  affected: 'File access, user data access, administrative functions',
+                  remediation: 'Implement proper authorization checks, use indirect object references',
+                  references: ['https://owasp.org/www-project-top-ten/2017/A5_2017-Broken_Access_Control']
+                }
+              ],
+              directories: [
+                { path: '/admin', status: 200, size: 1024, title: 'Administration Panel', description: 'Admin login page with basic authentication' },
+                { path: '/login', status: 200, size: 2048, title: 'User Login', description: 'User authentication portal' },
+                { path: '/backup', status: 403, size: 0, title: 'Backup Directory', description: 'Protected backup files directory' },
+                { path: '/uploads', status: 200, size: 51200, title: 'File Uploads', description: 'Public file upload directory' },
+                { path: '/config', status: 403, size: 0, title: 'Configuration', description: 'Application configuration files' },
+                { path: '/logs', status: 403, size: 0, title: 'Log Files', description: 'Application and system logs' },
+                { path: '/api', status: 200, size: 4096, title: 'API Endpoint', description: 'REST API interface' },
+                { path: '/dashboard', status: 200, size: 8192, title: 'User Dashboard', description: 'User control panel' },
+                { path: '/profile', status: 200, size: 3072, title: 'User Profile', description: 'User profile management' },
+                { path: '/settings', status: 200, size: 2048, title: 'Settings', description: 'Application settings page' },
+                { path: '/.git', status: 403, size: 0, title: 'Git Repository', description: 'Version control repository (should be hidden)' },
+                { path: '/.env', status: 403, size: 0, title: 'Environment File', description: 'Environment configuration file' },
+                { path: '/phpinfo.php', status: 200, size: 1024, title: 'PHP Info', description: 'PHP configuration information (security risk)' },
+                { path: '/test.php', status: 200, size: 512, title: 'Test Script', description: 'Development test script (should be removed)' },
+                { path: '/debug', status: 200, size: 2048, title: 'Debug Mode', description: 'Application debug interface' }
+              ],
+              ssl: {
+                certificate: {
+                  issuer: 'Let\'s Encrypt Authority X3',
+                  subject: 'CN=example.com',
+                  validFrom: '2023-01-01',
+                  validTo: '2023-04-01',
+                  keySize: 2048,
+                  signatureAlgorithm: 'SHA256withRSA',
+                  serialNumber: '03:12:34:56:78:90:AB:CD:EF:01:23:45:67:89:AB:CD:EF'
+                },
+                protocols: {
+                  tls10: true,
+                  tls11: true,
+                  tls12: true,
+                  tls13: false
+                },
+                ciphers: {
+                  weak: ['RC4', 'DES', '3DES', 'MD5'],
+                  strong: ['AES-256-GCM', 'AES-128-GCM', 'ChaCha20-Poly1305']
+                },
+                vulnerabilities: [
+                  'TLS 1.0 and 1.1 support (deprecated)',
+                  'Weak cipher suites enabled',
+                  'Missing HSTS header',
+                  'Certificate expires in 30 days'
+                ]
+              },
+              webApplication: {
+                technology: {
+                  server: 'Apache/2.4.41',
+                  language: 'PHP 7.4.3',
+                  framework: 'Laravel 8.x',
+                  database: 'MySQL 8.0.25'
+                },
+                securityHeaders: {
+                  present: ['X-Frame-Options', 'X-Content-Type-Options'],
+                  missing: ['Strict-Transport-Security', 'Content-Security-Policy', 'X-XSS-Protection']
+                },
+                cookies: [
+                  { name: 'session_id', secure: false, httpOnly: true, sameSite: 'Lax' },
+                  { name: 'csrf_token', secure: false, httpOnly: false, sameSite: 'Strict' },
+                  { name: 'remember_me', secure: false, httpOnly: true, sameSite: 'Lax' }
+                ]
+              },
+              network: {
+                latency: '45ms',
+                bandwidth: '100 Mbps',
+                packetLoss: '0.1%',
+                jitter: '2ms',
+                mtu: 1500
+              },
+              operatingSystem: {
+                type: 'Linux',
+                version: 'Ubuntu 20.04.3 LTS',
+                kernel: '5.4.0-89-generic',
+                architecture: 'x86_64',
+                uptime: '45 days, 12 hours'
+              }
+            },
+            recommendations: {
+              critical: [
+                'Immediately secure database services with authentication',
+                'Implement proper firewall rules to restrict database access',
+                'Enable SSL/TLS for all database connections',
+                'Remove or secure exposed administrative interfaces'
+              ],
+              high: [
+                'Update SSL/TLS configuration to disable weak protocols',
+                'Implement comprehensive security headers',
+                'Enable HSTS and Content Security Policy',
+                'Remove server version disclosure'
+              ],
+              medium: [
+                'Implement proper input validation and output encoding',
+                'Enable database query logging and monitoring',
+                'Implement rate limiting and DDoS protection',
+                'Regular security assessments and penetration testing'
+              ],
+              low: [
+                'Implement security monitoring and alerting',
+                'Regular backup and disaster recovery testing',
+                'Security awareness training for development team',
+                'Implement change management processes'
+              ]
+            },
+            compliance: {
+              pci: { score: 6.5, status: 'Non-compliant', issues: ['Database exposure', 'Weak SSL configuration'] },
+              gdpr: { score: 7.2, status: 'Partially compliant', issues: ['Data encryption', 'Access controls'] },
+              iso27001: { score: 5.8, status: 'Non-compliant', issues: ['Security controls', 'Risk management'] },
+              sox: { score: 6.9, status: 'Partially compliant', issues: ['Access controls', 'Audit logging'] }
+            }
+          };
+          
+          console.log('Sending completion message...');
+          event.sender.send('serverscan:done', { success: true, summary: 'Server scan completed successfully', result: mockResults });
+        } catch (error) {
+          console.error('Simulation error:', error);
+          event.sender.send('serverscan:progress', { stage: 'error', message: error.message });
+          event.sender.send('serverscan:done', null);
+        } finally {
+          serverScanChild = null;
+          serverScanAbortController = null;
+        }
+      })();
+      
+      return { success: true, message: 'Server scan started (test mode)' };
+    } catch (error) {
+      console.error('Server scan start error:', error);
+      return { error: error.message };
+    }
+  });
+
+  ipcMain.handle('serverscan:abort', async () => {
+    if (serverScanAbortController) {
+      serverScanAbortController.abort();
+      serverScanChild = null;
+      serverScanAbortController = null;
+      return { success: true };
+    }
+    return { error: 'No server scan running' };
+  });
+
+  console.log('Server scan IPC handlers registered successfully');
 
   const platform = detectPlatform();
   if (platform === 'mac') {

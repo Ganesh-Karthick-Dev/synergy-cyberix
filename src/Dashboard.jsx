@@ -9,6 +9,7 @@ import UserManagement from './components/UserManagement'
 import SettingsPanel from './components/SettingsPanel'
 import NetworkScanning from './components/NetworkScanning'
 import PortScanning from './components/PortScanning'
+import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
 
 function Dashboard({ onLogout }) {
@@ -50,6 +51,15 @@ function Dashboard({ onLogout }) {
           icon: (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          )
+        },
+        {
+          id: 'server-scan',
+          name: 'Server-level Scanning',
+          icon: (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
             </svg>
           )
         }
@@ -111,6 +121,8 @@ function Dashboard({ onLogout }) {
         return <NetworkScanning />
       case 'port-scan':
         return <PortScanning />
+      case 'server-scan':
+        return <ServerScanning />
       case 'security':
         return <SecurityCenter />
       case 'threats':

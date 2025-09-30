@@ -42,57 +42,31 @@ function emitProgress(onProgress, stage, message) {
 // JavaScript fallback port scanner for reliability
 async function fallbackPortScan(host, options) {
     const { onProgress, timeout = 5000 } = options;
-    emitProgress(onProgress, 'scanning', `Starting comprehensive port scan for ${host}`);
-    // Extended list of common ports to scan
+    emitProgress(onProgress, 'scanning', `Starting JavaScript fallback port scan for ${host}`);
+    // Common ports to scan
     const commonPorts = [
-        21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1723, 3306, 3389, 5900, 8080,
-        20, 69, 79, 88, 110, 123, 135, 137, 138, 161, 162, 389, 636, 993, 995, 1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080, 8443, 8888, 9000, 9090, 10000
+        21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 993, 995, 1723, 3306, 3389, 5900, 8080
     ];
     const findings = [];
-    let openPorts = 0;
-    let closedPorts = 0;
-    let filteredPorts = 0;
-    
     for (const port of commonPorts) {
         emitProgress(onProgress, 'scanning', `Checking port ${port} on ${host}`);
         try {
-            const result = await checkPortWithStatus(host, port, timeout);
-            const service = getServiceName(port);
-            
-            findings.push({
-                port,
-                protocol: 'tcp',
-                state: result.status,
-                service: result.status === 'open' ? service : 'unknown'
-            });
-            
-            // Update counters
-            if (result.status === 'open') {
-                openPorts++;
+            const isOpen = await checkPort(host, port, timeout);
+            if (isOpen) {
+                const service = getServiceName(port);
+                findings.push({
+                    port,
+                    protocol: 'tcp',
+                    state: 'open',
+                    service
+                });
                 emitProgress(onProgress, 'scanning', `Port ${port} is open (${service})`);
-            } else if (result.status === 'closed') {
-                closedPorts++;
-                emitProgress(onProgress, 'scanning', `Port ${port} is closed`);
-            } else {
-                filteredPorts++;
-                emitProgress(onProgress, 'scanning', `Port ${port} is filtered`);
             }
         }
         catch (error) {
-            // Add as filtered if there's an error
-            findings.push({
-                port,
-                protocol: 'tcp',
-                state: 'filtered',
-                service: 'unknown'
-            });
-            filteredPorts++;
-            emitProgress(onProgress, 'scanning', `Port ${port} is filtered (timeout/error)`);
+            // Continue with next port
         }
     }
-    
-    emitProgress(onProgress, 'scanning', `Scan completed: ${openPorts} open, ${closedPorts} closed, ${filteredPorts} filtered`);
-    
     // Generate Nmap-like XML output
     const xmlOutput = generateNmapXml(host, findings);
     return {
@@ -118,36 +92,6 @@ async function checkPort(host, port, timeout) {
             socket.destroy();
             resolve(false);
         });
-        socket.connect(port, host);
-    });
-}
-
-// Check port with detailed status (open, closed, filtered)
-async function checkPortWithStatus(host, port, timeout) {
-    return new Promise((resolve) => {
-        const socket = new net_1.default.Socket();
-        socket.setTimeout(timeout);
-        
-        socket.on('connect', () => {
-            socket.destroy();
-            resolve({ status: 'open', responseTime: Date.now() });
-        });
-        
-        socket.on('timeout', () => {
-            socket.destroy();
-            resolve({ status: 'filtered', responseTime: Date.now() });
-        });
-        
-        socket.on('error', (error) => {
-            socket.destroy();
-            // Differentiate between closed and filtered based on error type
-            if (error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET') {
-                resolve({ status: 'closed', responseTime: Date.now() });
-            } else {
-                resolve({ status: 'filtered', responseTime: Date.now() });
-            }
-        });
-        
         socket.connect(port, host);
     });
 }

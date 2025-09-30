@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   onNetworkScanProgress: (listener) => ipcRenderer.on('networkscan:progress', (_e, upd) => listener(upd)),
   onNetworkScanDone: (listener) => ipcRenderer.once('networkscan:done', (_e, data) => listener(data)),
   abortNetworkScan: () => ipcRenderer.invoke('networkscan:abort'),
+  // Server scan
+  startServerScan: (target) => ipcRenderer.invoke('serverscan:start', target),
+  onServerScanProgress: (listener) => ipcRenderer.on('serverscan:progress', (_e, upd) => listener(upd)),
+  onServerScanDone: (listener) => ipcRenderer.once('serverscan:done', (_e, data) => listener(data)),
+  abortServerScan: () => ipcRenderer.invoke('serverscan:abort'),
   // Save report
   saveReportAs: (sourcePath, defaultName) => ipcRenderer.invoke('report:saveAs', sourcePath, defaultName),
   checkKali: () => ipcRenderer.invoke('kali:check'),

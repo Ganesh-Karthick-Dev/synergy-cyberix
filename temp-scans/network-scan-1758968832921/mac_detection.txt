@@ -1,0 +1,16 @@
+MAC Address Detection Results for webnox.in
+Detection started at: 2025-09-27T10:30:20.681Z
+==================================================
+
+MAC ADDRESS DETECTED:
+==============================
+MAC Address: 00:11:22:33:44:55
+Vendor: Intel Corporation
+Device Type: Network Interface Card
+Detection Method: ARP Table Lookup
+
+VENDOR INFORMATION:
+==============================
+Company: Intel Corporation
+OUI: 00:11:22
+Country: United States
