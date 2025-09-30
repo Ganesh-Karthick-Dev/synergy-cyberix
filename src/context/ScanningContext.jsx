@@ -23,7 +23,7 @@ export const ScanningProvider = ({ children }) => {
   const [scanProgress, setScanProgress] = useState([])
 
   useEffect(() => {
-    if (window.cyberGuard) {
+    if (typeof window !== 'undefined' && window.cyberGuard) {
       // Network scan listeners
       window.cyberGuard.onNetworkScanProgress((update) => {
         setScanStatus(prev => ({
@@ -86,7 +86,7 @@ export const ScanningProvider = ({ children }) => {
 
   const startNetworkScan = async (target) => {
     try {
-      if (window.cyberGuard) {
+      if (typeof window !== 'undefined' && window.cyberGuard) {
         setScanStatus({
           isScanning: true,
           scanType: 'Network Scan',
@@ -113,7 +113,7 @@ export const ScanningProvider = ({ children }) => {
 
   const startPortScan = async (target) => {
     try {
-      if (window.cyberGuard) {
+      if (typeof window !== 'undefined' && window.cyberGuard) {
         setScanStatus({
           isScanning: true,
           scanType: 'Port Scan',
@@ -140,7 +140,7 @@ export const ScanningProvider = ({ children }) => {
 
   const abortScan = async () => {
     try {
-      if (window.cyberGuard) {
+      if (typeof window !== 'undefined' && window.cyberGuard) {
         if (scanStatus.scanType === 'Network Scan') {
           await window.cyberGuard.abortNetworkScan()
         }

@@ -1,20 +1,24 @@
 import { useState } from 'react'
 import "./index.css"
-import Dashboard from './Dashboard'
+import Dashboard from './Dashboard.jsx'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
+  console.log('AppContent rendering...')
   const { showError, showSuccess, showLoading, dismissToast } = useToast()
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     rememberMe: false
   })
+  
   const [isLoading, setIsLoading] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentToastId, setCurrentToastId] = useState(null)
+
+  console.log('AppContent state:', { isAuthenticated, isLoading })
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -204,13 +208,25 @@ const AppContent = () => {
 }
 
 function App() {
-  return (
-    <ToastProvider>
-      <ScanningProvider>
-        <AppContent />
-      </ScanningProvider>
-    </ToastProvider>
-  )
+  try {
+    return (
+      <ToastProvider>
+        <ScanningProvider>
+          <AppContent />
+        </ScanningProvider>
+      </ToastProvider>
+    )
+  } catch (error) {
+    console.error('App Error:', error)
+    return (
+      <div className="min-h-screen bg-red-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold text-red-900 mb-4">Error</h1>
+          <p className="text-red-600">App failed to load: {error.message}</p>
+        </div>
+      </div>
+    )
+  }
 }
 
 export default App

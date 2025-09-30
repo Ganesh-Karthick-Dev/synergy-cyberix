@@ -13,7 +13,7 @@ function checkKaliInstalled() {
   try {
     const sp = require('child_process').spawnSync('wsl', ['--status'], { 
       encoding: 'utf8',
-      timeout: 10000 // 10 second timeout
+      timeout: 5000 // Reduced timeout
     });
     
     if (sp.status === 0) {
@@ -35,6 +35,11 @@ function checkKaliInstalled() {
     } else {
       console.log('WSL --status command failed with status:', sp.status);
       console.log('WSL stderr:', sp.stderr);
+      // If WSL is not properly configured, don't try other methods
+      if (sp.stderr && sp.stderr.includes('not supported with your current machine configuration')) {
+        console.log('WSL not properly configured - skipping further checks');
+        return false;
+      }
     }
   } catch (e) {
     console.log('Kali check error (method 1 - wsl --status):', e.message);
@@ -157,7 +162,7 @@ async function installKaliLinux() {
   });
 }
 
-function createMainWindow() {
+async function createMainWindow() {
   const iconPath = path.join(__dirname, '..', 'assets', 'Cybersecurity research-02.ico');
 
   const mainWindow = new BrowserWindow({
@@ -184,8 +189,49 @@ function createMainWindow() {
 
   // In development, load from Vite dev server
   if (isDev) {
-    mainWindow.loadURL('http://localhost:6969/')
+    // Try multiple ports that Vite might use
+    const ports = [6977, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6978, 5173, 3000];
+    let loaded = false;
+    
+    for (const port of ports) {
+      try {
+        const url = `http://localhost:${port}/`;
+        console.log(`Trying to load from: ${url}`);
+        await mainWindow.loadURL(url);
+        loaded = true;
+        console.log(`✅ Successfully loaded from port ${port}`);
+        break;
+      } catch (error) {
+        console.log(`❌ Failed to load from port ${port}:`, error.message);
+        continue;
+      }
+    }
+    
+    if (!loaded) {
+      console.log('❌ Failed to load from any port, showing error page');
+      mainWindow.loadURL(`data:text/html,
+        <html>
+          <head><title>Cyberix - Loading Error</title></head>
+          <body style="font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white;">
+            <h1>🚨 Cyberix Loading Error</h1>
+            <p>The development server could not be found. Please ensure:</p>
+            <ul>
+              <li>Run <code>npm run dev</code> in a separate terminal</li>
+              <li>The Vite server is running on one of these ports: ${ports.join(', ')}</li>
+              <li>Check the terminal for the correct port number</li>
+            </ul>
+            <p><strong>Current time:</strong> ${new Date().toLocaleString()}</p>
+            <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Retry</button>
+          </body>
+        </html>
+      `);
+    }
+    
     mainWindow.webContents.openDevTools({ mode: 'detach' });
+    // Force reload to see any console errors
+    mainWindow.webContents.once('did-finish-load', () => {
+      console.log('Page loaded, checking for errors...');
+    });
   } else {
     const indexFile = path.join(__dirname, '..', 'renderer', 'index.html');
     mainWindow.loadFile(indexFile);
@@ -196,8 +242,9 @@ function createMainWindow() {
     console.error('Failed to load:', errorDescription)
     if (isDev) {
       setTimeout(() => {
-        console.log('Attempting to reload...')
-        mainWindow.loadURL('http://localhost:6969/')
+        console.log('Attempting to reload from current Vite port...')
+        // Try to reload from the current Vite port (6977 based on terminal output)
+        mainWindow.loadURL('http://localhost:6977/')
       }, 1000)
     }
   })
@@ -206,7 +253,7 @@ function createMainWindow() {
 }
 
 app.whenReady().then(async () => {
-  const win = createMainWindow();
+  const win = await createMainWindow();
 
   // IPC: expose OS helpers
   ipcMain.handle('os:getPlatform', async () => detectPlatform());
@@ -1122,41 +1169,66 @@ app.whenReady().then(async () => {
 
   // Check and automatically handle Kali Linux installation on Windows
   if (platform === 'windows') {
-    const hasWsl = await checkWslInstalled();
-    if (hasWsl) {
-      // Update status to show we're checking
-      win.webContents.executeJavaScript("document.getElementById('kali-status').textContent = '🔍 Checking Kali Linux...';");
+    try {
+      const hasWsl = await checkWslInstalled();
+      console.log('WSL check result:', hasWsl);
       
-      const kaliInstalled = checkKaliInstalled();
-      if (kaliInstalled) {
-        // Kali is installed - show success status
-        win.webContents.executeJavaScript(`
-          document.getElementById('kali-status').textContent = '✅ Kali Linux is installed';
-          document.getElementById('kali-status').style.color = '#10b981';
-          document.getElementById('install-kali-btn').style.display = 'none';
-        `);
-        console.log('✅ Kali Linux is already installed and detected');
-      } else {
-        // Kali is not installed - show status and offer automatic installation
-        win.webContents.executeJavaScript(`
-          document.getElementById('kali-status').textContent = '❌ Kali Linux is not installed';
-          document.getElementById('kali-status').style.color = '#ef4444';
-          document.getElementById('install-kali-btn').style.display = 'inline-block';
-        `);
+      if (hasWsl) {
+        console.log('WSL is installed, checking Kali Linux...');
+        const kaliInstalled = checkKaliInstalled();
+        console.log('Kali check result:', kaliInstalled);
         
-        // Show installation popup after a short delay
-        setTimeout(async () => {
-          const installKali = await dialog.showMessageBox(win, {
-            type: 'question',
-            title: '🔧 Kali Linux Installation',
-            message: 'Kali Linux is not installed in WSL.',
-            detail: 'Kali Linux provides the best security tools for penetration testing including nmap, nikto, and other professional tools.\n\nWould you like to install it now? This will:\n• Download Kali Linux (about 1-2 GB)\n• Install it in WSL\n• Set up security tools automatically\n\nNote: You will be prompted for administrator access.',
-            buttons: ['🚀 Install Kali Linux', '⏭️ Skip for Now'],
-            defaultId: 0,
-            cancelId: 1
+        if (kaliInstalled) {
+          console.log('✅ Kali Linux is already installed and detected');
+          // Wait for the page to load before updating UI
+          win.webContents.once('did-finish-load', () => {
+            try {
+              win.webContents.executeJavaScript(`
+                if (document.getElementById('kali-status')) {
+                  document.getElementById('kali-status').textContent = '✅ Kali Linux is installed';
+                  document.getElementById('kali-status').style.color = '#10b981';
+                  if (document.getElementById('install-kali-btn')) {
+                    document.getElementById('install-kali-btn').style.display = 'none';
+                  }
+                }
+              `);
+            } catch (jsError) {
+              console.log('Could not update kali-status element:', jsError.message);
+            }
           });
-        
-        if (installKali.response === 0) {
+        } else {
+          console.log('Kali Linux not installed, but WSL is available');
+          // Wait for the page to load before updating UI
+          win.webContents.once('did-finish-load', () => {
+            try {
+              win.webContents.executeJavaScript(`
+                if (document.getElementById('kali-status')) {
+                  document.getElementById('kali-status').textContent = '⚠️ WSL available, Kali not installed';
+                  document.getElementById('kali-status').style.color = '#f59e0b';
+                  if (document.getElementById('install-kali-btn')) {
+                    document.getElementById('install-kali-btn').style.display = 'inline-block';
+                  }
+                }
+              `);
+            } catch (jsError) {
+              console.log('Could not update kali-status element:', jsError.message);
+            }
+          });
+          
+          // Show installation popup after a delay to ensure page is loaded
+          setTimeout(async () => {
+            try {
+              const installKali = await dialog.showMessageBox(win, {
+                type: 'question',
+                title: '🔧 Kali Linux Installation (Optional)',
+                message: 'Kali Linux is not installed in WSL.',
+                detail: 'Kali Linux provides advanced security tools for penetration testing.\n\n• Framework detection works without Kali Linux\n• Kali Linux adds professional security tools (nmap, nikto, etc.)\n• Installation is optional - you can skip and use browser-based detection\n\nWould you like to install Kali Linux now?',
+                buttons: ['🚀 Install Kali Linux', '⏭️ Skip - Use Browser Detection'],
+                defaultId: 1, // Default to skip
+                cancelId: 1
+              });
+            
+            if (installKali.response === 0) {
           // Show installation progress
           const progressWindow = new BrowserWindow({
             width: 600,
@@ -1273,24 +1345,73 @@ app.whenReady().then(async () => {
               document.getElementById('install-kali-btn').style.display = 'block';
             `);
           }
-        } else {
-            // User clicked Skip
+            } else {
+              // User clicked Skip - this is perfectly fine!
+              console.log('✅ User skipped Kali Linux installation - using browser-based detection');
+              win.webContents.once('did-finish-load', () => {
+                try {
+                  win.webContents.executeJavaScript(`
+                    if (document.getElementById('kali-status')) {
+                      document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
+                      document.getElementById('kali-status').style.color = '#10b981';
+                      if (document.getElementById('install-kali-btn')) {
+                        document.getElementById('install-kali-btn').style.display = 'inline-block';
+                      }
+                    }
+                  `);
+                } catch (jsError) {
+                  console.log('Could not update kali-status element:', jsError.message);
+                }
+              });
+            }
+            } catch (dialogError) {
+              console.log('Dialog error:', dialogError.message);
+            }
+          }, 3000); // Increased delay to ensure page is fully loaded
+        }
+      } else {
+        console.log('WSL not available - using browser-based detection');
+        // Wait for the page to load before updating UI
+        win.webContents.once('did-finish-load', () => {
+          try {
             win.webContents.executeJavaScript(`
-              document.getElementById('kali-status').textContent = '⏭️ User skipped Kali Linux';
-              document.getElementById('kali-status').style.color = '#f59e0b';
-              document.getElementById('install-kali-btn').style.display = 'block';
+              if (document.getElementById('kali-status')) {
+                document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
+                document.getElementById('kali-status').style.color = '#10b981';
+                if (document.getElementById('install-kali-btn')) {
+                  document.getElementById('install-kali-btn').style.display = 'inline-block';
+                }
+              }
             `);
+          } catch (jsError) {
+            console.log('Could not update kali-status element:', jsError.message);
           }
-        }, 2000);
+        });
       }
-    } else {
-      win.webContents.executeJavaScript("document.getElementById('kali-status').textContent = 'WSL not available';");
+    } catch (wslError) {
+      console.log('WSL check failed:', wslError.message);
+      // Wait for the page to load before updating UI
+      win.webContents.once('did-finish-load', () => {
+        try {
+          win.webContents.executeJavaScript(`
+            if (document.getElementById('kali-status')) {
+              document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
+              document.getElementById('kali-status').style.color = '#10b981';
+              if (document.getElementById('install-kali-btn')) {
+                document.getElementById('install-kali-btn').style.display = 'inline-block';
+              }
+            }
+          `);
+        } catch (jsError) {
+          console.log('Could not update kali-status element:', jsError.message);
+        }
+      });
     }
   }
 
-  app.on('activate', () => {
+  app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+      await createMainWindow();
     }
   });
 });
