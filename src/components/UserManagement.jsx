@@ -92,7 +92,7 @@ function UserManagement() {
       {/* User Statistics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {userStats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div key={index} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
             <div className="flex items-center">
               <div className={`p-3 rounded-lg mr-4 ${
                 stat.color === 'blue' ? 'bg-blue-100' :
@@ -110,8 +110,8 @@ function UserManagement() {
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">{stat.label}</p>
-                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.label}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stat.value}</p>
               </div>
             </div>
           </div>
@@ -119,9 +119,9 @@ function UserManagement() {
       </div>
 
       {/* User Management Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">User Management</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">User Management</h2>
           <div className="flex items-center space-x-3">
             <div className="relative">
               <input
@@ -150,30 +150,30 @@ function UserManagement() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   User
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Role
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Department
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Last Login
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Failed Logins
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200">
               {users.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -184,8 +184,8 @@ function UserManagement() {
                         </span>
                       </div>
                       <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                        <div className="text-sm text-gray-500">{user.email}</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{user.name}</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">{user.email}</div>
                       </div>
                     </div>
                   </td>
@@ -194,7 +194,7 @@ function UserManagement() {
                       {user.role}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {user.department}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -202,7 +202,7 @@ function UserManagement() {
                       {user.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {user.lastLogin}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -229,20 +229,20 @@ function UserManagement() {
 
       {/* Security Settings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Password Policies</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Password Policies</h3>
           <div className="space-y-4">
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <span className="text-sm font-medium text-gray-700">Minimum Length</span>
-              <span className="text-sm text-gray-900">12 characters</span>
+              <span className="text-sm text-gray-900 dark:text-gray-100">12 characters</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <span className="text-sm font-medium text-gray-700">Password Expiry</span>
-              <span className="text-sm text-gray-900">90 days</span>
+              <span className="text-sm text-gray-900 dark:text-gray-100">90 days</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <span className="text-sm font-medium text-gray-700">Failed Login Lockout</span>
-              <span className="text-sm text-gray-900">5 attempts</span>
+              <span className="text-sm text-gray-900 dark:text-gray-100">5 attempts</span>
             </div>
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <span className="text-sm font-medium text-gray-700">Two-Factor Authentication</span>
@@ -254,8 +254,8 @@ function UserManagement() {
           </button>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Role Permissions</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Role Permissions</h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between py-2">
               <span className="text-sm text-gray-700">Administrator</span>

@@ -478,14 +478,14 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg border border-gray-200 p-6 text-white">
+      <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 text-white">
         <h1 className="text-3xl font-bold mb-2">Server-level Scanning</h1>
-        <p className="text-blue-100">Comprehensive non-destructive security assessment of web servers and applications</p>
+        <p className="text-orange-100">Comprehensive non-destructive security assessment of web servers and applications</p>
       </div>
 
       {/* Target Input */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Scan Configuration</h2>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Scan Configuration</h2>
         
         <div className="space-y-4">
           <div>
@@ -497,7 +497,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               placeholder="https://example.com or example.com"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
               disabled={isScanning}
             />
           </div>
@@ -551,7 +551,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
               className={`px-8 py-3 rounded-lg font-semibold text-white transition-colors ${
                 !permissionGranted || !target.trim() || isScanning
                   ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-orange-600 hover:bg-orange-700'
               }`}
             >
               {isScanning ? 'Scanning...' : 'Start Server Scan'}
@@ -571,10 +571,10 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
       {/* Scan Progress */}
       {isScanning && (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
-              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+              <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
               <span>Scan Progress</span>
@@ -592,9 +592,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           
           {/* Time Information */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-blue-50 rounded-lg p-4 text-center">
-              <div className="text-sm text-blue-600 font-medium">Started</div>
-              <div className="text-lg font-bold text-blue-800">{formatTime(scanStartTime)}</div>
+            <div className="bg-orange-50 rounded-lg p-4 text-center">
+              <div className="text-sm text-orange-600 font-medium">Started</div>
+              <div className="text-lg font-bold text-orange-800">{formatTime(scanStartTime)}</div>
             </div>
             <div className="bg-green-50 rounded-lg p-4 text-center">
               <div className="text-sm text-green-600 font-medium">Elapsed</div>
@@ -613,7 +613,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                 log.type === 'error' ? 'text-red-400' :
                 log.type === 'success' ? 'text-green-400' :
                 log.type === 'warning' ? 'text-yellow-400' :
-                'text-blue-400'
+                'text-orange-400'
               }`}>
                 [{log.timestamp}] {log.message}
               </div>
@@ -624,12 +624,12 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
       {/* Scan Statistics */}
       {isScanning && (
-        <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Scan Statistics</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Scan Statistics</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{scanStats.dnsResolved ? '✓' : '○'}</div>
-              <div className="text-sm text-blue-700">DNS Resolved</div>
+            <div className="text-center p-4 bg-orange-50 rounded-lg">
+              <div className="text-2xl font-bold text-orange-600">{scanStats.dnsResolved ? '✓' : '○'}</div>
+              <div className="text-sm text-orange-700">DNS Resolved</div>
             </div>
             <div className="text-center p-4 bg-green-50 rounded-lg">
               <div className="text-2xl font-bold text-green-600">{scanStats.portsScanned}</div>
@@ -666,11 +666,11 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             </div>
           </div>
           {/* Header with Download Buttons */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-2xl font-bold text-gray-900">🔒 Server Security Scan Results</h3>
-                <p className="text-gray-600 mt-1">Comprehensive security assessment completed</p>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">🔒 Server Security Scan Results</h3>
+                <p className="text-gray-600 dark:text-gray-400 mt-1">Comprehensive security assessment completed</p>
               </div>
               <div className="flex space-x-3">
                 <button
@@ -684,7 +684,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                 </button>
                 <button
                   onClick={() => downloadReport('excel')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -705,16 +705,16 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
             {/* Scan Overview */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
+              <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-orange-200">
                 <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                  <div className="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   </div>
                   <div>
-                    <div className="text-2xl font-bold text-blue-700">{scanResults.summary?.portsScanned || 0}</div>
-                    <div className="text-sm text-blue-600">Ports Scanned</div>
+                    <div className="text-2xl font-bold text-orange-700">{scanResults.summary?.portsScanned || 0}</div>
+                    <div className="text-sm text-orange-600">Ports Scanned</div>
                   </div>
                 </div>
               </div>
@@ -765,9 +765,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* Advanced DNS Resolution Details */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+              <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
               </svg>
               <span>DNS Resolution & Network Analysis</span>
@@ -775,9 +775,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             
             {/* DNS Records */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="text-sm text-blue-600 font-medium mb-1">Primary IP</div>
-                <div className="text-lg font-semibold text-blue-800 font-mono">{scanResults.findings?.dns?.ip || 'N/A'}</div>
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <div className="text-sm text-orange-600 font-medium mb-1">Primary IP</div>
+                <div className="text-lg font-semibold text-orange-800 font-mono">{scanResults.findings?.dns?.ip || 'N/A'}</div>
               </div>
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
                 <div className="text-sm text-green-600 font-medium mb-1">Mail Server</div>
@@ -796,30 +796,30 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             {/* Detailed DNS Information */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-gray-50 rounded-lg p-4">
-                <h5 className="font-semibold text-gray-900 mb-3">DNS Records Details</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">DNS Records Details</h5>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">SOA Record:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.dns?.soa || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">SOA Record:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.dns?.soa || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">PTR Record:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.dns?.ptr || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">PTR Record:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.dns?.ptr || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Name Servers:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.dns?.ns?.join(', ') || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Name Servers:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.dns?.ns?.join(', ') || 'N/A'}</span>
                   </div>
                 </div>
               </div>
               
               <div className="bg-gray-50 rounded-lg p-4">
-                <h5 className="font-semibold text-gray-900 mb-3">SRV Records</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">SRV Records</h5>
                 <div className="space-y-2 text-sm">
                   {(scanResults.findings?.dns?.srv || []).map((srv, index) => (
                     <div key={index} className="flex justify-between">
-                      <span className="text-gray-600">{srv.service}:</span>
-                      <span className="font-mono text-gray-900">{srv.target}:{srv.port}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{srv.service}:</span>
+                      <span className="font-mono text-gray-900 dark:text-gray-100">{srv.target}:{srv.port}</span>
                     </div>
                   ))}
                 </div>
@@ -827,32 +827,32 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             </div>
 
             {/* Network Performance */}
-            <div className="mt-6 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-4 border border-blue-200">
-              <h5 className="font-semibold text-gray-900 mb-3">Network Performance Metrics</h5>
+            <div className="mt-6 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-4 border border-orange-200">
+              <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Network Performance Metrics</h5>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{scanResults.findings?.network?.latency || 'N/A'}</div>
-                  <div className="text-gray-600">Latency</div>
+                  <div className="text-2xl font-bold text-orange-600">{scanResults.findings?.network?.latency || 'N/A'}</div>
+                  <div className="text-gray-600 dark:text-gray-400">Latency</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{scanResults.findings?.network?.bandwidth || 'N/A'}</div>
-                  <div className="text-gray-600">Bandwidth</div>
+                  <div className="text-gray-600 dark:text-gray-400">Bandwidth</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-yellow-600">{scanResults.findings?.network?.packetLoss || 'N/A'}</div>
-                  <div className="text-gray-600">Packet Loss</div>
+                  <div className="text-gray-600 dark:text-gray-400">Packet Loss</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-purple-600">{scanResults.findings?.network?.jitter || 'N/A'}</div>
-                  <div className="text-gray-600">Jitter</div>
+                  <div className="text-gray-600 dark:text-gray-400">Jitter</div>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Advanced Ports & Services Analysis */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
               <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
@@ -879,9 +879,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                 </div>
                 <div className="text-sm text-green-700">Low Risk Ports</div>
               </div>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="text-2xl font-bold text-blue-600">{(scanResults.findings?.ports || []).length}</div>
-                <div className="text-sm text-blue-700">Total Open Ports</div>
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <div className="text-2xl font-bold text-orange-600">{(scanResults.findings?.ports || []).length}</div>
+                <div className="text-sm text-orange-700">Total Open Ports</div>
               </div>
             </div>
 
@@ -903,19 +903,19 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                   {(scanResults.findings?.ports || []).map((port, index) => (
                     <tr key={index} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <div className="font-mono text-blue-600 font-semibold">{port.port}</div>
-                        <div className="text-xs text-gray-500">{port.protocol}</div>
+                        <div className="font-mono text-orange-600 font-semibold">{port.port}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{port.protocol}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{port.service}</div>
-                        <div className="text-xs text-gray-500">{port.cpe}</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{port.service}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{port.cpe}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="text-gray-900">{port.version}</div>
-                        <div className="text-xs text-gray-500">{port.banner}</div>
+                        <div className="text-gray-900 dark:text-gray-100">{port.version}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">{port.banner}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="max-w-xs truncate text-gray-600 font-mono text-xs">
+                        <div className="max-w-xs truncate text-gray-600 dark:text-gray-400 font-mono text-xs">
                           {port.banner}
                         </div>
                       </td>
@@ -929,12 +929,12 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="text-xs text-gray-600">
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
                           {port.vulnerabilities?.length || 0} issues
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <button className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                        <button className="text-orange-600 hover:text-orange-800 text-xs font-medium">
                           View Details
                         </button>
                       </td>
@@ -946,7 +946,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
             {/* Port Recommendations */}
             <div className="mt-6 bg-gradient-to-r from-red-50 to-yellow-50 rounded-lg p-4 border border-red-200">
-              <h5 className="font-semibold text-gray-900 mb-3">🔒 Critical Port Security Recommendations</h5>
+              <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">🔒 Critical Port Security Recommendations</h5>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
                   <h6 className="font-medium text-red-800 mb-2">High Priority Actions:</h6>
@@ -969,8 +969,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* Advanced Security Vulnerabilities Analysis */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
               <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
               </svg>
@@ -997,11 +997,11 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                 </div>
                 <div className="text-sm text-yellow-700">Medium</div>
               </div>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="text-2xl font-bold text-blue-600">
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <div className="text-2xl font-bold text-orange-600">
                   {(scanResults.findings?.vulnerabilities || []).reduce((sum, v) => sum + (v.cvss || 0), 0).toFixed(1)}
                 </div>
-                <div className="text-sm text-blue-700">CVSS Score</div>
+                <div className="text-sm text-orange-700">CVSS Score</div>
               </div>
             </div>
 
@@ -1017,7 +1017,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <div className="flex items-center space-x-3 mb-3">
-                          <h5 className="text-lg font-semibold text-gray-900">{vuln.type}</h5>
+                          <h5 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{vuln.type}</h5>
                           <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
                             vuln.severity === 'Critical' ? 'bg-red-100 text-red-800' :
                             vuln.severity === 'High' ? 'bg-orange-100 text-orange-800' :
@@ -1037,7 +1037,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                         {/* CVE Information */}
                         {vuln.cve && vuln.cve !== 'N/A' && (
                           <div className="mb-3">
-                            <span className="text-sm font-medium text-gray-600">CVE:</span>
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">CVE:</span>
                             <span className="ml-2 font-mono text-sm bg-gray-100 px-2 py-1 rounded">
                               {vuln.cve}
                             </span>
@@ -1047,21 +1047,21 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                         {/* Affected Components */}
                         {vuln.affected && (
                           <div className="mb-3">
-                            <span className="text-sm font-medium text-gray-600">Affected:</span>
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Affected:</span>
                             <span className="ml-2 text-sm text-gray-700">{vuln.affected}</span>
                           </div>
                         )}
                         
                         {/* Remediation */}
                         <div className="mb-3">
-                          <span className="text-sm font-medium text-gray-600">Remediation:</span>
+                          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Remediation:</span>
                           <p className="mt-1 text-sm text-gray-700">{vuln.remediation}</p>
                         </div>
                         
                         {/* References */}
                         {vuln.references && vuln.references.length > 0 && (
                           <div>
-                            <span className="text-sm font-medium text-gray-600">References:</span>
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-400">References:</span>
                             <div className="mt-1 space-y-1">
                               {vuln.references.map((ref, refIndex) => (
                                 <a 
@@ -1069,7 +1069,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                                   href={ref} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
-                                  className="block text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                                  className="block text-sm text-orange-600 hover:text-orange-800 hover:underline"
                                 >
                                   {ref}
                                 </a>
@@ -1088,14 +1088,14 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <h5 className="text-lg font-semibold text-green-600 mb-2">No Vulnerabilities Detected</h5>
-                <p className="text-gray-600">Great! No security vulnerabilities were found during the scan.</p>
+                <p className="text-gray-600 dark:text-gray-400">Great! No security vulnerabilities were found during the scan.</p>
               </div>
             )}
           </div>
 
           {/* Web Directories Details */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
               <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5a2 2 0 012-2h4a2 2 0 012 2v6a2 2 0 01-2 2H10a2 2 0 01-2-2V5z" />
@@ -1104,9 +1104,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(scanResults.findings?.directories || []).map((dir, index) => (
-                <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <div key={index} className="bg-gray-50 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-2">
-                    <h5 className="font-medium text-gray-900 font-mono">{dir.path}</h5>
+                    <h5 className="font-medium text-gray-900 dark:text-gray-100 font-mono">{dir.path}</h5>
                     <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
                       dir.status === 200 ? 'bg-green-100 text-green-800' :
                       dir.status === 403 ? 'bg-yellow-100 text-yellow-800' :
@@ -1116,7 +1116,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                       {dir.status}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
                     Size: {dir.size ? `${dir.size} bytes` : 'Unknown'}
                   </div>
                 </div>
@@ -1125,8 +1125,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* SSL/TLS Security Analysis */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
               <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
               </svg>
@@ -1136,36 +1136,36 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             {/* SSL Certificate Details */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
               <div className="bg-gray-50 rounded-lg p-4">
-                <h5 className="font-semibold text-gray-900 mb-3">Certificate Information</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Certificate Information</h5>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Issuer:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.ssl?.certificate?.issuer || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Issuer:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.ssl?.certificate?.issuer || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Subject:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.ssl?.certificate?.subject || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Subject:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.ssl?.certificate?.subject || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Valid From:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.ssl?.certificate?.validFrom || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Valid From:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.ssl?.certificate?.validFrom || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Valid To:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.ssl?.certificate?.validTo || 'N/A'}</span>
+                    <span className="text-gray-600 dark:text-gray-400">Valid To:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.ssl?.certificate?.validTo || 'N/A'}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Key Size:</span>
-                    <span className="font-mono text-gray-900">{scanResults.findings?.ssl?.certificate?.keySize || 'N/A'} bits</span>
+                    <span className="text-gray-600 dark:text-gray-400">Key Size:</span>
+                    <span className="font-mono text-gray-900 dark:text-gray-100">{scanResults.findings?.ssl?.certificate?.keySize || 'N/A'} bits</span>
                   </div>
                 </div>
               </div>
               
               <div className="bg-gray-50 rounded-lg p-4">
-                <h5 className="font-semibold text-gray-900 mb-3">Protocol Support</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Protocol Support</h5>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">TLS 1.0:</span>
+                    <span className="text-gray-600 dark:text-gray-400">TLS 1.0:</span>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       scanResults.findings?.ssl?.protocols?.tls10 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                     }`}>
@@ -1173,7 +1173,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">TLS 1.1:</span>
+                    <span className="text-gray-600 dark:text-gray-400">TLS 1.1:</span>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       scanResults.findings?.ssl?.protocols?.tls11 ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
                     }`}>
@@ -1181,7 +1181,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">TLS 1.2:</span>
+                    <span className="text-gray-600 dark:text-gray-400">TLS 1.2:</span>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       scanResults.findings?.ssl?.protocols?.tls12 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                     }`}>
@@ -1189,7 +1189,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-600">TLS 1.3:</span>
+                    <span className="text-gray-600 dark:text-gray-400">TLS 1.3:</span>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       scanResults.findings?.ssl?.protocols?.tls13 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
                     }`}>
@@ -1217,8 +1217,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* Web Application Technology Stack */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
               <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
@@ -1226,9 +1226,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             </h4>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="text-sm text-blue-600 font-medium mb-1">Web Server</div>
-                <div className="text-lg font-semibold text-blue-800">{scanResults.findings?.webApplication?.technology?.server || 'N/A'}</div>
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <div className="text-sm text-orange-600 font-medium mb-1">Web Server</div>
+                <div className="text-lg font-semibold text-orange-800">{scanResults.findings?.webApplication?.technology?.server || 'N/A'}</div>
               </div>
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
                 <div className="text-sm text-green-600 font-medium mb-1">Programming Language</div>
@@ -1247,7 +1247,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             {/* Security Headers Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-gray-50 rounded-lg p-4">
-                <h5 className="font-semibold text-gray-900 mb-3">Present Security Headers</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Present Security Headers</h5>
                 <div className="space-y-2">
                   {(scanResults.findings?.webApplication?.securityHeaders?.present || []).map((header, index) => (
                     <div key={index} className="flex items-center space-x-2">
@@ -1261,7 +1261,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
               </div>
               
               <div className="bg-gray-50 rounded-lg p-4">
-                <h5 className="font-semibold text-gray-900 mb-3">Missing Security Headers</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Missing Security Headers</h5>
                 <div className="space-y-2">
                   {(scanResults.findings?.webApplication?.securityHeaders?.missing || []).map((header, index) => (
                     <div key={index} className="flex items-center space-x-2">
@@ -1277,8 +1277,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* Compliance & Risk Assessment */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
               <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
@@ -1291,10 +1291,10 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                 <div className="text-2xl font-bold text-red-800">{scanResults.compliance?.pci?.score || 'N/A'}</div>
                 <div className="text-xs text-red-700">{scanResults.compliance?.pci?.status || 'N/A'}</div>
               </div>
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                <div className="text-sm text-blue-600 font-medium mb-1">GDPR</div>
-                <div className="text-2xl font-bold text-blue-800">{scanResults.compliance?.gdpr?.score || 'N/A'}</div>
-                <div className="text-xs text-blue-700">{scanResults.compliance?.gdpr?.status || 'N/A'}</div>
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <div className="text-sm text-orange-600 font-medium mb-1">GDPR</div>
+                <div className="text-2xl font-bold text-orange-800">{scanResults.compliance?.gdpr?.score || 'N/A'}</div>
+                <div className="text-xs text-orange-700">{scanResults.compliance?.gdpr?.status || 'N/A'}</div>
               </div>
               <div className="bg-green-50 rounded-lg p-4 border border-green-200">
                 <div className="text-sm text-green-600 font-medium mb-1">ISO 27001</div>
@@ -1311,7 +1311,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             {/* Risk Score */}
             <div className="bg-gradient-to-r from-red-50 to-yellow-50 rounded-lg p-4 border border-red-200">
               <div className="flex items-center justify-between mb-2">
-                <h5 className="font-semibold text-gray-900">Overall Risk Score</h5>
+                <h5 className="font-semibold text-gray-900 dark:text-gray-100">Overall Risk Score</h5>
                 <span className="text-2xl font-bold text-red-600">{scanResults.summary?.riskScore || 'N/A'}/10</span>
               </div>
               <div className="text-sm text-gray-700 mb-2">Security Level: <span className="font-semibold text-red-600">{scanResults.summary?.securityLevel || 'N/A'}</span></div>
@@ -1325,9 +1325,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* Advanced Security Recommendations */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6">
-            <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-              <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
+            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+              <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
               <span>Advanced Security Recommendations</span>

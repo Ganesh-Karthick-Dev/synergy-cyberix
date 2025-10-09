@@ -84,9 +84,9 @@ function SystemLogs() {
       case 'INFO':
         return 'bg-blue-100 text-blue-800 border-blue-200'
       case 'DEBUG':
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-gray-100 text-gray-800 border-gray-200 dark:border-slate-700'
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-gray-100 text-gray-800 border-gray-200 dark:border-slate-700'
     }
   }
 
@@ -112,7 +112,7 @@ function SystemLogs() {
       {/* Log Statistics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {logStats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div key={index} className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-4">
             <div className="flex items-center">
               <div className={`p-2 rounded-lg mr-3 ${
                 stat.color === 'blue' ? 'bg-blue-100' :
@@ -126,8 +126,8 @@ function SystemLogs() {
                 }`}></div>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-600">{stat.level}</p>
-                <p className="text-xl font-bold text-gray-900">{stat.count}</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.level}</p>
+                <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{stat.count}</p>
               </div>
             </div>
           </div>
@@ -135,9 +135,9 @@ function SystemLogs() {
       </div>
 
       {/* Log Viewer */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">System Logs</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">System Logs</h2>
           <div className="flex items-center space-x-3">
             <select className="text-sm border border-gray-300 rounded-md px-3 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option>All Categories</option>
@@ -165,27 +165,27 @@ function SystemLogs() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Timestamp
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Level
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Source
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Category
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Message
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200">
               {logs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-mono">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-mono">
                     {log.timestamp}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -193,7 +193,7 @@ function SystemLogs() {
                       {log.level}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {log.source}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -201,7 +201,7 @@ function SystemLogs() {
                       {log.category}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 max-w-md">
+                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100 max-w-md">
                     <div className="truncate" title={log.message}>
                       {log.message}
                     </div>
@@ -213,7 +213,7 @@ function SystemLogs() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-200">
+        <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-200 dark:border-slate-700">
           <div className="text-sm text-gray-700">
             Showing <span className="font-medium">1</span> to <span className="font-medium">10</span> of{' '}
             <span className="font-medium">1,366</span> results
@@ -239,7 +239,7 @@ function SystemLogs() {
       </div>
 
       {/* Real-time Log Stream */}
-      <div className="bg-black rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-black rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-white">Live Log Stream</h3>
           <div className="flex items-center space-x-2">
@@ -271,7 +271,7 @@ function SystemLogs() {
               Clear
             </button>
           </div>
-          <div className="text-xs text-gray-500">
+          <div className="text-xs text-gray-500 dark:text-gray-400">
             Showing last 100 entries
           </div>
         </div>

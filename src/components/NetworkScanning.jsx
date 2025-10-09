@@ -660,17 +660,17 @@ function NetworkScanning() {
   return (
     <div className="space-y-6">
       {/* Header with Status */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg border border-gray-200 p-6 text-white">
+      <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 text-white">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white/20 rounded-lg">
+            <div className="p-2 bg-white dark:bg-slate-800/20 rounded-lg">
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
               </svg>
             </div>
             <div>
               <h2 className="text-2xl font-bold">Network Scanning</h2>
-              <p className="text-blue-100">Professional network analysis and port discovery</p>
+              <p className="text-orange-100">Professional network analysis and port discovery</p>
             </div>
           </div>
          
@@ -679,15 +679,15 @@ function NetworkScanning() {
 
 
       {/* Scan Configuration */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
         <div className="flex items-center space-x-3 mb-6">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="p-2 bg-orange-100 rounded-lg">
+            <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
           </div>
-          <h3 className="text-xl font-semibold text-gray-900">Scan Configuration</h3>
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Scan Configuration</h3>
         </div>
         
         <div className="space-y-6">
@@ -706,7 +706,7 @@ function NetworkScanning() {
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
                 placeholder="e.g., 192.168.1.1, example.com, or scanme.nmap.org"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors"
                 disabled={scanStatus.isScanning}
               />
             </div>
@@ -714,14 +714,14 @@ function NetworkScanning() {
           
           {/* Scan Features */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
               <div className="flex items-center space-x-3 mb-2">
-                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <h4 className="font-medium text-blue-900">Port Discovery</h4>
+                <h4 className="font-medium text-orange-900">Port Discovery</h4>
               </div>
-              <p className="text-sm text-blue-700">Comprehensive port scanning with service detection</p>
+              <p className="text-sm text-orange-700">Comprehensive port scanning with service detection</p>
             </div>
             <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
               <div className="flex items-center space-x-3 mb-2">
@@ -747,7 +747,7 @@ function NetworkScanning() {
             <button
               onClick={handleStartScan}
               disabled={scanStatus.isScanning || !target.trim()}
-              className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
+              className="px-8 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
             >
               {scanStatus.isScanning ? (
                 <>
@@ -783,9 +783,9 @@ function NetworkScanning() {
 
       {/* Scan Statistics */}
       {scanStatus.isScanning && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+            <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <span>Scan Statistics</span>
@@ -803,9 +803,9 @@ function NetworkScanning() {
               <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
               <div className="text-sm text-yellow-700">Filtered</div>
             </div>
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{scanStats.services}</div>
-              <div className="text-sm text-blue-700">Services</div>
+            <div className="text-center p-4 bg-orange-50 rounded-lg">
+              <div className="text-2xl font-bold text-orange-600">{scanStats.services}</div>
+              <div className="text-sm text-orange-700">Services</div>
             </div>
           </div>
         </div>
@@ -813,9 +813,9 @@ function NetworkScanning() {
 
       {/* Scan Progress */}
       {scanProgress.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
-            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+            <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <span>Scan Progress</span>
@@ -825,10 +825,10 @@ function NetworkScanning() {
               <div key={index} className={`mb-1 flex items-start space-x-2 ${
                 entry.stage === 'error' ? 'text-red-400' :
                 entry.stage === 'warning' ? 'text-yellow-400' :
-                entry.stage === 'installing' ? 'text-blue-400' :
+                entry.stage === 'installing' ? 'text-orange-400' :
                 'text-green-400'
               }`}>
-                <span className="text-gray-500 text-xs mt-0.5">[{new Date().toLocaleTimeString()}]</span>
+                <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">[{new Date().toLocaleTimeString()}]</span>
                 <span className="font-medium">{entry.stage.toUpperCase()}:</span>
                 <span>{entry.message}</span>
               </div>
@@ -839,9 +839,9 @@ function NetworkScanning() {
 
       {/* Scan Results */}
       {scanResults && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
               <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -850,7 +850,7 @@ function NetworkScanning() {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => downloadResults('json')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 shadow-sm"
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2 shadow-sm"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -911,20 +911,20 @@ function NetworkScanning() {
               </div>
               
               {(scanResults.summaryText || (typeof scanResults.summary === 'string' && scanResults.summary)) && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h4 className="font-medium text-blue-900 mb-2 flex items-center space-x-2">
+                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                  <h4 className="font-medium text-orange-900 mb-2 flex items-center space-x-2">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <span>Summary</span>
                   </h4>
-                  <p className="text-blue-800">{scanResults.summaryText || scanResults.summary}</p>
+                  <p className="text-orange-800">{scanResults.summaryText || scanResults.summary}</p>
                 </div>
               )}
 
               {/* Executive Summary */}
               {scanResults.summary && typeof scanResults.summary === 'object' && (
-                <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg border border-gray-200 p-6 text-white mb-6">
+                <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 text-white mb-6">
                   <h3 className="text-2xl font-bold mb-4 flex items-center space-x-2">
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -932,19 +932,19 @@ function NetworkScanning() {
                     <span>Executive Summary</span>
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-2xl font-bold">{scanResults.summary.totalFiles || 0}</div>
                       <div className="text-sm opacity-90">Total Files Generated</div>
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-lg font-semibold">{scanResults.summary.bannerGrabbing || 'N/A'}</div>
                       <div className="text-sm opacity-90">Service Detection</div>
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-lg font-semibold">{scanResults.summary.osDetection || 'N/A'}</div>
                       <div className="text-sm opacity-90">OS Detection</div>
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-lg font-semibold">{scanResults.summary.macDetection || 'N/A'}</div>
                       <div className="text-sm opacity-90">MAC Detection</div>
                     </div>
@@ -952,19 +952,19 @@ function NetworkScanning() {
                   
                   {/* Port Statistics in Executive Summary */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-2xl font-bold">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
                       <div className="text-sm opacity-90">Total Ports Scanned</div>
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-2xl font-bold">{scanStats.openPorts}</div>
                       <div className="text-sm opacity-90">Open Ports</div>
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-2xl font-bold">{scanStats.closedPorts}</div>
                       <div className="text-sm opacity-90">Closed Ports</div>
                     </div>
-                    <div className="bg-white/20 rounded-lg p-4">
+                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
                       <div className="text-2xl font-bold">{scanStats.filteredPorts}</div>
                       <div className="text-sm opacity-90">Filtered Ports</div>
                     </div>
@@ -979,7 +979,7 @@ function NetworkScanning() {
                   <div className="bg-gradient-to-r from-red-600 to-red-700 rounded-xl p-6 mb-6 text-white shadow-lg">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        <div className="bg-white/20 rounded-lg p-2">
+                        <div className="bg-white dark:bg-slate-800/20 rounded-lg p-2">
                           <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
@@ -997,7 +997,7 @@ function NetworkScanning() {
                   </div>
                   
                   {/* Report Content with enhanced styling */}
-                  <div className="bg-white rounded-xl shadow-inner border border-gray-200 overflow-hidden">
+                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-inner border border-gray-200 dark:border-slate-700 overflow-hidden">
               
                     
                     <div className="p-6 space-y-6">
@@ -1007,33 +1007,33 @@ function NetworkScanning() {
                       
                       
                       {/* Enhanced Scan Overview */}
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-l-4 border-blue-500 shadow-sm">
+                      <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl p-6 border-l-4 border-orange-500 shadow-sm">
                         <div className="flex items-center space-x-3 mb-4">
-                          <div className="bg-blue-500 rounded-lg p-2">
+                          <div className="bg-orange-500 rounded-lg p-2">
                             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
                           </div>
-                          <h4 className="text-xl font-bold text-blue-800">SCAN OVERVIEW</h4>
+                          <h4 className="text-xl font-bold text-orange-800">SCAN OVERVIEW</h4>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <div className="flex justify-between items-center py-2 border-b border-blue-200">
-                              <span className="font-semibold text-blue-700">Scan Date:</span>
-                              <span className="text-blue-900 font-mono">{new Date().toLocaleString()}</span>
+                            <div className="flex justify-between items-center py-2 border-b border-orange-200">
+                              <span className="font-semibold text-orange-700">Scan Date:</span>
+                              <span className="text-orange-900 font-mono">{new Date().toLocaleString()}</span>
                             </div>
-                            <div className="flex justify-between items-center py-2 border-b border-blue-200">
-                              <span className="font-semibold text-blue-700">Target:</span>
-                              <span className="text-blue-900 font-mono bg-blue-100 px-2 py-1 rounded">{target}</span>
+                            <div className="flex justify-between items-center py-2 border-b border-orange-200">
+                              <span className="font-semibold text-orange-700">Target:</span>
+                              <span className="text-orange-900 font-mono bg-orange-100 px-2 py-1 rounded">{target}</span>
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <div className="flex justify-between items-center py-2 border-b border-blue-200">
-                              <span className="font-semibold text-blue-700">Scan Type:</span>
-                              <span className="text-blue-900">Network Analysis</span>
+                            <div className="flex justify-between items-center py-2 border-b border-orange-200">
+                              <span className="font-semibold text-orange-700">Scan Type:</span>
+                              <span className="text-orange-900">Network Analysis</span>
                             </div>
                             <div className="flex justify-between items-center py-2">
-                              <span className="font-semibold text-blue-700">Status:</span>
+                              <span className="font-semibold text-orange-700">Status:</span>
                               <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center space-x-1">
                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -1058,26 +1058,26 @@ function NetworkScanning() {
                         
                         {/* Summary Cards Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
                             <div className="text-2xl font-bold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.totalFiles || 0 : 0}</div>
                             <div className="text-sm text-green-700 font-medium">Total Files Generated</div>
                           </div>
-                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
                             <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.bannerGrabbing || 'N/A' : 'N/A'}</div>
                             <div className="text-sm text-green-700 font-medium">Service Detection</div>
                           </div>
-                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
                             <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.osDetection || 'N/A' : 'N/A'}</div>
                             <div className="text-sm text-green-700 font-medium">OS Detection</div>
                           </div>
-                          <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
                             <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.macDetection || 'N/A' : 'N/A'}</div>
                             <div className="text-sm text-green-700 font-medium">MAC Detection</div>
                           </div>
                         </div>
                         
                         {/* Port Statistics */}
-                        <div className="bg-white rounded-lg p-4 shadow-sm border border-green-200">
+                        <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
                           <h5 className="font-semibold text-green-800 mb-3 flex items-center space-x-2">
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -1087,19 +1087,19 @@ function NetworkScanning() {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div className="text-center">
                               <div className="text-2xl font-bold text-gray-800">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
-                              <div className="text-sm text-gray-600">Total Scanned</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">Total Scanned</div>
                             </div>
                             <div className="text-center">
                               <div className="text-2xl font-bold text-green-600">{scanStats.openPorts}</div>
-                              <div className="text-sm text-gray-600">Open</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">Open</div>
                             </div>
                             <div className="text-center">
                               <div className="text-2xl font-bold text-red-600">{scanStats.closedPorts}</div>
-                              <div className="text-sm text-gray-600">Closed</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">Closed</div>
                             </div>
                             <div className="text-center">
                               <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
-                              <div className="text-sm text-gray-600">Filtered</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">Filtered</div>
                             </div>
                           </div>
                         </div>
@@ -1116,31 +1116,31 @@ function NetworkScanning() {
                           <h4 className="text-xl font-bold text-purple-800">SCAN STATISTICS</h4>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
                             <div className="text-3xl font-bold text-green-600 mb-1">{scanStats.openPorts}</div>
                             <div className="text-sm text-purple-700 font-medium">Open Ports</div>
                             <div className="w-full bg-green-100 rounded-full h-2 mt-2">
                               <div className="bg-green-500 h-2 rounded-full" style={{width: `${(scanStats.openPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
                             </div>
                           </div>
-                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
                             <div className="text-3xl font-bold text-red-600 mb-1">{scanStats.closedPorts}</div>
                             <div className="text-sm text-purple-700 font-medium">Closed Ports</div>
                             <div className="w-full bg-red-100 rounded-full h-2 mt-2">
                               <div className="bg-red-500 h-2 rounded-full" style={{width: `${(scanStats.closedPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
                             </div>
                           </div>
-                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
                             <div className="text-3xl font-bold text-yellow-600 mb-1">{scanStats.filteredPorts}</div>
                             <div className="text-sm text-purple-700 font-medium">Filtered Ports</div>
                             <div className="w-full bg-yellow-100 rounded-full h-2 mt-2">
                               <div className="bg-yellow-500 h-2 rounded-full" style={{width: `${(scanStats.filteredPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
                             </div>
                           </div>
-                          <div className="bg-white rounded-lg p-4 text-center shadow-sm border border-purple-200">
-                            <div className="text-3xl font-bold text-blue-600 mb-1">{scanStats.services}</div>
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
+                            <div className="text-3xl font-bold text-orange-600 mb-1">{scanStats.services}</div>
                             <div className="text-sm text-purple-700 font-medium">Services</div>
-                            <div className="w-full bg-blue-100 rounded-full h-2 mt-2">
+                            <div className="w-full bg-orange-100 rounded-full h-2 mt-2">
                               <div className="bg-blue-500 h-2 rounded-full" style={{width: `${(scanStats.services / Math.max(scanStats.openPorts, 1)) * 100}%`}}></div>
                             </div>
                           </div>
@@ -1160,7 +1160,7 @@ function NetworkScanning() {
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {scanResults.serviceDetections.slice(0, 6).map((service, index) => (
-                              <div key={index} className="bg-white rounded-lg p-4 shadow-sm border border-orange-200">
+                              <div key={index} className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-orange-200">
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center space-x-2">
                                     <div className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-semibold">
@@ -1171,12 +1171,12 @@ function NetworkScanning() {
                                   <div className="w-3 h-3 bg-green-400 rounded-full"></div>
                                 </div>
                                 {service.version && (
-                                  <div className="text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded">
+                                  <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 px-2 py-1 rounded">
                                     Version: {service.version}
                                   </div>
                                 )}
                                 {service.banner && (
-                                  <div className="text-xs text-gray-500 mt-2 font-mono bg-gray-100 p-2 rounded">
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-mono bg-gray-100 p-2 rounded">
                                     {service.banner.substring(0, 100)}...
                                   </div>
                                 )}
@@ -1205,15 +1205,15 @@ function NetworkScanning() {
                             <h4 className="text-xl font-bold text-indigo-800">OS DETECTION RESULTS</h4>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-200">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-indigo-200">
                               <div className="text-sm text-indigo-600 font-medium mb-1">Operating System</div>
                               <div className="text-lg font-bold text-indigo-800">{scanResults.osDetection.family || 'Unknown'}</div>
                             </div>
-                            <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-200">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-indigo-200">
                               <div className="text-sm text-indigo-600 font-medium mb-1">Version</div>
                               <div className="text-lg font-bold text-indigo-800">{scanResults.osDetection.version || 'Unknown'}</div>
                             </div>
-                            <div className="bg-white rounded-lg p-4 shadow-sm border border-indigo-200">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-indigo-200">
                               <div className="text-sm text-indigo-600 font-medium mb-1">Confidence</div>
                               <div className="text-lg font-bold text-indigo-800 flex items-center space-x-2">
                                 <span>{scanResults.osDetection.confidence || 0}%</span>
@@ -1238,15 +1238,15 @@ function NetworkScanning() {
                             <h4 className="text-xl font-bold text-teal-800">MAC DETECTION RESULTS</h4>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-white rounded-lg p-4 shadow-sm border border-teal-200">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-teal-200">
                               <div className="text-sm text-teal-600 font-medium mb-1">MAC Address</div>
                               <div className="text-lg font-bold text-teal-800 font-mono">{scanResults.macDetection.macAddress || 'N/A'}</div>
                             </div>
-                            <div className="bg-white rounded-lg p-4 shadow-sm border border-teal-200">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-teal-200">
                               <div className="text-sm text-teal-600 font-medium mb-1">Vendor</div>
                               <div className="text-lg font-bold text-teal-800">{scanResults.macDetection.vendor || 'N/A'}</div>
                             </div>
-                            <div className="bg-white rounded-lg p-4 shadow-sm border border-teal-200">
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-teal-200">
                               <div className="text-sm text-teal-600 font-medium mb-1">Device Type</div>
                               <div className="text-lg font-bold text-teal-800">{scanResults.macDetection.deviceType || 'N/A'}</div>
                             </div>
@@ -1277,7 +1277,7 @@ function NetworkScanning() {
                             },
                             { 
                               icon: (
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                               ), 
@@ -1286,7 +1286,7 @@ function NetworkScanning() {
                             },
                             { 
                               icon: (
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                 </svg>
                               ), 
@@ -1313,7 +1313,7 @@ function NetworkScanning() {
                               priority: 'Low' 
                             }
                           ].map((rec, index) => (
-                            <div key={index} className="bg-white rounded-lg p-4 shadow-sm border border-red-200 flex items-start space-x-3">
+                            <div key={index} className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-red-200 flex items-start space-x-3">
                               <div className="flex-shrink-0 mt-1">{rec.icon}</div>
                               <div className="flex-1">
                                 <div className="text-red-800 font-medium">{rec.text}</div>
@@ -1331,7 +1331,7 @@ function NetworkScanning() {
                       </div>
                       
                       {/* Enhanced Report Footer */}
-                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-6 border-t border-gray-200">
+                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-6 border-t border-gray-200 dark:border-slate-700">
                         <div className="text-center">
                           <div className="flex items-center justify-center space-x-2 mb-4">
                             <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
@@ -1341,7 +1341,7 @@ function NetworkScanning() {
                             </div>
                             <span className="text-lg font-semibold text-gray-700">Report generated by Cyberix Security Scanner</span>
                           </div>
-                          <div className="text-sm text-gray-600 mb-4">
+                          <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                             For detailed analysis and comprehensive data, download the complete PDF report
                           </div>
                           <div className="flex justify-center space-x-3">
@@ -1374,8 +1374,8 @@ function NetworkScanning() {
               {/* Debug Information - Show scan results structure */}
               {/* {process.env.NODE_ENV === 'development' && scanResults && (
                 <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
-                  <h4 className="font-medium text-gray-900 mb-2">Debug Info - Scan Results Structure</h4>
-                  <div className="text-xs text-gray-600">
+                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Debug Info - Scan Results Structure</h4>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
                     <p>Scan Results Keys: {Object.keys(scanResults).join(', ')}</p>
                     <p>Summary Type: {typeof scanResults.summary}</p>
                     <p>Summary Keys: {scanResults.summary && typeof scanResults.summary === 'object' ? Object.keys(scanResults.summary).join(', ') : 'N/A'}</p>
@@ -1389,9 +1389,9 @@ function NetworkScanning() {
 
               {/* Port Scan Results */}
               {scanResults.findings && scanResults.findings.allPorts && (
-                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 mb-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 mb-6">
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span>Network Findings - Port Scan Results</span>
@@ -1400,20 +1400,20 @@ function NetworkScanning() {
                   {/* Port Statistics */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-green-500">
-                      <div className="text-2xl font-bold text-gray-900">{scanResults.summary?.totalPortsScanned || 0}</div>
-                      <div className="text-sm text-gray-600">Total Ports Scanned</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanResults.summary?.totalPortsScanned || 0}</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Total Ports Scanned</div>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-green-500">
                       <div className="text-2xl font-bold text-green-600">{scanResults.summary?.openPorts || 0}</div>
-                      <div className="text-sm text-gray-600">Open Ports</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Open Ports</div>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-red-500">
                       <div className="text-2xl font-bold text-red-600">{scanResults.summary?.closedPorts || 0}</div>
-                      <div className="text-sm text-gray-600">Closed Ports</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Closed Ports</div>
                     </div>
                     <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-yellow-500">
                       <div className="text-2xl font-bold text-yellow-600">{scanResults.summary?.filteredPorts || 0}</div>
-                      <div className="text-sm text-gray-600">Filtered Ports</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Filtered Ports</div>
                     </div>
                   </div>
 
@@ -1448,7 +1448,7 @@ function NetworkScanning() {
                       </tbody>
                     </table>
                     {scanResults.findings.allPorts.length > 20 && (
-                      <p className="text-sm text-gray-500 mt-2 text-center">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">
                         Showing first 20 ports of {scanResults.findings.allPorts.length} total
                       </p>
                     )}
@@ -1458,21 +1458,21 @@ function NetworkScanning() {
 
               {/* Operating System Detection */}
               {scanResults.findings?.osDetection && (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-6 border border-blue-200 mb-6">
-                  <h3 className="text-lg font-semibold text-blue-900 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-6 border border-orange-200 mb-6">
+                  <h3 className="text-lg font-semibold text-orange-900 mb-4 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     <span>Operating System Detection</span>
                   </h3>
-                  <div className="bg-white rounded-lg p-4 space-y-3">
+                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4 space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">OS Family:</span>
-                      <span className="text-blue-600 font-semibold">{scanResults.findings.osDetection.family || 'Unknown'}</span>
+                      <span className="text-orange-600 font-semibold">{scanResults.findings.osDetection.family || 'Unknown'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">OS Version:</span>
-                      <span className="text-blue-600 font-semibold">{scanResults.findings.osDetection.version || 'Unknown'}</span>
+                      <span className="text-orange-600 font-semibold">{scanResults.findings.osDetection.version || 'Unknown'}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Confidence:</span>
@@ -1480,7 +1480,7 @@ function NetworkScanning() {
                     </div>
                     <div>
                       <span className="font-medium text-gray-700 block mb-2">Details:</span>
-                      <span className="text-gray-600">{scanResults.findings.osDetection.details || 'N/A'}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{scanResults.findings.osDetection.details || 'N/A'}</span>
                     </div>
                   </div>
                 </div>
@@ -1495,7 +1495,7 @@ function NetworkScanning() {
                     </svg>
                     <span>Scan Statistics & Timing</span>
                   </h3>
-                  <div className="bg-white rounded-lg p-4 space-y-3">
+                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4 space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Scan Duration:</span>
                       <span className="text-yellow-600 font-semibold">{scanResults.findings.scanStatistics.duration} seconds</span>
@@ -1510,11 +1510,11 @@ function NetworkScanning() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Scan Start:</span>
-                      <span className="text-gray-600">{new Date(scanResults.findings.scanStatistics.startTime).toLocaleString()}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{new Date(scanResults.findings.scanStatistics.startTime).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-700">Scan End:</span>
-                      <span className="text-gray-600">{new Date(scanResults.findings.scanStatistics.endTime).toLocaleString()}</span>
+                      <span className="text-gray-600 dark:text-gray-400">{new Date(scanResults.findings.scanStatistics.endTime).toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -1529,7 +1529,7 @@ function NetworkScanning() {
                     </svg>
                     <span>Security Recommendations</span>
                   </h3>
-                  <div className="bg-white rounded-lg p-4">
+                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4">
                     <h4 className="font-semibold text-yellow-800 mb-3">Recommended Actions</h4>
                     <div className="space-y-3">
                       {scanResults.recommendations.map((rec, index) => (
@@ -1548,8 +1548,8 @@ function NetworkScanning() {
               {/* Debug Information */}
               {/* {process.env.NODE_ENV === 'development' && (
                 <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
-                  <h4 className="font-medium text-gray-900 mb-2">Debug Info</h4>
-                  <div className="text-xs text-gray-600">
+                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Debug Info</h4>
+                  <div className="text-xs text-gray-600 dark:text-gray-400">
                     <p>Scan Results Keys: {scanResults ? Object.keys(scanResults).join(', ') : 'No results'}</p>
                     <p>Summary: {scanResults.summary ? 'Present' : 'Missing'}</p>
                     <p>Findings: {scanResults.findings ? 'Present' : 'Missing'}</p>

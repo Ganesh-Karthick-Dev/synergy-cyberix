@@ -1,0 +1,16 @@
+MAC Address Detection Results for webnox.in
+Detection started at: 2025-10-01T09:07:15.606Z
+==================================================
+
+MAC ADDRESS DETECTED:
+==============================
+MAC Address: 00:50:56:12:34:56
+Vendor: VMware, Inc.
+Device Type: Virtual Machine
+Detection Method: ARP Table Lookup
+
+VENDOR INFORMATION:
+==============================
+Company: VMware, Inc.
+OUI: 00:50:56
+Country: United States

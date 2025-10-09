@@ -70,7 +70,7 @@ function ThreatMonitor() {
       case 'low':
         return 'bg-green-100 text-green-800 border-green-200'
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-200'
+        return 'bg-gray-100 text-gray-800 border-gray-200 dark:border-slate-700'
     }
   }
 
@@ -94,18 +94,18 @@ function ThreatMonitor() {
       {/* Threat Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {threatStats.map((stat, index) => (
-          <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div key={index} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">{stat.type}</p>
-                <p className="text-2xl font-bold text-gray-900">{stat.count}</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.type}</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stat.count}</p>
                 <div className="flex items-center mt-2">
                   <span className={`text-xs font-medium ${
                     stat.trend.startsWith('+') ? 'text-red-600' : 'text-green-600'
                   }`}>
                     {stat.trend}
                   </span>
-                  <span className="text-xs text-gray-500 ml-1">vs last week</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">vs last week</span>
                 </div>
               </div>
               <div className="p-3 bg-red-100 rounded-lg">
@@ -119,11 +119,11 @@ function ThreatMonitor() {
       </div>
 
       {/* Real-time Threats */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-semibold text-gray-900">Real-time Threat Feed</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Real-time Threat Feed</h2>
           <div className="flex items-center space-x-3">
-            <div className="flex items-center text-sm text-gray-500">
+            <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
               <div className="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></div>
               Live monitoring
             </div>
@@ -140,36 +140,36 @@ function ThreatMonitor() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Threat Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Severity
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Source
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Target
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Time
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200">
               {threats.map((threat) => (
                 <tr key={threat.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
-                      <div className="text-sm font-medium text-gray-900">{threat.type}</div>
-                      <div className="text-xs text-gray-500 truncate max-w-xs">{threat.description}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{threat.type}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs">{threat.description}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -177,10 +177,10 @@ function ThreatMonitor() {
                       {threat.severity}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {threat.source}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {threat.target}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -188,7 +188,7 @@ function ThreatMonitor() {
                       {threat.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                     {threat.timestamp}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -204,36 +204,36 @@ function ThreatMonitor() {
 
       {/* Threat Intelligence */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Threat Intelligence</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Threat Intelligence</h3>
           <div className="space-y-4">
             <div className="border-l-4 border-red-500 pl-4">
-              <p className="text-sm font-medium text-gray-900">New Ransomware Campaign</p>
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">New Ransomware Campaign</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                 Active ransomware family targeting healthcare organizations. 
                 Updated IOCs available.
               </p>
-              <p className="text-xs text-gray-500 mt-2">2 hours ago</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">2 hours ago</p>
             </div>
             <div className="border-l-4 border-yellow-500 pl-4">
-              <p className="text-sm font-medium text-gray-900">CVE-2024-1234 Alert</p>
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">CVE-2024-1234 Alert</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                 Critical vulnerability in Apache software. Patch available.
               </p>
-              <p className="text-xs text-gray-500 mt-2">4 hours ago</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">4 hours ago</p>
             </div>
             <div className="border-l-4 border-blue-500 pl-4">
-              <p className="text-sm font-medium text-gray-900">Phishing Campaign Update</p>
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Phishing Campaign Update</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                 New email templates mimicking Microsoft Office 365 login pages.
               </p>
-              <p className="text-xs text-gray-500 mt-2">6 hours ago</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">6 hours ago</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Attack Sources</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Top Attack Sources</h3>
           <div className="space-y-4">
             {[
               { country: 'Russia', attacks: 1247, percentage: 34 },
@@ -245,12 +245,12 @@ function ThreatMonitor() {
               <div key={index} className="flex items-center justify-between">
                 <div className="flex items-center flex-1">
                   <div className="w-8 h-5 bg-gray-300 rounded mr-3 flex items-center justify-center">
-                    <span className="text-xs font-bold text-gray-600">
+                    <span className="text-xs font-bold text-gray-600 dark:text-gray-400">
                       {source.country.slice(0, 2).toUpperCase()}
                     </span>
                   </div>
-                  <span className="text-sm font-medium text-gray-900 mr-2">{source.country}</span>
-                  <span className="text-sm text-gray-500">({source.attacks} attacks)</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100 mr-2">{source.country}</span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">({source.attacks} attacks)</span>
                 </div>
                 <div className="flex items-center">
                   <div className="w-20 bg-gray-200 rounded-full h-2 mr-3">
@@ -259,7 +259,7 @@ function ThreatMonitor() {
                       style={{ width: `${source.percentage}%` }}
                     ></div>
                   </div>
-                  <span className="text-sm font-medium text-gray-900 w-8">{source.percentage}%</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100 w-8">{source.percentage}%</span>
                 </div>
               </div>
             ))}

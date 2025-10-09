@@ -47,11 +47,11 @@ const ToastDemo = () => {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-6 mb-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+    <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 mb-6">
+      <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
         🧪 Toast Notification Demo
       </h3>
-      <p className="text-sm text-gray-600 mb-6">
+      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
         Test all toast variants with security-themed messages
       </p>
       

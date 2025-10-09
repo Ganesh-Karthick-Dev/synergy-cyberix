@@ -690,14 +690,14 @@ const WebsiteScanner = () => {
       </div>`
 
     const basicHtml = `
-      ${basic.dns ? card('DNS Resolution', [['Domain', basic.dns.domain], ['IP', basic.dns.ip], ['TTL', basic.dns.ttl], ['Records', (basic.dns.records||[]).join(', ') ]], 'b-blue') : ''}
+      ${basic.dns ? card('DNS Resolution', [['Domain', basic.dns.domain], ['IP', basic.dns.ip], ['TTL', basic.dns.ttl], ['Records', (basic.dns.records||[]).join(', ') ]], 'b-orange') : ''}
       ${basic.ssl ? card('SSL/TLS Certificate', [['Valid', basic.ssl.valid ? 'Yes' : 'No'], ['Issuer', basic.ssl.issuer], ['Protocol', basic.ssl.protocol], ['Expiry', basic.ssl.expiry]], 'b-green') : ''}
       ${basic.headers ? card('Security Headers', [['CSP', basic.headers.csp], ['X-Frame-Options', basic.headers.xFrameOptions], ['HSTS', basic.headers.hsts]], 'b-purple') : ''}
       ${basic.cms ? card('CMS Information', [['Type', basic.cms.type], ['Version', basic.cms.version], ['Vulnerabilities', basic.cms.vulnerabilities]], 'b-orange') : ''}
     `
 
     const mediumHtml = `
-      ${medium.subdomains ? card('Subdomain Enumeration', [['Found', medium.subdomains.found], ['Subdomains', (medium.subdomains.subdomains||[]).join(', ')]], 'b-blue') : ''}
+      ${medium.subdomains ? card('Subdomain Enumeration', [['Found', medium.subdomains.found], ['Subdomains', (medium.subdomains.subdomains||[]).join(', ')]], 'b-orange') : ''}
       ${medium.nuclei ? card('Nuclei Template Scan', [['Templates', medium.nuclei.templates], ['Findings', medium.nuclei.findings], ['Critical', medium.nuclei.critical], ['High', medium.nuclei.high]], 'b-red') : ''}
       ${medium.waf ? card('WAF Detection', [['Detected', medium.waf.detected], ['Bypass', medium.waf.bypass], ['Rules', medium.waf.rules]], 'b-purple') : ''}
       ${medium.redirects ? card('Open Redirect Testing', [['Tested', medium.redirects.tested], ['Vulnerable', medium.redirects.vulnerable], ['Endpoints', (medium.redirects.endpoints||[]).join(', ')]], 'b-orange') : ''}
@@ -707,7 +707,7 @@ const WebsiteScanner = () => {
       ${advanced.takeover ? card('Subdomain Takeover', [['Analyzed', advanced.takeover.analyzed], ['Vulnerable', advanced.takeover.vulnerable], ['Service', advanced.takeover.service], ['Risk', advanced.takeover.risk]], 'b-red') : ''}
       ${advanced.api ? card('API Fuzzing', [['Endpoints', advanced.api.endpoints], ['Parameters', advanced.api.parameters], ['Vulnerabilities', advanced.api.vulnerabilities], ['Types', (advanced.api.types||[]).join(', ')]], 'b-purple') : ''}
       ${advanced.ssrf ? card('SSRF Testing', [['Tested', advanced.ssrf.tested], ['Vulnerable', advanced.ssrf.vulnerable], ['Endpoint', advanced.ssrf.endpoint], ['Impact', advanced.ssrf.impact]], 'b-orange') : ''}
-      ${advanced.git ? card('Git Leak Forensics', [['Accessible', advanced.git.accessible ? 'Yes' : 'No'], ['Commits', advanced.git.commits], ['Secrets', advanced.git.secrets], ['Files', (advanced.git.files||[]).join(', ')]], 'b-blue') : ''}
+      ${advanced.git ? card('Git Leak Forensics', [['Accessible', advanced.git.accessible ? 'Yes' : 'No'], ['Commits', advanced.git.commits], ['Secrets', advanced.git.secrets], ['Files', (advanced.git.files||[]).join(', ')]], 'b-orange') : ''}
     `
 
     return `
@@ -728,7 +728,7 @@ const WebsiteScanner = () => {
     .card { margin: 12px 0; padding: 14px; background: #f8fafc; border-left: 4px solid #c7d2fe; border-radius: 6px; }
     .card h3 { margin: 0 0 8px 0; }
     .card ul { margin: 0; padding-left: 18px; }
-    .b-blue { border-left-color: #60a5fa; }
+    .b-orange { border-left-color: #f97316; }
     .b-green { border-left-color: #34d399; }
     .b-purple { border-left-color: #a78bfa; }
     .b-orange { border-left-color: #fb923c; }
@@ -1094,16 +1094,16 @@ const WebsiteScanner = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6">
+      <div className="bg-gradient-to-r from-orange-50 to-orange-100 dark:from-slate-800 dark:to-slate-700 rounded-xl shadow-sm border border-orange-200 dark:border-slate-600 p-6">
         <div className="flex items-center space-x-3 mb-4">
-          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Website Security Scanner</h2>
-            <p className="text-gray-600">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Website Security Scanner</h2>
+            <p className="text-gray-600 dark:text-gray-400">
               Comprehensive three-tier security scanning for websites. Automatically detects vulnerabilities, 
               analyzes CMS, and generates detailed security reports.
             </p>
@@ -1122,13 +1122,13 @@ const WebsiteScanner = () => {
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
                 placeholder="https://example.com"
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-colors"
                 disabled={isScanning}
               />
               <button
                 onClick={handleStartScan}
                 disabled={isScanning || !targetUrl}
-                className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                className="px-8 py-3 bg-orange-600 text-white rounded-lg font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
               >
                 {isScanning ? (
                   <>
@@ -1154,17 +1154,17 @@ const WebsiteScanner = () => {
 
       {/* Scan Timing Information */}
       {isScanning && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Scan Progress</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Scan Progress</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="text-center">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-3">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <p className="text-sm font-medium text-gray-900">Start Time</p>
-              <p className="text-xs text-gray-500">{scanTiming.startTime ? formatDateTime(new Date(scanTiming.startTime)) : 'N/A'}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Start Time</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{scanTiming.startTime ? formatDateTime(new Date(scanTiming.startTime)) : 'N/A'}</p>
             </div>
             
             <div className="text-center">
@@ -1173,8 +1173,8 @@ const WebsiteScanner = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <p className="text-sm font-medium text-gray-900">Elapsed Time</p>
-              <p className="text-xs text-gray-500">{formatTime(scanTiming.elapsedTime)}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Elapsed Time</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{formatTime(scanTiming.elapsedTime)}</p>
             </div>
             
             <div className="text-center">
@@ -1183,8 +1183,8 @@ const WebsiteScanner = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
               </div>
-              <p className="text-sm font-medium text-gray-900">Expected Completion</p>
-              <p className="text-xs text-gray-500">{scanTiming.expectedCompletion ? formatDateTime(scanTiming.expectedCompletion) : 'N/A'}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Expected Completion</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{scanTiming.expectedCompletion ? formatDateTime(scanTiming.expectedCompletion) : 'N/A'}</p>
             </div>
           </div>
         </div>
@@ -1192,16 +1192,16 @@ const WebsiteScanner = () => {
 
       {/* Current Phase Progress */}
       {currentPhase && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               {currentPhase.name} Progress
             </h3>
-            <span className="text-sm text-gray-500">{currentPhase.progress}%</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">{currentPhase.progress}%</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3">
             <div 
-              className="bg-gradient-to-r from-blue-500 to-indigo-600 h-3 rounded-full transition-all duration-500"
+              className="bg-gradient-to-r from-orange-500 to-orange-600 h-3 rounded-full transition-all duration-500"
               style={{ width: `${currentPhase.progress}%` }}
             ></div>
           </div>
@@ -1210,9 +1210,9 @@ const WebsiteScanner = () => {
 
       {/* Real-time Logs */}
       {logs.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Scan Logs</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scan Logs</h3>
             <button
               onClick={copyLogs}
               className="flex items-center px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
@@ -1230,12 +1230,12 @@ const WebsiteScanner = () => {
           >
             {logs.map(log => (
               <div key={log.id} className="mb-1">
-                <span className="text-gray-500">[{log.timestamp}]</span>
+                <span className="text-gray-500 dark:text-gray-400">[{log.timestamp}]</span>
                 <span className={`ml-2 ${
                   log.type === 'error' ? 'text-red-400' :
                   log.type === 'success' ? 'text-green-400' :
                   log.type === 'warning' ? 'text-yellow-400' :
-                  'text-blue-400'
+                  'text-orange-400'
                 }`}>
                   [{log.phase.toUpperCase()}]
                 </span>
@@ -1250,8 +1250,8 @@ const WebsiteScanner = () => {
       {scanResults && (
         <div className="space-y-6">
           {/* Overall Summary */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Overall Scan Summary</h3>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Overall Scan Summary</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center p-4 bg-red-50 rounded-lg">
                 <div className="text-2xl font-bold text-red-600">{scanResults.summary.critical}</div>
@@ -1274,19 +1274,19 @@ const WebsiteScanner = () => {
 
           {/* CMS Detection Results */}
           {scanResults.cms && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Technology Stack Detection</h3>
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Technology Stack Detection</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">CMS/Framework</div>
-                      <div className="text-sm text-gray-500">{scanResults.cms.cmsType || scanResults.cms.framework}</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">CMS/Framework</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{scanResults.cms.cmsType || scanResults.cms.framework}</div>
                     </div>
                   </div>
                   
@@ -1297,8 +1297,8 @@ const WebsiteScanner = () => {
                       </svg>
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">Hosting Provider</div>
-                      <div className="text-sm text-gray-500">{scanResults.cms.hosting || 'Unknown'}</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Hosting Provider</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{scanResults.cms.hosting || 'Unknown'}</div>
                     </div>
                   </div>
                   
@@ -1309,14 +1309,14 @@ const WebsiteScanner = () => {
                       </svg>
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">Confidence Level</div>
-                      <div className="text-sm text-gray-500">{scanResults.cms.confidence}%</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">Confidence Level</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400">{scanResults.cms.confidence}%</div>
                     </div>
                   </div>
                 </div>
                 
                 <div>
-                  <h4 className="font-medium text-gray-900 mb-3">Detected Technologies</h4>
+                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detected Technologies</h4>
                   <div className="flex flex-wrap gap-2">
                     {scanResults.cms.technologies && scanResults.cms.technologies.length > 0 ? (
                       scanResults.cms.technologies.map((tech, index) => (
@@ -1325,7 +1325,7 @@ const WebsiteScanner = () => {
                         </span>
                       ))
                     ) : (
-                      <span className="text-gray-500 text-sm">No additional technologies detected</span>
+                      <span className="text-gray-500 dark:text-gray-400 text-sm">No additional technologies detected</span>
                     )}
                   </div>
                 </div>
@@ -1342,7 +1342,7 @@ const WebsiteScanner = () => {
                   </button>
                   <button
                     onClick={() => exportResults('html')}
-                    className="px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                    className="px-3 py-2 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
                   >
                     Export Full HTML
                   </button>
@@ -1365,16 +1365,16 @@ const WebsiteScanner = () => {
 
           {/* Full Preview */}
           {showFullPreview && (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Full Preview</h3>
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Full Preview</h3>
               {/* Render same content structure as export */}
               <div className="space-y-8">
                 <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Basic Scan Results</h4>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Basic Scan Results</h4>
                   <div className="space-y-4">
                     {scanResults.results.basic?.dns && (
-                      <div className="border-l-4 border-blue-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">DNS Resolution</h5>
+                      <div className="border-l-4 border-orange-400 bg-gray-50 p-4 rounded">
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">DNS Resolution</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Domain: {scanResults.results.basic.dns.domain}</li>
                           <li>IP: {scanResults.results.basic.dns.ip}</li>
@@ -1385,7 +1385,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.basic?.ssl && (
                       <div className="border-l-4 border-green-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">SSL/TLS Certificate</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">SSL/TLS Certificate</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Valid: {scanResults.results.basic.ssl.valid ? 'Yes' : 'No'}</li>
                           <li>Issuer: {scanResults.results.basic.ssl.issuer}</li>
@@ -1396,7 +1396,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.basic?.headers && (
                       <div className="border-l-4 border-purple-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">Security Headers</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Security Headers</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>CSP: {scanResults.results.basic.headers.csp}</li>
                           <li>X-Frame-Options: {scanResults.results.basic.headers.xFrameOptions}</li>
@@ -1406,7 +1406,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.basic?.cms && (
                       <div className="border-l-4 border-orange-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">CMS Information</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">CMS Information</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Type: {scanResults.results.basic.cms.type}</li>
                           <li>Version: {scanResults.results.basic.cms.version}</li>
@@ -1418,11 +1418,11 @@ const WebsiteScanner = () => {
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Intermediate Scan Results</h4>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Intermediate Scan Results</h4>
                   <div className="space-y-4">
                     {scanResults.results.medium?.subdomains && (
-                      <div className="border-l-4 border-blue-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">Subdomain Enumeration</h5>
+                      <div className="border-l-4 border-orange-400 bg-gray-50 p-4 rounded">
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Subdomain Enumeration</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Found: {scanResults.results.medium.subdomains.found}</li>
                           <li>Subdomains: {scanResults.results.medium.subdomains.subdomains?.join(', ')}</li>
@@ -1431,7 +1431,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.medium?.nuclei && (
                       <div className="border-l-4 border-red-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">Nuclei Template Scan</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Nuclei Template Scan</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Templates: {scanResults.results.medium.nuclei.templates}</li>
                           <li>Findings: {scanResults.results.medium.nuclei.findings}</li>
@@ -1441,7 +1441,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.medium?.waf && (
                       <div className="border-l-4 border-purple-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">WAF Detection</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">WAF Detection</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Detected: {scanResults.results.medium.waf.detected}</li>
                           <li>Bypass: {scanResults.results.medium.waf.bypass}</li>
@@ -1451,7 +1451,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.medium?.redirects && (
                       <div className="border-l-4 border-orange-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">Open Redirect Testing</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Open Redirect Testing</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Tested: {scanResults.results.medium.redirects.tested}</li>
                           <li>Vulnerable: {scanResults.results.medium.redirects.vulnerable}</li>
@@ -1463,11 +1463,11 @@ const WebsiteScanner = () => {
                 </div>
 
                 <div>
-                  <h4 className="font-semibold text-gray-900 mb-3">Advanced Scan Results</h4>
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Advanced Scan Results</h4>
                   <div className="space-y-4">
                     {scanResults.results.advanced?.takeover && (
                       <div className="border-l-4 border-red-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">Subdomain Takeover</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Subdomain Takeover</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Analyzed: {scanResults.results.advanced.takeover.analyzed}</li>
                           <li>Vulnerable: {scanResults.results.advanced.takeover.vulnerable}</li>
@@ -1478,7 +1478,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.advanced?.api && (
                       <div className="border-l-4 border-purple-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">API Fuzzing</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">API Fuzzing</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Endpoints: {scanResults.results.advanced.api.endpoints}</li>
                           <li>Parameters: {scanResults.results.advanced.api.parameters}</li>
@@ -1489,7 +1489,7 @@ const WebsiteScanner = () => {
                     )}
                     {scanResults.results.advanced?.ssrf && (
                       <div className="border-l-4 border-orange-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">SSRF Testing</h5>
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">SSRF Testing</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Tested: {scanResults.results.advanced.ssrf.tested}</li>
                           <li>Vulnerable: {scanResults.results.advanced.ssrf.vulnerable}</li>
@@ -1499,8 +1499,8 @@ const WebsiteScanner = () => {
                       </div>
                     )}
                     {scanResults.results.advanced?.git && (
-                      <div className="border-l-4 border-blue-400 bg-gray-50 p-4 rounded">
-                        <h5 className="font-medium text-gray-900 mb-1">Git Leak Forensics</h5>
+                      <div className="border-l-4 border-orange-400 bg-gray-50 p-4 rounded">
+                        <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-1">Git Leak Forensics</h5>
                         <ul className="text-sm text-gray-700 list-disc ml-5">
                           <li>Accessible: {scanResults.results.advanced.git.accessible ? 'Yes' : 'No'}</li>
                           <li>Commits: {scanResults.results.advanced.git.commits}</li>
@@ -1519,15 +1519,15 @@ const WebsiteScanner = () => {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Basic Scan Tile */}
             {scanResults.results.basic && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900">Basic Scan</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Basic Scan</h3>
                   </div>
                   <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Completed</span>
                 </div>
@@ -1535,9 +1535,9 @@ const WebsiteScanner = () => {
                 <div className="space-y-4">
                   {/* DNS Results */}
                   {scanResults.results.basic.dns && (
-                    <div className="border-l-4 border-blue-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">DNS Resolution</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                    <div className="border-l-4 border-orange-500 pl-4">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">DNS Resolution</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Domain:</span> {scanResults.results.basic.dns.domain}</p>
                         <p><span className="font-medium">IP:</span> {scanResults.results.basic.dns.ip}</p>
                         <p><span className="font-medium">TTL:</span> {scanResults.results.basic.dns.ttl}s</p>
@@ -1549,8 +1549,8 @@ const WebsiteScanner = () => {
                   {/* SSL Results */}
                   {scanResults.results.basic.ssl && (
                     <div className="border-l-4 border-green-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">SSL/TLS Certificate</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">SSL/TLS Certificate</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Valid:</span> <span className="text-green-600">✓ Yes</span></p>
                         <p><span className="font-medium">Issuer:</span> {scanResults.results.basic.ssl.issuer}</p>
                         <p><span className="font-medium">Protocol:</span> {scanResults.results.basic.ssl.protocol}</p>
@@ -1562,8 +1562,8 @@ const WebsiteScanner = () => {
                   {/* Security Headers */}
                   {scanResults.results.basic.headers && (
                     <div className="border-l-4 border-purple-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Security Headers</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Security Headers</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">CSP:</span> <span className="text-green-600">✓ Present</span></p>
                         <p><span className="font-medium">X-Frame-Options:</span> {scanResults.results.basic.headers.xFrameOptions}</p>
                         <p><span className="font-medium">HSTS:</span> <span className="text-green-600">✓ Enabled</span></p>
@@ -1574,8 +1574,8 @@ const WebsiteScanner = () => {
                   {/* CMS Enumeration */}
                   {scanResults.results.basic.cms && (
                     <div className="border-l-4 border-orange-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">CMS Information</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">CMS Information</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Type:</span> {scanResults.results.basic.cms.type}</p>
                         <p><span className="font-medium">Version:</span> {scanResults.results.basic.cms.version}</p>
                         <p><span className="font-medium">Vulnerabilities:</span> <span className="text-red-600">{scanResults.results.basic.cms.vulnerabilities}</span></p>
@@ -1594,7 +1594,7 @@ const WebsiteScanner = () => {
                     </button>
                     <button
                       onClick={() => exportLevelResults('basic', 'html')}
-                      className="flex-1 px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                      className="flex-1 px-3 py-2 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
                     >
                       Export HTML
                     </button>
@@ -1605,7 +1605,7 @@ const WebsiteScanner = () => {
 
             {/* Intermediate Scan Tile */}
             {scanResults.results.medium && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
@@ -1613,7 +1613,7 @@ const WebsiteScanner = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
                       </svg>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900">Intermediate Scan</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Intermediate Scan</h3>
                   </div>
                   <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Completed</span>
                 </div>
@@ -1621,9 +1621,9 @@ const WebsiteScanner = () => {
                 <div className="space-y-4">
                   {/* Subdomain Results */}
                   {scanResults.results.medium.subdomains && (
-                    <div className="border-l-4 border-blue-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Subdomain Enumeration</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                    <div className="border-l-4 border-orange-500 pl-4">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Subdomain Enumeration</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Found:</span> {scanResults.results.medium.subdomains.found} subdomains</p>
                         <p><span className="font-medium">Subdomains:</span> {scanResults.results.medium.subdomains.subdomains?.join(', ')}</p>
                       </div>
@@ -1633,8 +1633,8 @@ const WebsiteScanner = () => {
                   {/* Nuclei Results */}
                   {scanResults.results.medium.nuclei && (
                     <div className="border-l-4 border-red-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Nuclei Template Scan</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Nuclei Template Scan</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Templates:</span> {scanResults.results.medium.nuclei.templates}</p>
                         <p><span className="font-medium">Findings:</span> {scanResults.results.medium.nuclei.findings}</p>
                         <div className="flex space-x-2">
@@ -1648,8 +1648,8 @@ const WebsiteScanner = () => {
                   {/* WAF Detection */}
                   {scanResults.results.medium.waf && (
                     <div className="border-l-4 border-purple-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">WAF Detection</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">WAF Detection</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Detected:</span> {scanResults.results.medium.waf.detected}</p>
                         <p><span className="font-medium">Bypass:</span> <span className="text-yellow-600">{scanResults.results.medium.waf.bypass}</span></p>
                         <p><span className="font-medium">Rules:</span> {scanResults.results.medium.waf.rules}</p>
@@ -1660,8 +1660,8 @@ const WebsiteScanner = () => {
                   {/* Open Redirects */}
                   {scanResults.results.medium.redirects && (
                     <div className="border-l-4 border-orange-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Open Redirect Testing</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Open Redirect Testing</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Tested:</span> {scanResults.results.medium.redirects.tested} endpoints</p>
                         <p><span className="font-medium">Vulnerable:</span> <span className="text-red-600">{scanResults.results.medium.redirects.vulnerable}</span></p>
                         <p><span className="font-medium">Endpoints:</span> {scanResults.results.medium.redirects.endpoints?.join(', ')}</p>
@@ -1691,7 +1691,7 @@ const WebsiteScanner = () => {
 
             {/* Advanced Scan Tile */}
             {scanResults.results.advanced && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
@@ -1699,7 +1699,7 @@ const WebsiteScanner = () => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
                       </svg>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900">Advanced Scan</h3>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Advanced Scan</h3>
                   </div>
                   <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Completed</span>
                 </div>
@@ -1708,8 +1708,8 @@ const WebsiteScanner = () => {
                   {/* Subdomain Takeover */}
                   {scanResults.results.advanced.takeover && (
                     <div className="border-l-4 border-red-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Subdomain Takeover</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Subdomain Takeover</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Analyzed:</span> {scanResults.results.advanced.takeover.analyzed} subdomains</p>
                         <p><span className="font-medium">Vulnerable:</span> <span className="text-red-600">{scanResults.results.advanced.takeover.vulnerable}</span></p>
                         <p><span className="font-medium">Service:</span> {scanResults.results.advanced.takeover.service}</p>
@@ -1721,8 +1721,8 @@ const WebsiteScanner = () => {
                   {/* API Fuzzing */}
                   {scanResults.results.advanced.api && (
                     <div className="border-l-4 border-purple-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">API Fuzzing</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">API Fuzzing</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Endpoints:</span> {scanResults.results.advanced.api.endpoints}</p>
                         <p><span className="font-medium">Parameters:</span> {scanResults.results.advanced.api.parameters}</p>
                         <p><span className="font-medium">Vulnerabilities:</span> <span className="text-red-600">{scanResults.results.advanced.api.vulnerabilities}</span></p>
@@ -1734,8 +1734,8 @@ const WebsiteScanner = () => {
                   {/* SSRF Testing */}
                   {scanResults.results.advanced.ssrf && (
                     <div className="border-l-4 border-orange-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">SSRF Testing</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">SSRF Testing</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Tested:</span> {scanResults.results.advanced.ssrf.tested} endpoints</p>
                         <p><span className="font-medium">Vulnerable:</span> <span className="text-red-600">{scanResults.results.advanced.ssrf.vulnerable}</span></p>
                         <p><span className="font-medium">Endpoint:</span> {scanResults.results.advanced.ssrf.endpoint}</p>
@@ -1746,9 +1746,9 @@ const WebsiteScanner = () => {
 
                   {/* Git Leak Forensics */}
                   {scanResults.results.advanced.git && (
-                    <div className="border-l-4 border-blue-500 pl-4">
-                      <h4 className="font-medium text-gray-900 mb-2">Git Leak Forensics</h4>
-                      <div className="text-sm text-gray-600 space-y-1">
+                    <div className="border-l-4 border-orange-500 pl-4">
+                      <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Git Leak Forensics</h4>
+                      <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
                         <p><span className="font-medium">Accessible:</span> <span className="text-red-600">{scanResults.results.advanced.git.accessible ? 'Yes' : 'No'}</span></p>
                         <p><span className="font-medium">Commits:</span> {scanResults.results.advanced.git.commits}</p>
                         <p><span className="font-medium">Secrets:</span> <span className="text-red-600">{scanResults.results.advanced.git.secrets}</span></p>

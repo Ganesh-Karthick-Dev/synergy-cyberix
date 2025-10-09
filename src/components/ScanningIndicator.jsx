@@ -7,7 +7,7 @@ function ScanningIndicator() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
-      <div className="bg-white rounded-lg shadow-lg border border-gray-200 p-4 max-w-sm">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-4 max-w-sm">
         <div className="flex items-center space-x-3">
           {/* Scanning Icon */}
           <div className="flex-shrink-0">
@@ -21,14 +21,14 @@ function ScanningIndicator() {
           {/* Scan Info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center space-x-2 mb-1">
-              <span className="text-sm font-medium text-gray-900">{scanStatus.scanType}</span>
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{scanStatus.scanType}</span>
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
             </div>
-            <p className="text-xs text-gray-600 truncate">
+            <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
               Target: {scanStatus.target}
             </p>
             {scanStatus.message && (
-              <p className="text-xs text-gray-500 truncate mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-1">
                 {scanStatus.message}
               </p>
             )}

@@ -1623,7 +1623,7 @@ function ShopifyCloudShield() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-8">
         <div className="mb-8">
           <div className="flex items-center mb-4">
             <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
@@ -1632,8 +1632,8 @@ function ShopifyCloudShield() {
               </svg>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Shopify Cloud Shield</h1>
-              <p className="text-gray-600">Comprehensive Shopify security analysis and protection</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Shopify Cloud Shield</h1>
+              <p className="text-gray-600 dark:text-gray-400">Comprehensive Shopify security analysis and protection</p>
             </div>
           </div>
         </div>
@@ -1673,7 +1673,7 @@ function ShopifyCloudShield() {
                   )}
                 </button>
               </div>
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 Enter the URL of the Shopify store you want to analyze for security vulnerabilities.
               </p>
               <div className="mt-3 p-3 bg-green-50 rounded-lg">
@@ -1732,13 +1732,13 @@ function ShopifyCloudShield() {
         {/* API Credentials Dialog */}
         {showApiDialog && isShopify && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">API Credentials</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">API Credentials</h3>
                   <button
                     onClick={handleSkipApi}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-gray-400 hover:text-gray-600 dark:text-gray-400"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1746,7 +1746,7 @@ function ShopifyCloudShield() {
                   </button>
                 </div>
                 
-                <p className="text-sm text-gray-600 mb-6">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
                   Provide your Shopify API access token to get a detailed security report. 
                   This is optional - you can skip this step for basic analysis.
                 </p>
@@ -1774,7 +1774,7 @@ function ShopifyCloudShield() {
                       onChange={(e) => setApiCredentials(prev => ({ ...prev, acceptTerms: e.target.checked }))}
                       className="mt-1 h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
                     />
-                    <label htmlFor="acceptTerms" className="ml-2 text-sm text-gray-600">
+                    <label htmlFor="acceptTerms" className="ml-2 text-sm text-gray-600 dark:text-gray-400">
                       I accept the terms and conditions for API credential verification
                     </label>
                   </div>
@@ -1857,8 +1857,8 @@ function ShopifyCloudShield() {
       {/* Audit Orchestrator */}
       {showAuditOrchestrator && (
         <div className="mt-8">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Shopify Security Audit</h2>
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-8">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-6">Shopify Security Audit</h2>
             
             {/* Current Module Status */}
             {currentModule && (
@@ -1877,7 +1877,7 @@ function ShopifyCloudShield() {
              {auditLogs.length > 0 && (
                <div className="mb-6">
                  <div className="flex items-center justify-between mb-4">
-                   <h3 className="text-lg font-semibold text-gray-900">Audit Logs</h3>
+                   <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Audit Logs</h3>
                    <button
                      onClick={() => {
                        const logsText = auditLogs.map(log => {
@@ -1927,7 +1927,7 @@ function ShopifyCloudShield() {
             {auditResults && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-gray-900">Audit Results</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Audit Results</h3>
                   <div className="flex space-x-2">
                     <button
                       onClick={() => downloadReport('pdf')}
@@ -1951,9 +1951,9 @@ function ShopifyCloudShield() {
                 </div>
 
                  {/* Module 1: Endpoints & Exposure */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">1. Endpoints & Exposure Scanning</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">1. Endpoints & Exposure Scanning</h4>
                      <button
                        onClick={() => toggleModuleExpansion('exposureScan')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -1977,8 +1977,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.exposureScan && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Findings</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Findings</h5>
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Exposed Endpoints:</h6>
@@ -2016,9 +2016,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 2: API & Apps */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">2. API & App Connection Review</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">2. API & App Connection Review</h4>
                      <button
                        onClick={() => toggleModuleExpansion('apiApps')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2036,8 +2036,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.apiApps && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Findings</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Findings</h5>
                        
                        {auditResults.apiApps.installedApps.length > 0 && (
                          <div className="mb-4">
@@ -2091,7 +2091,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.apiApps.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2102,9 +2102,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 3: Security Headers */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">3. Security Headers & Best Practices</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">3. Security Headers & Best Practices</h4>
                      <button
                        onClick={() => toggleModuleExpansion('headers')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2131,8 +2131,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.headers && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Header Analysis</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Header Analysis</h5>
                        
                        <div className="space-y-3">
                          {auditResults.headers.headers.map((header, index) => (
@@ -2147,11 +2147,11 @@ function ShopifyCloudShield() {
                                  {header.status}
                                </span>
                              </div>
-                             <div className="text-sm text-gray-600">
+                             <div className="text-sm text-gray-600 dark:text-gray-400">
                                <span className="font-medium">Value:</span> {header.value || 'Not set'}
                              </div>
                              {header.status !== 'PASS' && (
-                               <div className="mt-2 text-xs text-gray-500">
+                               <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                                  {header.status === 'WARN' ? '⚠️ Consider implementing this header for better security' : '❌ This header should be implemented'}
                                </div>
                              )}
@@ -2161,7 +2161,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mt-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.headers.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2172,9 +2172,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 4: Risk Audits */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">4. Scheduled Storefront & Admin Risk Audits</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">4. Scheduled Storefront & Admin Risk Audits</h4>
                      <button
                        onClick={() => toggleModuleExpansion('audits')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2192,8 +2192,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.audits && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Findings</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Findings</h5>
                        
                        {auditResults.audits.storefrontIssues.length > 0 && (
                          <div className="mb-4">
@@ -2248,7 +2248,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.audits.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2259,9 +2259,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 5: Credential Policy */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">5. Credential Policy Enforcement</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">5. Credential Policy Enforcement</h4>
                      <button
                        onClick={() => toggleModuleExpansion('credentials')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2279,8 +2279,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.credentials && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Analysis</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Analysis</h5>
                        
                        {auditResults.credentials.staffAccounts.length > 0 && (
                          <div className="mb-4">
@@ -2311,7 +2311,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.credentials.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2322,9 +2322,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 6: Subdomain Enumeration */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">6. Subdomain Enumeration & Takeover Detection</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">6. Subdomain Enumeration & Takeover Detection</h4>
                      <button
                        onClick={() => toggleModuleExpansion('subdomains')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2348,24 +2348,24 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.subdomains && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Findings</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Findings</h5>
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Discovered Subdomains:</h6>
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                            {auditResults.subdomains.discoveredSubdomains.map((subdomain, index) => (
                              <div key={index} className={`p-2 rounded text-sm ${
-                               subdomain.status === 'live' ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'
+                               subdomain.status === 'live' ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200 dark:border-slate-700'
                              }`}>
                                <div className="flex items-center justify-between">
                                  <span className={`font-medium ${
-                                   subdomain.status === 'live' ? 'text-green-800' : 'text-gray-600'
+                                   subdomain.status === 'live' ? 'text-green-800' : 'text-gray-600 dark:text-gray-400'
                                  }`}>
                                    {subdomain.subdomain}
                                  </span>
                                  <span className={`px-2 py-1 rounded text-xs ${
-                                   subdomain.status === 'live' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                                   subdomain.status === 'live' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600 dark:text-gray-400'
                                  }`}>
                                    {subdomain.status}
                                  </span>
@@ -2411,7 +2411,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.subdomains.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2422,9 +2422,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 7: Nuclei Vulnerability Scan */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">7. Nuclei Templated Vulnerability Scan</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">7. Nuclei Templated Vulnerability Scan</h4>
                      <button
                        onClick={() => toggleModuleExpansion('nuclei')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2448,8 +2448,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.nuclei && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Vulnerability Findings</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Vulnerability Findings</h5>
                        
                        <div className="space-y-3">
                          {auditResults.nuclei.findings.map((finding, index) => (
@@ -2487,7 +2487,7 @@ function ShopifyCloudShield() {
                                <div><span className="font-medium">Description:</span> {finding.description}</div>
                                <div><span className="font-medium">Evidence:</span> {finding.evidence}</div>
                              </div>
-                             <div className="text-xs text-gray-600">
+                             <div className="text-xs text-gray-600 dark:text-gray-400">
                                <span className="font-medium">Remediation:</span> {finding.remediation}
                              </div>
                            </div>
@@ -2496,7 +2496,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mt-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.nuclei.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2507,9 +2507,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 8: Host Header / SSRF */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">8. Host-Header / SSRF / Open-Redirect Discovery</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">8. Host-Header / SSRF / Open-Redirect Discovery</h4>
                      <button
                        onClick={() => toggleModuleExpansion('hostHeader')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2533,8 +2533,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.hostHeader && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Findings</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Findings</h5>
                        
                        {auditResults.hostHeader.hostHeaderVulnerabilities.length > 0 && (
                          <div className="mb-4">
@@ -2628,7 +2628,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.hostHeader.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2639,9 +2639,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 9: Secrets & Git Leak */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">9. Secrets & Git Leak Detection</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">9. Secrets & Git Leak Detection</h4>
                      <button
                        onClick={() => toggleModuleExpansion('secrets')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2665,8 +2665,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.secrets && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed Secret Analysis</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed Secret Analysis</h5>
                        
                        {auditResults.secrets.gitLeaks.length > 0 && (
                          <div className="mb-4">
@@ -2704,7 +2704,7 @@ function ShopifyCloudShield() {
                                    <div><span className="font-medium">Snippet:</span> <code className="bg-gray-100 px-1 rounded">{secret.snippet}</code></div>
                                    <div><span className="font-medium">Description:</span> {secret.description}</div>
                                  </div>
-                                 <div className="text-xs text-gray-600">
+                                 <div className="text-xs text-gray-600 dark:text-gray-400">
                                    <span className="font-medium">Remediation:</span> {secret.remediation}
                                  </div>
                                </div>
@@ -2745,7 +2745,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.secrets.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}
@@ -2756,9 +2756,9 @@ function ShopifyCloudShield() {
                  </div>
 
                  {/* Module 10: Authenticated API Fuzzing */}
-                 <div className="border border-gray-200 rounded-lg p-4">
+                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-4">
                    <div className="flex items-center justify-between mb-3">
-                     <h4 className="font-semibold text-gray-900">10. Authenticated API Fuzzing & Parameter Discovery</h4>
+                     <h4 className="font-semibold text-gray-900 dark:text-gray-100">10. Authenticated API Fuzzing & Parameter Discovery</h4>
                      <button
                        onClick={() => toggleModuleExpansion('apiFuzzing')}
                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -2782,8 +2782,8 @@ function ShopifyCloudShield() {
                    </div>
                    
                    {expandedModules.apiFuzzing && (
-                     <div className="mt-4 pt-4 border-t border-gray-200">
-                       <h5 className="font-medium text-gray-900 mb-3">Detailed API Analysis</h5>
+                     <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                       <h5 className="font-medium text-gray-900 dark:text-gray-100 mb-3">Detailed API Analysis</h5>
                        
                        {auditResults.apiFuzzing.requiresAuth ? (
                          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
@@ -2850,7 +2850,7 @@ function ShopifyCloudShield() {
                                <h6 className="font-medium text-gray-700 mb-2">Injection Test Results:</h6>
                                <div className="space-y-2">
                                  {auditResults.apiFuzzing.injectionTests.map((test, index) => (
-                                   <div key={index} className="p-3 bg-gray-50 border border-gray-200 rounded">
+                                   <div key={index} className="p-3 bg-gray-50 border border-gray-200 dark:border-slate-700 rounded">
                                      <div className="flex items-center justify-between mb-2">
                                        <span className="font-medium text-gray-800">{test.testType}</span>
                                        <span className={`px-2 py-1 rounded text-xs ${
@@ -2874,7 +2874,7 @@ function ShopifyCloudShield() {
                        
                        <div className="mb-4">
                          <h6 className="font-medium text-gray-700 mb-2">Recommendations:</h6>
-                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+                         <ul className="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400">
                            {auditResults.apiFuzzing.recommendations.map((rec, index) => (
                              <li key={index}>{rec}</li>
                            ))}

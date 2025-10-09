@@ -964,7 +964,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 <div class="font-semibold text-red-800">${vuln.title}</div>
                 <div class="text-sm text-red-700">${vuln.severity} - ${vuln.affected}</div>
               </div>
-            `).join('') || '<p class="text-gray-600">No vulnerabilities found</p>'}
+            `).join('') || '<p class="text-gray-600 dark:text-gray-400">No vulnerabilities found</p>'}
           </div>
         `
       
@@ -988,7 +988,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                   ${plugin.version} ${plugin.updateAvailable ? '(Update Available)' : ''}
                 </span>
               </div>
-            `).join('') || '<p class="text-gray-600">No plugins found</p>'}
+            `).join('') || '<p class="text-gray-600 dark:text-gray-400">No plugins found</p>'}
           </div>
         `
       
@@ -1016,7 +1016,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                   ${check.status}
                 </span>
               </div>
-            `).join('') || '<p class="text-gray-600">No checks performed</p>'}
+            `).join('') || '<p class="text-gray-600 dark:text-gray-400">No checks performed</p>'}
           </div>
         `
       
@@ -1037,14 +1037,14 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
               <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
                 <div>
                   <span class="font-medium">${admin.username}</span>
-                  <span class="text-sm text-gray-600 ml-2">(${admin.role})</span>
+                  <span class="text-sm text-gray-600 dark:text-gray-400 ml-2">(${admin.role})</span>
                 </div>
                 <div class="flex space-x-1">
                   ${admin.weakPassword ? '<span class="px-2 py-1 text-xs bg-red-100 text-red-800 rounded">Weak Password</span>' : ''}
                   ${admin.twoFactorEnabled ? '<span class="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">2FA Enabled</span>' : ''}
                 </div>
               </div>
-            `).join('') || '<p class="text-gray-600">No admin accounts found</p>'}
+            `).join('') || '<p class="text-gray-600 dark:text-gray-400">No admin accounts found</p>'}
           </div>
         `
       
@@ -1057,15 +1057,15 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
             </div>
             <div class="flex items-center space-x-2">
               <span class="font-semibold text-gray-700">Last Backup:</span>
-              <span class="text-sm text-gray-600">${results.lastBackup}</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">${results.lastBackup}</span>
             </div>
             <div class="flex items-center space-x-2">
               <span class="font-semibold text-gray-700">Method:</span>
-              <span class="text-sm text-gray-600">${results.backupMethod}</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">${results.backupMethod}</span>
             </div>
             <div class="flex items-center space-x-2">
               <span class="font-semibold text-gray-700">Size:</span>
-              <span class="text-sm text-gray-600">${results.backupSize}</span>
+              <span class="text-sm text-gray-600 dark:text-gray-400">${results.backupSize}</span>
             </div>
           </div>
         `
@@ -1123,14 +1123,14 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                     <span class="font-medium">${rule.name}</span>
                     <span class="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">${rule.action}</span>
                   </div>
-                `).join('') || '<p class="text-gray-600">No rules found</p>'}
+                `).join('') || '<p class="text-gray-600 dark:text-gray-400">No rules found</p>'}
               </div>
             </div>
           </div>
         `
       
       default:
-        return '<p class="text-gray-600">No report data available</p>'
+        return '<p class="text-gray-600 dark:text-gray-400">No report data available</p>'
     }
   }
 
@@ -1168,13 +1168,13 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
       case 'completed': return 'text-green-600 bg-green-50 border-green-200'
       case 'running': return 'text-blue-600 bg-blue-50 border-blue-200'
       case 'failed': return 'text-red-600 bg-red-50 border-red-200'
-      default: return 'text-gray-600 bg-gray-50 border-gray-200'
+      default: return 'text-gray-600 dark:text-gray-400 bg-gray-50 border-gray-200 dark:border-slate-700'
     }
   }
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-8">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
@@ -1185,8 +1185,8 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">WordPress Security Audit</h1>
-                <p className="text-lg text-gray-600">Comprehensive security analysis and management audit</p>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">WordPress Security Audit</h1>
+                <p className="text-lg text-gray-600 dark:text-gray-400">Comprehensive security analysis and management audit</p>
               </div>
             </div>
             
@@ -1201,7 +1201,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
           </div>
 
           {/* Site Info */}
-          <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-6 border border-gray-200">
+          <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-xl p-6 border border-gray-200 dark:border-slate-700">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="flex items-center">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
@@ -1211,7 +1211,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Target Site</span>
-                  <p className="text-gray-900 font-medium">{siteUrl}</p>
+                  <p className="text-gray-900 dark:text-gray-100 font-medium">{siteUrl}</p>
                 </div>
               </div>
               <div className="flex items-center">
@@ -1222,7 +1222,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Admin Credentials</span>
-                  <p className="text-gray-900 font-medium">{adminProvided ? 'Provided' : 'Not Provided'}</p>
+                  <p className="text-gray-900 dark:text-gray-100 font-medium">{adminProvided ? 'Provided' : 'Not Provided'}</p>
                 </div>
               </div>
               <div className="flex items-center">
@@ -1233,7 +1233,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Audit Status</span>
-                  <p className="text-gray-900 font-medium">{auditCompleted ? 'Completed' : auditStarted ? 'In Progress' : 'Ready'}</p>
+                  <p className="text-gray-900 dark:text-gray-100 font-medium">{auditCompleted ? 'Completed' : auditStarted ? 'In Progress' : 'Ready'}</p>
                 </div>
               </div>
             </div>
@@ -1244,8 +1244,8 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
         {auditStarted && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Audit Progress</h3>
-              <div className="text-sm text-gray-600">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Audit Progress</h3>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
                 {startedTime && (
                   <div className="space-y-1">
                     <div>Started: {new Date(startedTime).toLocaleString()}</div>
@@ -1268,7 +1268,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
               ></div>
             </div>
             
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
               {modules.filter(m => m.status === 'completed').length} of {modules.length} modules completed
             </div>
           </div>
@@ -1278,9 +1278,9 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
         {auditStarted && logs.length > 0 && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Audit Logs</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Audit Logs</h3>
               <div className="flex items-center space-x-3">
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
                   {logs.length} log entries
                 </div>
                 <button
@@ -1291,7 +1291,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                     navigator.clipboard.writeText(logText)
                     showSuccess('Audit logs copied to clipboard!')
                   }}
-                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                   title="Copy logs to clipboard"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1339,7 +1339,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                   {module.status === 'completed' && module.results && (
                     <button
                       onClick={() => downloadReport('json')}
-                      className="text-sm px-3 py-1 bg-white bg-opacity-50 rounded hover:bg-opacity-75 transition-colors"
+                      className="text-sm px-3 py-1 bg-white dark:bg-slate-800 bg-opacity-50 rounded hover:bg-opacity-75 transition-colors"
                     >
                       Download
                     </button>
@@ -1349,7 +1349,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
               
               {module.status === 'running' && (
                 <div className="mt-3">
-                  <div className="w-full bg-white bg-opacity-50 rounded-full h-1">
+                  <div className="w-full bg-white dark:bg-slate-800 bg-opacity-50 rounded-full h-1">
                     <div 
                       className="bg-current h-1 rounded-full transition-all duration-300"
                       style={{ width: `${module.progress}%` }}
@@ -1361,7 +1361,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
               {module.status === 'completed' && module.results && (
                 <div className="mt-4 border-t pt-4">
                   <h5 className="text-sm font-semibold text-gray-700 mb-3">Module Report</h5>
-                  <div className="bg-white rounded-lg p-4 max-h-64 overflow-y-auto">
+                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4 max-h-64 overflow-y-auto">
                     <div 
                       className="prose prose-sm max-w-none"
                       dangerouslySetInnerHTML={{ 
@@ -1379,7 +1379,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
         {auditCompleted && finalReport && (
           <div className="border-t pt-8">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-gray-900">Final Security Report</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Final Security Report</h3>
               <div className="flex flex-wrap gap-3">
                 <button
                   onClick={() => {
@@ -1453,14 +1453,14 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
         {/* Report Preview Modal */}
         {showReportPreview && selectedModuleReport && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
               <div className="flex items-center justify-between p-6 border-b">
-                <h3 className="text-lg font-semibold text-gray-900">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                   {selectedModuleReport.name} Report
                 </h3>
                 <button
                   onClick={() => setShowReportPreview(false)}
-                  className="text-gray-400 hover:text-gray-600"
+                  className="text-gray-400 hover:text-gray-600 dark:text-gray-400"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

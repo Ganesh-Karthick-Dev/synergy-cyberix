@@ -1,0 +1,17 @@
+OS Detection Results for webnox.in
+Detection started at: 2025-10-01T07:02:59.160Z
+==================================================
+
+DETECTED OPERATING SYSTEM:
+==============================
+OS Family: Windows
+OS Version: Windows 10/11 (estimated)
+Confidence: 100%
+Details: TCP/IP fingerprint suggests modern Windows version
+
+FINGERPRINT ANALYSIS:
+==============================
+1. TTL Analysis: Windows (TTL: 128) - TTL: 79
+2. TCP Window Analysis: Windows (medium window) - Window: 10564
+3. Service Banner Analysis: Detected OpenBSD from service banners
+4. Port Pattern Analysis: Detected Linux port pattern

@@ -62,8 +62,8 @@ function SettingsPanel() {
   return (
     <div className="space-y-6">
       {/* System Overview */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-6">System Configuration</h2>
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">System Configuration</h2>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="text-center p-4 bg-gray-50 rounded-lg">
@@ -72,7 +72,7 @@ function SettingsPanel() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
-            <p className="text-sm font-medium text-gray-900">Security Status</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Security Status</p>
             <p className="text-xs text-green-600 mt-1">Optimal</p>
           </div>
           
@@ -82,7 +82,7 @@ function SettingsPanel() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <p className="text-sm font-medium text-gray-900">System Performance</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">System Performance</p>
             <p className="text-xs text-blue-600 mt-1">Excellent</p>
           </div>
           
@@ -92,7 +92,7 @@ function SettingsPanel() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
               </svg>
             </div>
-            <p className="text-sm font-medium text-gray-900">Last Updated</p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Last Updated</p>
             <p className="text-xs text-purple-600 mt-1">2 hours ago</p>
           </div>
         </div>
@@ -101,15 +101,15 @@ function SettingsPanel() {
       {/* Security Settings */}
       <div className="space-y-6">
         {securitySettings.map((category, categoryIndex) => (
-          <div key={categoryIndex} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">{category.category}</h3>
+          <div key={categoryIndex} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{category.category}</h3>
             
             <div className="space-y-4">
               {category.settings.map((setting, settingIndex) => (
                 <div key={settingIndex} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                   <div className="flex-1">
-                    <h4 className="text-sm font-medium text-gray-900">{setting.name}</h4>
-                    <p className="text-xs text-gray-600 mt-1">{setting.description}</p>
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{setting.name}</h4>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{setting.description}</p>
                   </div>
                   <div className="flex items-center ml-4">
                     <label className="relative inline-flex items-center cursor-pointer">
@@ -118,7 +118,7 @@ function SettingsPanel() {
                         defaultChecked={setting.enabled}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-slate-800 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
                     </label>
                     <span className={`ml-3 text-xs font-medium ${
                       setting.enabled ? 'text-green-600' : 'text-red-600'
@@ -136,8 +136,8 @@ function SettingsPanel() {
       {/* System Preferences */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Notification Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Notifications</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Notifications</h3>
           <div className="space-y-3">
             {Object.entries(systemSettings.notifications).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between">
@@ -150,7 +150,7 @@ function SettingsPanel() {
                     defaultChecked={value}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-slate-800 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
             ))}
@@ -158,8 +158,8 @@ function SettingsPanel() {
         </div>
 
         {/* Monitoring Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Monitoring</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Monitoring</h3>
           <div className="space-y-3">
             {Object.entries(systemSettings.monitoring).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between">
@@ -172,7 +172,7 @@ function SettingsPanel() {
                     defaultChecked={value}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-slate-800 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
             ))}
@@ -180,8 +180,8 @@ function SettingsPanel() {
         </div>
 
         {/* Performance Settings */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Performance</h3>
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Performance</h3>
           <div className="space-y-3">
             {Object.entries(systemSettings.performance).map(([key, value]) => (
               <div key={key} className="flex items-center justify-between">
@@ -194,7 +194,7 @@ function SettingsPanel() {
                     defaultChecked={value}
                     className="sr-only peer"
                   />
-                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-slate-800 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
                 </label>
               </div>
             ))}
@@ -203,7 +203,7 @@ function SettingsPanel() {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+      <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200 dark:border-slate-700">
         <button className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors">
           Reset to Defaults
         </button>

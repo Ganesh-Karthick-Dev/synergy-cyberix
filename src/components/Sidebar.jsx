@@ -15,31 +15,31 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
   }
 
   return (
-    <div className={`fixed left-0 top-0 h-full bg-gradient-to-b from-slate-50 to-slate-100 border-r border-slate-200/60 shadow-xl transition-all duration-300 z-30 ${
+    <div className={`fixed left-0 top-0 h-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 border-r border-slate-200/60 dark:border-slate-700/60 shadow-xl transition-all duration-300 z-30 ${
       collapsed ? 'w-16' : 'w-64'
     }`}>
       {/* Logo/Header */}
-      <div className="flex items-center justify-between px-4 py-5 border-b border-slate-200/60 bg-white/80 backdrop-blur-sm">
+      <div className="flex items-center justify-between px-4 py-5 border-b border-slate-200/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
         {!collapsed && (
           <div className="flex items-center space-x-3">
             <div className="relative">
               <img src={logo} alt="Cyberix" className="w-10 h-10 rounded-lg shadow-sm" />
             </div>
             <div>
-              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+              <h2 className="text-xl font-bold bg-gradient-to-r from-slate-800 to-slate-600 dark:from-slate-200 dark:to-slate-400 bg-clip-text text-transparent">
                 Cyberix
               </h2>
-              <p className="text-xs text-slate-500 font-medium">Security Suite</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Security Suite</p>
             </div>
           </div>
         )}
         
         <button
           onClick={onToggleCollapse}
-          className="p-2.5 rounded-xl bg-white/60 hover:bg-orange-50 hover:shadow-md transition-all duration-200 group border border-slate-200/60"
+          className="p-2.5 rounded-xl bg-white/60 dark:bg-slate-700/60 hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:shadow-md transition-all duration-200 group border border-slate-200/60 dark:border-slate-600/60"
         >
           <svg 
-            className={`w-4 h-4 text-slate-600 group-hover:text-orange-600 transition-all duration-200 ${collapsed ? 'rotate-180' : ''}`} 
+            className={`w-4 h-4 text-slate-600 dark:text-slate-400 group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-all duration-200 ${collapsed ? 'rotate-180' : ''}`} 
             fill="none" 
             stroke="currentColor" 
             viewBox="0 0 24 24"
@@ -62,7 +62,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
                     className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-semibold transition-all duration-300 group relative ${
                       expandedItems.has(item.id)
                         ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/25'
-                        : 'text-slate-700 hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 hover:text-orange-700 hover:shadow-md'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 hover:text-orange-700 dark:hover:text-orange-400 hover:shadow-md'
                     }`}
                     title={collapsed ? item.name : ''}
                   >
@@ -72,7 +72,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
                     )}
                     
                     <div className={`flex items-center justify-center transition-all duration-300 ${
-                      expandedItems.has(item.id) ? 'text-white scale-110' : 'text-slate-500 group-hover:text-orange-600'
+                      expandedItems.has(item.id) ? 'text-white scale-110' : 'text-slate-500 dark:text-slate-400 group-hover:text-orange-600 dark:group-hover:text-orange-400'
                     }`}>
                       {item.icon}
                     </div>
@@ -83,7 +83,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
                         <div className="ml-auto">
                           <svg 
                             className={`w-4 h-4 transition-all duration-300 ${
-                              expandedItems.has(item.id) ? 'rotate-90 text-white' : 'text-slate-400 group-hover:text-orange-500'
+                              expandedItems.has(item.id) ? 'rotate-90 text-white' : 'text-slate-400 dark:text-slate-500 group-hover:text-orange-500 dark:group-hover:text-orange-400'
                             }`} 
                             fill="none" 
                             stroke="currentColor" 
@@ -105,12 +105,12 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
                           onClick={() => onViewChange(subItem.id)}
                           className={`w-full flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-300 group relative ${
                             activeView === subItem.id
-                              ? 'bg-gradient-to-r from-orange-100 to-orange-50 text-orange-700 border-l-2 border-orange-500 shadow-sm'
-                              : 'text-slate-600 hover:bg-white/60 hover:text-orange-600 hover:shadow-sm'
+                              ? 'bg-gradient-to-r from-orange-100 to-orange-50 dark:from-orange-900/30 dark:to-orange-800/30 text-orange-700 dark:text-orange-400 border-l-2 border-orange-500 shadow-sm'
+                              : 'text-slate-600 dark:text-slate-400 hover:bg-white/60 dark:hover:bg-slate-700/60 hover:text-orange-600 dark:hover:text-orange-400 hover:shadow-sm'
                           }`}
                         >
                           <div className={`flex items-center justify-center transition-all duration-300 ${
-                            activeView === subItem.id ? 'text-orange-600 scale-105' : 'text-slate-400 group-hover:text-orange-500'
+                            activeView === subItem.id ? 'text-orange-600 dark:text-orange-400 scale-105' : 'text-slate-400 dark:text-slate-500 group-hover:text-orange-500 dark:group-hover:text-orange-400'
                           }`}>
                             {subItem.icon}
                           </div>
@@ -132,7 +132,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
                   className={`w-full flex items-center px-3 py-3 rounded-xl text-sm font-semibold transition-all duration-300 group relative ${
                     activeView === item.id
                       ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/25'
-                      : 'text-slate-700 hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 hover:text-orange-700 hover:shadow-md'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-gradient-to-r hover:from-orange-50 hover:to-orange-100 dark:hover:from-orange-900/20 dark:hover:to-orange-800/20 hover:text-orange-700 dark:hover:text-orange-400 hover:shadow-md'
                   }`}
                   title={collapsed ? item.name : ''}
                 >
@@ -142,7 +142,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
                   )}
                   
                   <div className={`flex items-center justify-center transition-all duration-300 ${
-                    activeView === item.id ? 'text-white scale-110' : 'text-slate-500 group-hover:text-orange-600'
+                    activeView === item.id ? 'text-white scale-110' : 'text-slate-500 dark:text-slate-400 group-hover:text-orange-600 dark:group-hover:text-orange-400'
                   }`}>
                     {item.icon}
                   </div>
@@ -164,7 +164,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
       </nav>
 
       {/* Bottom Section */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200/60 bg-white/80 backdrop-blur-sm">
+      <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm">
         {!collapsed ? (
           <div className="flex items-center space-x-3">
             <div className="relative">
@@ -174,12 +174,12 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
               <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white shadow-sm"></div>
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-slate-800 truncate">Admin User</p>
-              <p className="text-xs text-slate-500 truncate font-medium">administrator@cybersec.com</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">Admin User</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-medium">administrator@cybersec.com</p>
             </div>
             <div className="flex flex-col items-end space-y-1">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <p className="text-xs text-slate-500 font-medium">Online</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Online</p>
             </div>
           </div>
         ) : (

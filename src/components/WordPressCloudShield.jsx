@@ -258,7 +258,7 @@ function WordPressCloudShield() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-8">
         <div className="mb-8">
           <div className="flex items-center mb-4">
             <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
@@ -267,8 +267,8 @@ function WordPressCloudShield() {
               </svg>
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">WordPress Cloud Shield</h1>
-              <p className="text-gray-600">Comprehensive WordPress security analysis and protection</p>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">WordPress Cloud Shield</h1>
+              <p className="text-gray-600 dark:text-gray-400">Comprehensive WordPress security analysis and protection</p>
             </div>
           </div>
         </div>
@@ -308,7 +308,7 @@ function WordPressCloudShield() {
                   )}
                 </button>
               </div>
-              <p className="mt-2 text-sm text-gray-500">
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
                 Enter the URL of the WordPress site you want to analyze for security vulnerabilities.
               </p>
               <div className="mt-3 p-3 bg-blue-50 rounded-lg">
@@ -367,13 +367,13 @@ function WordPressCloudShield() {
         {/* Admin Credentials Dialog */}
         {showCredentialsDialog && isWordPress && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-gray-900">Admin Credentials</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Admin Credentials</h3>
                   <button
                     onClick={handleSkipCredentials}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="text-gray-400 hover:text-gray-600 dark:text-gray-400"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -381,7 +381,7 @@ function WordPressCloudShield() {
                   </button>
                 </div>
                 
-                <p className="text-sm text-gray-600 mb-6">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
                   Provide your WordPress admin credentials to get a detailed security report. 
                   This is optional - you can skip this step for basic analysis.
                 </p>
@@ -423,7 +423,7 @@ function WordPressCloudShield() {
                       onChange={(e) => setCredentials(prev => ({ ...prev, acceptTerms: e.target.checked }))}
                       className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                     />
-                    <label htmlFor="acceptTerms" className="ml-2 text-sm text-gray-600">
+                    <label htmlFor="acceptTerms" className="ml-2 text-sm text-gray-600 dark:text-gray-400">
                       I accept the terms and conditions for credential verification
                     </label>
                   </div>
