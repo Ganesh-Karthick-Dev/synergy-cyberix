@@ -13,6 +13,8 @@ import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
 import WordPressCloudShield from './components/WordPressCloudShield'
 import ShopifyCloudShield from './components/ShopifyCloudShield'
+import PhishingDetection from './components/PhishingDetection'
+import APIScanner from './components/APIScanner'
 
 function Dashboard({ onLogout }) {
   const [activeView, setActiveView] = useState('overview')
@@ -64,7 +66,7 @@ function Dashboard({ onLogout }) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
             </svg>
           )
-        }
+        },
       ]
     },
     { 
@@ -82,6 +84,24 @@ function Dashboard({ onLogout }) {
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+        </svg>
+      )
+    },
+    { 
+      id: 'phishing-scan', 
+      name: 'Advanced Phishing Detection', 
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      )
+    },
+    { 
+      id: 'api-scan', 
+      name: 'API & Endpoint Exposure Scanner', 
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
       )
     },
@@ -143,6 +163,10 @@ function Dashboard({ onLogout }) {
         return <PortScanning />
       case 'server-scan':
         return <ServerScanning />
+      case 'phishing-scan':
+        return <PhishingDetection />
+      case 'api-scan':
+        return <APIScanner />
       // case 'security':
       //   return <SecurityCenter />
       case 'threats':

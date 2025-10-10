@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE nmaprun>
-<nmaprun scanner="Fallback" args="JavaScript fallback scanner" start="1759302513" startstr="2025-10-01T07:08:33.280Z">
-  <scaninfo type="connect" protocol="tcp" numservices="4" services=""/>
+<nmaprun scanner="Fallback" args="JavaScript fallback scanner" start="1759636079" startstr="2025-10-05T03:47:59.811Z">
+  <scaninfo type="connect" protocol="tcp" numservices="0" services=""/>
   <host>
     <status state="up" reason="conn-accepted"/>
     <address addr="webnox.in" addrtype="ipv4"/>
@@ -9,26 +9,10 @@
       <hostname name="webnox.in" type="user"/>
     </hostnames>
     <ports>
-      <port protocol="tcp" portid="22">
-        <state state="open" reason="syn-ack" reason_ttl="0"/>
-        <service name="ssh" method="table" conf="3"/>
-      </port>
-      <port protocol="tcp" portid="80">
-        <state state="open" reason="syn-ack" reason_ttl="0"/>
-        <service name="http" method="table" conf="3"/>
-      </port>
-      <port protocol="tcp" portid="443">
-        <state state="open" reason="syn-ack" reason_ttl="0"/>
-        <service name="https" method="table" conf="3"/>
-      </port>
-      <port protocol="tcp" portid="3306">
-        <state state="open" reason="syn-ack" reason_ttl="0"/>
-        <service name="mysql" method="table" conf="3"/>
-      </port>
     </ports>
   </host>
   <runstats>
-    <finished time="1759302513" timestr="2025-10-01T07:08:33.280Z" elapsed="12"/>
+    <finished time="1759636079" timestr="2025-10-05T03:47:59.811Z" elapsed="10"/>
     <hosts up="1" down="0" total="1"/>
   </runstats>
 </nmaprun>
