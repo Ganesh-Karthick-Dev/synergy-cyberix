@@ -12,6 +12,10 @@ import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
 import WordPressCloudShield from './components/WordPressCloudShield'
 import ShopifyCloudShield from './components/ShopifyCloudShield'
+
+
+import PhishingDetection from './components/PhishingDetection'
+import APIScanner from './components/APIScanner'
 import SecurityAnalyzer from './components/SecurityAnalyzer'
 import MalwareDefacementMonitor from './components/MalwareDefacementMonitor'
 
