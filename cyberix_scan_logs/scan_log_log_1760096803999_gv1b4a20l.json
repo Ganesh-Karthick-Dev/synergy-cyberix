@@ -1,0 +1,12 @@
+{
+  "id": "log_1760096803999_gv1b4a20l",
+  "timestamp": "2025-10-10T11:46:43.999Z",
+  "scanType": "port",
+  "scanName": "Port Scan",
+  "target": "",
+  "status": "completed",
+  "startTime": "2025-10-10T11:46:43.999Z",
+  "endTime": "2025-10-10T11:46:43.999Z",
+  "duration": 0,
+  "result": "Scan completed - 0 open ports found"
+}

@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "electron": "cross-env NODE_ENV=development electron .",
-    "electron:dev": "concurrently \"npm run dev\" \"npm run electron\""
+    "electron:dev": "concurrently \"npm run dev\" \"npm run electron\"",
+    "maldef:run": "node -e \"require('./src/maldef/orchestrator').runMaldefScan(process.argv[1]||'https://example.com',{onProgress:u=>console.log(JSON.stringify(u))}).then(r=>console.log(JSON.stringify(r))).catch(e=>console.error(e))\" https://example.com",
+    "test": "echo \"No tests yet (Jest placeholder)\" && exit 0"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.13",

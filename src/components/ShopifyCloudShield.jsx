@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../context/ToastContext'
+import WebsiteSecurityAudit from './WebsiteSecurityAudit'
 
 function ShopifyCloudShield() {
   const { showSuccess, showError, showLoading, dismissToast } = useToast()
@@ -1637,6 +1638,9 @@ function ShopifyCloudShield() {
             </div>
           </div>
         </div>
+
+        {/* Website Security Audit Tab */}
+        <WebsiteSecurityAudit />
 
         {/* URL Input Section */}
         <div className="mb-8">

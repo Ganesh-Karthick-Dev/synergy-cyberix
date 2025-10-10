@@ -1,8 +1,0 @@
-MAC Address Detection Results for webnox.in
-Detection started at: 2025-10-01T07:02:59.164Z
-==================================================
-
-MAC ADDRESS DETECTION SKIPPED:
-==============================
-Reason: Target is not on local network
-Note: MAC addresses are only visible for local network devices

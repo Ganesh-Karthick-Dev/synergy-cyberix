@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useScanning } from '../context/ScanningContext'
+import scanLogger from '../utils/scanLogger'
 
 function NetworkScanning() {
+  const [isStarting, setIsStarting] = useState(false)
   const [target, setTarget] = useState('')
   const [scanResults, setScanResults] = useState(null)
   const [kaliStatus, setKaliStatus] = useState('Checking...')
@@ -11,8 +13,11 @@ function NetworkScanning() {
     filteredPorts: 0,
     services: 0
   })
+  const [riskIssues, setRiskIssues] = useState([])
 
   const { scanStatus, scanProgress, startNetworkScan, abortScan } = useScanning()
+  const [showDetails, setShowDetails] = useState(false)
+  const [selectedPort, setSelectedPort] = useState(null)
 
   useEffect(() => {
     checkKaliStatus()
@@ -57,6 +62,7 @@ function NetworkScanning() {
   }
 
   const handleStartScan = async () => {
+    setIsStarting(true)
     if (!target.trim()) {
       alert('Please enter a target IP or hostname')
       return
@@ -69,55 +75,156 @@ function NetworkScanning() {
 
     setScanResults(null)
     setScanStats({ openPorts: 0, closedPorts: 0, filteredPorts: 0, services: 0 })
-
+    
+    // Log scan start
+    const startTime = new Date()
+    await scanLogger.logScan({
+      scanType: 'network',
+      scanName: 'Network Scan',
+      target: target.trim(),
+      status: 'started',
+      startTime: startTime.toISOString(),
+      endTime: null,
+      duration: null,
+      result: 'Scan initiated'
+    })
+    
     try {
       await startNetworkScan(target)
     } catch (error) {
       console.error('Scan start error:', error)
+      alert('Failed to start network scan: ' + (error?.message || String(error)))
+      
+      // Log scan failure
+      await scanLogger.logScan({
+        scanType: 'network',
+        scanName: 'Network Scan',
+        target: target.trim(),
+        status: 'failed',
+        startTime: startTime.toISOString(),
+        endTime: new Date().toISOString(),
+        duration: new Date().getTime() - startTime.getTime(),
+        result: `Failed to start: ${error.message}`
+      })
+    } finally {
+      setIsStarting(false)
     }
   }
 
   // Listen for scan completion
   useEffect(() => {
     if (window.cyberGuard) {
-      window.cyberGuard.onNetworkScanDone((result) => {
+      window.cyberGuard.onNetworkScanDone(async (result) => {
         try {
           console.log('Network scan completed:', result)
           console.log('Result type:', typeof result)
           console.log('Result keys:', result ? Object.keys(result) : 'No result')
           
+          let scanData = null
+          let isSuccess = false
+          
           if (result && result.success && result.result) {
-            console.log('Setting scan results from success:', result.result)
-            setScanResults(result.result)
+            // Handle new backend shape: { jsonReport, htmlReport, pdfReport, reportData }
+            const r = result.result
+            if (r && r.reportData) {
+              console.log('Merging reportData with file paths for UI rendering')
+              scanData = { ...r.reportData, jsonReport: r.jsonReport, htmlReport: r.htmlReport, pdfReport: r.pdfReport }
+              setScanResults(scanData)
+              isSuccess = true
+            } else {
+              console.log('Setting scan results from success:', r)
+              scanData = r
+              setScanResults(scanData)
+              isSuccess = true
+            }
           } else if (result && result.result) {
             // Direct result object
-            console.log('Setting direct scan results:', result.result)
-            setScanResults(result.result)
+            const r = result.result
+            if (r && r.reportData) {
+              scanData = { ...r.reportData, jsonReport: r.jsonReport, htmlReport: r.htmlReport, pdfReport: r.pdfReport }
+              setScanResults(scanData)
+              isSuccess = true
+            } else {
+              console.log('Setting direct scan results:', r)
+              scanData = r
+              setScanResults(scanData)
+              isSuccess = true
+            }
           } else if (result && !result.success && !result.result) {
             // Handle case where result is the actual data directly
-            console.log('Setting result as direct data:', result)
-            setScanResults(result)
+            if (result.reportData) {
+              scanData = { ...result.reportData, jsonReport: result.jsonReport, htmlReport: result.htmlReport, pdfReport: result.pdfReport }
+              setScanResults(scanData)
+              isSuccess = true
+            } else {
+              console.log('Setting result as direct data:', result)
+              scanData = result
+              setScanResults(scanData)
+              isSuccess = true
+            }
           } else if (result && result.success && !result.result) {
             // Handle case where success is true but no result property
-            console.log('Setting result as success data:', result)
-            setScanResults(result)
+            if (result.reportData) {
+              scanData = { ...result.reportData, jsonReport: result.jsonReport, htmlReport: result.htmlReport, pdfReport: result.pdfReport }
+              setScanResults(scanData)
+              isSuccess = true
+            } else {
+              console.log('Setting result as success data:', result)
+              scanData = result
+              setScanResults(scanData)
+              isSuccess = true
+            }
           } else {
             console.warn('Invalid scan result:', result)
             setScanResults({ 
               summary: 'Scan completed but no detailed results available',
               error: result?.error || 'Unknown error'
             })
+            isSuccess = false
           }
+          
+          // Log scan completion
+          const endTime = new Date()
+          const startTime = new Date(endTime.getTime() - (result?.duration || 120000)) // Default 2 min
+          const openPorts = scanData?.ports?.filter(p => p.state === 'open').length || 0
+          const resultSummary = isSuccess ? 
+            `Scan completed - ${openPorts} open ports found` : 
+            'Network scan failed'
+          
+          await scanLogger.logScan({
+            scanType: 'network',
+            scanName: 'Network Scan',
+            target: target.trim(),
+            status: isSuccess ? 'completed' : 'failed',
+            startTime: startTime.toISOString(),
+            endTime: endTime.toISOString(),
+            duration: result?.duration || 120000,
+            result: resultSummary
+          })
+          
         } catch (error) {
           console.error('Error handling network scan completion:', error)
           setScanResults({ 
             summary: 'Scan completed with errors',
             error: error.message 
           })
+          
+          // Log scan error
+          const endTime = new Date()
+          await scanLogger.logScan({
+            scanType: 'network',
+            scanName: 'Network Scan',
+            target: target.trim(),
+            status: 'failed',
+            startTime: new Date(endTime.getTime() - 120000).toISOString(),
+            endTime: endTime.toISOString(),
+            duration: 120000,
+            result: `Error processing results: ${error.message}`
+          })
         }
       })
     }
-  }, [])
+  }, [target])
 
   // Update scan statistics from actual scan results
   useEffect(() => {
@@ -187,6 +294,80 @@ function NetworkScanning() {
       })
     }
   }, [scanResults, scanProgress])
+
+  // Derive critical/high issues with explanations and remediation
+  useEffect(() => {
+    if (!scanResults) { setRiskIssues([]); return }
+    const issues = []
+
+    const addIssue = (sev, title, why, fix, ref = null) => {
+      issues.push({ severity: sev, title, why, fix, ref })
+    }
+
+    // From explicit vulnerabilities if present
+    if (Array.isArray(scanResults.vulnerabilities)) {
+      scanResults.vulnerabilities.forEach(v => {
+        const sev = (v.severity || '').toLowerCase()
+        if (sev === 'critical' || sev === 'high') {
+          addIssue(
+            sev,
+            v.type || 'Vulnerability',
+            v.description || 'This finding has been flagged as high risk.',
+            v.remediation || 'Apply vendor patches and follow best-practice hardening.',
+            v.references && v.references[0] ? v.references[0] : null
+          )
+        }
+      })
+    }
+
+    // Heuristics from open ports
+    const open = scanResults?.findings?.allPorts || []
+    const openOnly = open.filter(p => p.status === 'open')
+    const isOpen = (port) => openOnly.some(p => Number(p.port) === Number(port))
+
+    if (isOpen(22)) {
+      addIssue(
+        'high',
+        'SSH exposed on the internet (port 22)',
+        'Public SSH increases attack surface (credential stuffing, brute force, key theft).',
+        'Restrict SSH to VPN or specific IPs, disable password login, enable key-based auth, and consider moving to a non-default port.',
+      )
+    }
+    if (isOpen(3306)) {
+      addIssue(
+        'critical',
+        'MySQL exposed (port 3306)',
+        'Databases accessible from the internet can lead to data exfiltration and RCE via auth bypass or weak creds.',
+        'Bind MySQL to localhost/private network, enforce TLS and strong auth, and restrict with firewall/security groups.'
+      )
+    }
+    if (isOpen(5432)) {
+      addIssue(
+        'critical',
+        'PostgreSQL exposed (port 5432)',
+        'Internet-exposed databases are a common breach vector.',
+        'Restrict access to trusted networks, require TLS and strong auth, disable unused roles, and monitor access logs.'
+      )
+    }
+    if (isOpen(6379)) {
+      addIssue(
+        'critical',
+        'Redis exposed without authentication (port 6379)',
+        'Default Redis often runs without auth; exposure can allow arbitrary data manipulation and RCE.',
+        'Enable requirepass or ACLs, bind to localhost/VPC, and place behind a firewall or proxy.'
+      )
+    }
+    if (isOpen(80) && !isOpen(443)) {
+      addIssue(
+        'high',
+        'HTTP without HTTPS',
+        'Unencrypted traffic allows credential/session interception.',
+        'Enable HTTPS with modern TLS, redirect HTTP to HTTPS, and set HSTS.'
+      )
+    }
+
+    setRiskIssues(issues)
+  }, [scanResults])
 
   const downloadResults = async (format = 'json') => {
     if (!scanResults) {
@@ -271,6 +452,21 @@ function NetworkScanning() {
       console.error('Download error:', error)
       alert(`❌ Download failed: ${error.message}`)
     }
+  }
+
+  const openPortDetails = (portRow) => {
+    // Enrich with service detection entry if available
+    let serviceInfo = null
+    if (scanResults?.serviceDetections && portRow?.port) {
+      serviceInfo = scanResults.serviceDetections.find(s => Number(s.port) === Number(portRow.port)) || null
+    }
+    setSelectedPort({ ...portRow, serviceInfo })
+    setShowDetails(true)
+  }
+
+  const closePortDetails = () => {
+    setShowDetails(false)
+    setSelectedPort(null)
   }
 
   // Helper function to download generated reports from backend
@@ -746,7 +942,7 @@ function NetworkScanning() {
           <div className="flex space-x-4">
             <button
               onClick={handleStartScan}
-              disabled={scanStatus.isScanning || !target.trim()}
+              disabled={isStarting || !target.trim()}
               className="px-8 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
             >
               {scanStatus.isScanning ? (
@@ -933,40 +1129,40 @@ function NetworkScanning() {
                   </h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold">{scanResults.summary.totalFiles || 0}</div>
-                      <div className="text-sm opacity-90">Total Files Generated</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanResults.summary.totalFiles || 0}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Total Files Generated</div>
                     </div>
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-lg font-semibold">{scanResults.summary.bannerGrabbing || 'N/A'}</div>
-                      <div className="text-sm opacity-90">Service Detection</div>
+                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{scanResults.summary.bannerGrabbing || 'N/A'}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Service Detection</div>
                     </div>
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-lg font-semibold">{scanResults.summary.osDetection || 'N/A'}</div>
-                      <div className="text-sm opacity-90">OS Detection</div>
+                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{scanResults.summary.osDetection || 'N/A'}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">OS Detection</div>
                     </div>
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-lg font-semibold">{scanResults.summary.macDetection || 'N/A'}</div>
-                      <div className="text-sm opacity-90">MAC Detection</div>
+                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{scanResults.summary.macDetection || 'N/A'}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">MAC Detection</div>
                     </div>
                   </div>
                   
                   {/* Port Statistics in Executive Summary */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
-                      <div className="text-sm opacity-90">Total Ports Scanned</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Total Ports Scanned</div>
                     </div>
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold">{scanStats.openPorts}</div>
-                      <div className="text-sm opacity-90">Open Ports</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.openPorts}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Open Ports</div>
                     </div>
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold">{scanStats.closedPorts}</div>
-                      <div className="text-sm opacity-90">Closed Ports</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.closedPorts}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Closed Ports</div>
                     </div>
                     <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold">{scanStats.filteredPorts}</div>
-                      <div className="text-sm opacity-90">Filtered Ports</div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.filteredPorts}</div>
+                      <div className="text-sm text-gray-700 dark:text-gray-300">Filtered Ports</div>
                     </div>
                   </div>
                 </div>
@@ -1140,8 +1336,8 @@ function NetworkScanning() {
                           <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
                             <div className="text-3xl font-bold text-orange-600 mb-1">{scanStats.services}</div>
                             <div className="text-sm text-purple-700 font-medium">Services</div>
-                            <div className="w-full bg-orange-100 rounded-full h-2 mt-2">
-                              <div className="bg-blue-500 h-2 rounded-full" style={{width: `${(scanStats.services / Math.max(scanStats.openPorts, 1)) * 100}%`}}></div>
+                          <div className="w-full bg-orange-100 rounded-full h-2 mt-2">
+                              <div className="bg-blue-500 h-2 rounded-full" style={{width: `${Math.min(100, (scanStats.services / Math.max(scanStats.openPorts, 1)) * 100)}%`}}></div>
                             </div>
                           </div>
                         </div>
@@ -1396,6 +1592,47 @@ function NetworkScanning() {
                     </svg>
                     <span>Network Findings - Port Scan Results</span>
                   </h3>
+                  {/* Results Overview */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
+                      <div className="text-sm text-gray-600">Top Services Detected</div>
+                      <div className="mt-2 text-gray-900 dark:text-gray-100 text-sm">
+                        {(scanResults.serviceDetections || [])
+                          .slice(0,5)
+                          .map((s, i) => (
+                            <div key={i} className="flex justify-between border-b border-gray-100 py-1">
+                              <span className="font-medium">{s.service || 'unknown'}</span>
+                              <span className="font-mono">:{s.port}</span>
+                            </div>
+                          ))}
+                        {(scanResults.serviceDetections || []).length === 0 && (
+                          <div className="text-gray-500">No services identified</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-indigo-500">
+                      <div className="text-sm text-gray-600">Target</div>
+                      <div className="mt-2 font-mono text-gray-900 dark:text-gray-100">{target || scanResults.target || 'Unknown'}</div>
+                      <div className="text-xs text-gray-500 mt-1">Scan Time: {new Date().toLocaleString()}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-emerald-500">
+                      <div className="text-sm text-gray-600">Files Generated</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {scanResults.jsonReport && (
+                          <button onClick={() => downloadGeneratedReport(scanResults.jsonReport, 'JSON')} className="px-3 py-1 text-xs bg-orange-600 text-white rounded">JSON</button>
+                        )}
+                        {scanResults.htmlReport && (
+                          <button onClick={() => downloadGeneratedReport(scanResults.htmlReport, 'HTML')} className="px-3 py-1 text-xs bg-green-600 text-white rounded">HTML</button>
+                        )}
+                        {scanResults.pdfReport && (
+                          <button onClick={() => downloadGeneratedReport(scanResults.pdfReport, 'PDF')} className="px-3 py-1 text-xs bg-red-600 text-white rounded">PDF</button>
+                        )}
+                        {!scanResults.jsonReport && !scanResults.htmlReport && !scanResults.pdfReport && (
+                          <div className="text-gray-500 text-sm">No files available</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                   
                   {/* Port Statistics */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -1426,6 +1663,7 @@ function NetworkScanning() {
                           <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Status</th>
                           <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Service</th>
                           <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Banner/Details</th>
+                          <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1443,6 +1681,11 @@ function NetworkScanning() {
                             </td>
                             <td className="border border-gray-300 px-4 py-2">{port.service}</td>
                             <td className="border border-gray-300 px-4 py-2 text-sm font-mono">{port.banner || 'N/A'}</td>
+                            <td className="border border-gray-300 px-4 py-2">
+                              <button onClick={() => openPortDetails(port)} className="text-orange-600 hover:text-orange-700 font-medium">
+                                View Details
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1545,6 +1788,31 @@ function NetworkScanning() {
                 </div>
               )}
 
+              {/* Critical & High Risks */}
+              {riskIssues.length > 0 && (
+                <div className="bg-gradient-to-r from-rose-50 to-red-50 rounded-xl p-6 border border-red-200 mb-6">
+                  <h3 className="text-lg font-semibold text-red-800 mb-4 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path d="M8.257 3.099c.765-1.36 2.72-1.36 3.485 0l6.518 11.594c.75 1.334-.213 2.997-1.742 2.997H3.48c-1.53 0-2.492-1.663-1.742-2.997L8.257 3.1zM11 13a1 1 0 10-2 0 1 1 0 002 0zm-1-2a1 1 0 01-1-1V7a1 1 0 112 0v3a1 1 0 01-1 1z"/></svg>
+                    <span>Critical & High Risks</span>
+                  </h3>
+                  <div className="space-y-4">
+                    {riskIssues.map((i, idx) => (
+                      <div key={idx} className="bg-white dark:bg-slate-800 rounded-lg p-4 border border-red-100">
+                        <div className="flex items-start justify-between">
+                          <div className="font-semibold text-gray-900 dark:text-gray-100">{i.title}</div>
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${i.severity === 'critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{i.severity.toUpperCase()}</span>
+                        </div>
+                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300"><span className="font-medium">Why this matters:</span> {i.why}</div>
+                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300"><span className="font-medium">How to fix:</span> {i.fix}</div>
+                        {i.ref && (
+                          <div className="mt-2 text-xs"><a href={i.ref} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Reference</a></div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Debug Information */}
               {/* {process.env.NODE_ENV === 'development' && (
                 <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
@@ -1558,6 +1826,43 @@ function NetworkScanning() {
                   </div>
                 </div>
               )} */}
+            </div>
+          )}
+          {/* Port Details Modal */}
+          {showDetails && selectedPort && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200 dark:border-slate-700">
+                <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Port {selectedPort.port} Details</h4>
+                  <button onClick={closePortDetails} className="text-gray-500 hover:text-gray-700">✕</button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Service</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{selectedPort.service || selectedPort.serviceInfo?.service || 'Unknown'}</div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Version</div>
+                      <div className="font-medium text-gray-900 dark:text-gray-100">{selectedPort.serviceInfo?.version || 'N/A'}</div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4 md:col-span-2">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">Banner</div>
+                      <div className="font-mono text-sm text-gray-900 dark:text-gray-100 break-words">{selectedPort.banner || selectedPort.serviceInfo?.banner || 'N/A'}</div>
+                    </div>
+                  </div>
+                  {selectedPort.serviceInfo?.cpe && (
+                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4">
+                      <div className="text-sm text-gray-600 dark:text-gray-400">CPE</div>
+                      <div className="font-mono text-sm text-gray-900 dark:text-gray-100">{selectedPort.serviceInfo.cpe}</div>
+                    </div>
+                  )}
+                  <div className="text-xs text-gray-500">Tip: Use Port Scanning for deep vulnerability analysis.</div>
+                </div>
+                <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-slate-700">
+                  <button onClick={closePortDetails} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">Close</button>
+                </div>
+              </div>
             </div>
           )}
         </div>

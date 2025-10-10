@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import scanLogger from '../utils/scanLogger'
 
 function ServerScanning() {
   const [target, setTarget] = useState('')
@@ -101,11 +102,38 @@ function ServerScanning() {
     setScanStartTime(startTime)
     setExpectedEndTime(new Date(startTime.getTime() + 15 * 60 * 1000)) // 15 minutes expected
 
+    // Log scan start
+    try {
+      await scanLogger.logScan({
+        scanType: 'server',
+        scanName: 'Server Scan',
+        target: target.trim(),
+        status: 'started',
+        startTime: startTime.toISOString(),
+        endTime: null,
+        duration: null,
+        result: 'Scan initiated'
+      })
+    } catch {}
+
     try {
       await window.cyberGuard.startServerScan(target)
     } catch (error) {
       console.error('Server scan error:', error)
       addProgressLog('error', `Scan failed: ${error.message}`)
+      // Log start failure
+      try {
+        await scanLogger.logScan({
+          scanType: 'server',
+          scanName: 'Server Scan',
+          target: target.trim(),
+          status: 'failed',
+          startTime: startTime.toISOString(),
+          endTime: new Date().toISOString(),
+          duration: new Date().getTime() - startTime.getTime(),
+          result: `Failed to start: ${error.message}`
+        })
+      } catch {}
     }
   }
 
@@ -178,7 +206,7 @@ function ServerScanning() {
       })
 
       console.log('Setting up onServerScanDone listener...')
-      window.cyberGuard.onServerScanDone((result) => {
+      window.cyberGuard.onServerScanDone(async (result) => {
                 console.log('🔥 Server scan completed:', result)
                 console.log('🔥 Scan results data:', result?.result)
                 console.log('🔥 DNS data:', result?.result?.findings?.dns)
@@ -188,12 +216,55 @@ function ServerScanning() {
                   setScanResults(result.result)
                   setIsScanning(false)
                   addProgressLog('success', 'Server scan completed successfully')
+                  // Log completion
+                  try {
+                    const end = new Date()
+                    const start = scanStartTime || new Date(end.getTime() - 15 * 60 * 1000)
+                    await scanLogger.logScan({
+                      scanType: 'server',
+                      scanName: 'Server Scan',
+                      target: target.trim(),
+                      status: 'completed',
+                      startTime: start.toISOString(),
+                      endTime: end.toISOString(),
+                      duration: end.getTime() - start.getTime(),
+                      result: 'Server scan completed successfully'
+                    })
+                  } catch {}
                 } else if (result && result.aborted) {
                   setIsScanning(false)
                   addProgressLog('warning', 'Server scan aborted by user')
+                  try {
+                    const end = new Date()
+                    const start = scanStartTime || new Date(end.getTime() - 15 * 60 * 1000)
+                    await scanLogger.logScan({
+                      scanType: 'server',
+                      scanName: 'Server Scan',
+                      target: target.trim(),
+                      status: 'aborted',
+                      startTime: start.toISOString(),
+                      endTime: end.toISOString(),
+                      duration: end.getTime() - start.getTime(),
+                      result: 'Server scan aborted by user'
+                    })
+                  } catch {}
                 } else {
                   setIsScanning(false)
                   addProgressLog('error', 'Server scan failed')
+                  try {
+                    const end = new Date()
+                    const start = scanStartTime || new Date(end.getTime() - 15 * 60 * 1000)
+                    await scanLogger.logScan({
+                      scanType: 'server',
+                      scanName: 'Server Scan',
+                      target: target.trim(),
+                      status: 'failed',
+                      startTime: start.toISOString(),
+                      endTime: end.toISOString(),
+                      duration: end.getTime() - start.getTime(),
+                      result: result?.error ? String(result.error) : 'Server scan failed'
+                    })
+                  } catch {}
                 }
       })
     } else {

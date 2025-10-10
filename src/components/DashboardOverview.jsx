@@ -30,24 +30,18 @@ import {
   Server,
   Cpu
 } from 'lucide-react'
-import WebsiteScanner from './WebsiteScanner'
+import ComprehensiveSecurityScanner from './ComprehensiveSecurityScanner'
 
 function DashboardOverview() {
-  const [currentTime, setCurrentTime] = useState(new Date())
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-
     // Simulate loading
     const loadingTimer = setTimeout(() => {
       setIsLoading(false)
     }, 1500)
 
     return () => {
-      clearInterval(timer)
       clearTimeout(loadingTimer)
     }
   }, [])
@@ -97,37 +91,15 @@ function DashboardOverview() {
 
   return (
     <div className="space-y-6">
-      {/* Website Scanner Section - Moved to Top */}
+      {/* Comprehensive Security Scanner Section - Moved to Top */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <WebsiteScanner />
+        <ComprehensiveSecurityScanner />
       </motion.div>
 
-      {/* Header with Time */}
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white"
-      >
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">Security Dashboard</h1>
-            <p className="text-orange-100">Real-time security monitoring and analytics</p>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-mono font-bold">
-              {currentTime.toLocaleTimeString()}
-            </div>
-            <div className="text-orange-100">
-              {currentTime.toLocaleDateString()}
-            </div>
-          </div>
-        </div>
-      </motion.div>
 
       {/* Key Metrics Cards */}
       <motion.div 

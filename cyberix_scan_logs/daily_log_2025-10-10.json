@@ -1,0 +1,50 @@
+[
+  {
+    "id": "log_1760096240460_0mx22qekr",
+    "timestamp": "2025-10-10T11:37:20.460Z",
+    "scanType": "port",
+    "scanName": "Port Scan",
+    "target": "https://wordpress.com/",
+    "status": "started",
+    "startTime": "2025-10-10T11:37:20.460Z",
+    "endTime": null,
+    "duration": null,
+    "result": "Scan initiated"
+  },
+  {
+    "id": "log_1760096240593_0jlug8zfm",
+    "timestamp": "2025-10-10T11:37:20.593Z",
+    "scanType": "port",
+    "scanName": "Port Scan",
+    "target": "https://wordpress.com/",
+    "status": "completed",
+    "startTime": "2025-10-10T11:37:20.593Z",
+    "endTime": "2025-10-10T11:37:20.593Z",
+    "duration": 0,
+    "result": "Scan completed - 0 open ports found"
+  },
+  {
+    "id": "log_1760096803842_bsh2h9su8",
+    "timestamp": "2025-10-10T11:46:43.842Z",
+    "scanType": "port",
+    "scanName": "Port Scan",
+    "target": "https://wordpress.com/",
+    "status": "started",
+    "startTime": "2025-10-10T11:46:43.842Z",
+    "endTime": null,
+    "duration": null,
+    "result": "Scan initiated"
+  },
+  {
+    "id": "log_1760096804000_7xj2ku578",
+    "timestamp": "2025-10-10T11:46:44.000Z",
+    "scanType": "port",
+    "scanName": "Port Scan",
+    "target": "https://wordpress.com/",
+    "status": "completed",
+    "startTime": "2025-10-10T11:46:44.000Z",
+    "endTime": "2025-10-10T11:46:44.000Z",
+    "duration": 0,
+    "result": "Scan completed - 0 open ports found"
+  }
+]

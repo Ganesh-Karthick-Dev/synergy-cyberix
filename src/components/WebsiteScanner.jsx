@@ -1437,6 +1437,19 @@ const WebsiteScanner = () => {
                           <li>Findings: {scanResults.results.medium.nuclei.findings}</li>
                           <li>Critical: {scanResults.results.medium.nuclei.critical} | High: {scanResults.results.medium.nuclei.high}</li>
                         </ul>
+                        {(scanResults.results.medium.nuclei.critical > 0 || scanResults.results.medium.nuclei.high > 0) && (
+                          <div className="mt-3 text-sm bg-white border border-red-200 rounded p-3">
+                            <div className="font-semibold text-red-700 mb-1">Why this is risky</div>
+                            <p className="text-gray-700 mb-2">Critical/High findings indicate known exploit patterns detected by templates (e.g., RCE, SQLi, auth bypass). Attackers can automate these to gain access or exfiltrate data.</p>
+                            <div className="font-semibold text-red-700 mb-1">How to fix</div>
+                            <ul className="list-disc ml-5 text-gray-700 space-y-1">
+                              <li>Prioritize patching for Critical issues immediately; then address High.</li>
+                              <li>Update affected services/applications to the latest secure versions.</li>
+                              <li>Apply WAF rules and input validation for injection-type issues.</li>
+                              <li>Remove/disable vulnerable endpoints or restrict access temporarily.</li>
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
                     {scanResults.results.medium?.waf && (
@@ -1474,6 +1487,18 @@ const WebsiteScanner = () => {
                           <li>Service: {scanResults.results.advanced.takeover.service}</li>
                           <li>Risk: {scanResults.results.advanced.takeover.risk}</li>
                         </ul>
+                        {scanResults.results.advanced.takeover.vulnerable > 0 && (
+                          <div className="mt-3 text-sm bg-white border border-red-200 rounded p-3">
+                            <div className="font-semibold text-red-700 mb-1">Why this is critical</div>
+                            <p className="text-gray-700 mb-2">Dangling DNS mappings allow attackers to claim the service and host phishing/malicious content on your subdomain.</p>
+                            <div className="font-semibold text-red-700 mb-1">How to fix</div>
+                            <ul className="list-disc ml-5 text-gray-700 space-y-1">
+                              <li>Remove DNS records pointing to non-existent services.</li>
+                              <li>Claim the target service (e.g., GitHub Pages, S3) or disable the record.</li>
+                              <li>Continuously monitor for newly dangling records.</li>
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
                     {scanResults.results.advanced?.api && (
@@ -1496,6 +1521,18 @@ const WebsiteScanner = () => {
                           <li>Endpoint: {scanResults.results.advanced.ssrf.endpoint}</li>
                           <li>Impact: {scanResults.results.advanced.ssrf.impact}</li>
                         </ul>
+                        {scanResults.results.advanced.ssrf.vulnerable > 0 && (
+                          <div className="mt-3 text-sm bg-white border border-red-200 rounded p-3">
+                            <div className="font-semibold text-red-700 mb-1">Why this is high risk</div>
+                            <p className="text-gray-700 mb-2">SSRF can pivot access to internal resources and metadata services, potentially leading to credential theft and lateral movement.</p>
+                            <div className="font-semibold text-red-700 mb-1">How to fix</div>
+                            <ul className="list-disc ml-5 text-gray-700 space-y-1">
+                              <li>Validate and whitelist outbound request destinations.</li>
+                              <li>Block access to link-local/metadata IPs (169.254.169.254).</li>
+                              <li>Use network egress filtering and timeouts.</li>
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
                     {scanResults.results.advanced?.git && (
@@ -1507,6 +1544,18 @@ const WebsiteScanner = () => {
                           <li>Secrets: {scanResults.results.advanced.git.secrets}</li>
                           <li>Files: {scanResults.results.advanced.git.files?.join(', ')}</li>
                         </ul>
+                        {scanResults.results.advanced.git.secrets > 0 && (
+                          <div className="mt-3 text-sm bg-white border border-red-200 rounded p-3">
+                            <div className="font-semibold text-red-700 mb-1">Why this is critical</div>
+                            <p className="text-gray-700 mb-2">Leaked secrets enable unauthorized access to infrastructure and data.</p>
+                            <div className="font-semibold text-red-700 mb-1">How to fix</div>
+                            <ul className="list-disc ml-5 text-gray-700 space-y-1">
+                              <li>Revoke and rotate exposed credentials immediately.</li>
+                              <li>Remove secrets from history using tools like git filter-repo.</li>
+                              <li>Adopt secret scanning and use environment managers (Vault, Secrets Manager).</li>
+                            </ul>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

@@ -1,5 +1,64 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode without a Tailwind config (Tailwind v4) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Global base colors so all screens inherit proper light/dark defaults */
+html, body, #root {
+  min-height: 100%;
+}
+
+body {
+  background-color: #f9fafb; /* gray-50 */
+  color: #111827; /* gray-900 */
+}
+
+.dark body {
+  background-color: #0f172a; /* slate-900 */
+  color: #e5e7eb; /* gray-200 */
+}
+
+/* Generic container defaults (applies when components don't set classes) */
+.app-surface {
+  background-color: #ffffff; /* white */
+  border: 1px solid #e5e7eb; /* gray-200 */
+}
+
+.dark .app-surface {
+  background-color: #0f172a; /* slate-900 */
+  border-color: #334155; /* slate-700 */
+}
+
+.app-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+}
+
+.dark .app-card {
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+/* Ensure button text color adapts if no explicit Tailwind text-* class is set */
+button:not([class*="text-"]),
+.btn:not([class*="text-"]) {
+  color: #111827; /* gray-900 */
+}
+
+.dark button:not([class*="text-"]),
+.dark .btn:not([class*="text-"]) {
+  color: #e5e7eb; /* gray-200 */
+}
+
+/* Make icons inside buttons inherit the button color */
+button svg,
+.btn svg {
+  color: inherit;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
 /* Professional Toast Animations */
 @keyframes enter {
   0% {

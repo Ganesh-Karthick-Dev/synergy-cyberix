@@ -28,9 +28,16 @@ async function grabBanners(host, options) {
         onProgress({ stage: 'scanning', message: `Starting comprehensive port scan with service detection for ${host}` });
     }
     
-    // Extended list of common ports to check
+    // Comprehensive port list for consistent scanning across all modules
     const commonPorts = [
-        21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 993, 995, 1723, 3389, 5432, 5900, 8080, 8443, 8888, 9000, 9090, 3000, 5000, 8000, 8001, 8008, 8081, 8443, 8888, 9000, 9090, 10000, 10443, 18080, 28080, 38080, 48080, 58080, 68080, 78080, 88080, 98080
+        // Standard services
+        21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 993, 995, 1723, 3389, 5432, 5900, 8080, 8443, 8888, 9000, 9090,
+        // Development and alternative ports
+        3000, 5000, 8000, 8001, 8008, 8081, 8443, 8888, 9000, 9090, 10000, 10443,
+        // Extended port ranges
+        18080, 28080, 38080, 48080, 58080, 68080, 78080, 88080, 98080,
+        // Additional common services
+        20, 69, 79, 88, 102, 111, 113, 119, 123, 137, 138, 161, 162, 179, 389, 445, 465, 514, 515, 587, 636, 1080, 1433, 1521, 3306, 6379, 7001, 7002, 9200, 9300, 11211, 27017, 50070, 50075, 60010, 60030
     ];
     
     let banners = `Network Port Scan Results for ${host}\n`;

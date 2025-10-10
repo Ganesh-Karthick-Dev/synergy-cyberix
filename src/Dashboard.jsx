@@ -3,7 +3,6 @@ import Sidebar from './components/Sidebar'
 import Navbar from './components/Navbar'
 import DashboardOverview from './components/DashboardOverview.jsx'
 import SecurityCenter from './components/SecurityCenter'
-import ThreatMonitor from './components/ThreatMonitor'
 import SystemLogs from './components/SystemLogs'
 import UserManagement from './components/UserManagement'
 import SettingsPanel from './components/SettingsPanel'
@@ -13,6 +12,8 @@ import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
 import WordPressCloudShield from './components/WordPressCloudShield'
 import ShopifyCloudShield from './components/ShopifyCloudShield'
+import SecurityAnalyzer from './components/SecurityAnalyzer'
+import MalwareDefacementMonitor from './components/MalwareDefacementMonitor'
 
 function Dashboard({ onLogout }) {
   const [activeView, setActiveView] = useState('overview')
@@ -21,7 +22,7 @@ function Dashboard({ onLogout }) {
   const menuItems = [
     { 
       id: 'overview', 
-      name: 'Dashboard', 
+      name: 'Overview', 
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
@@ -85,6 +86,15 @@ function Dashboard({ onLogout }) {
         </svg>
       )
     },
+    {
+      id: 'website-audit',
+      name: 'Website Security Audit',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6l4 2m6-4a10 10 0 11-20 0 10 10 0 0120 0z" />
+        </svg>
+      )
+    },
     // { 
     //   id: 'security', 
     //   name: 'Security Center', 
@@ -95,14 +105,15 @@ function Dashboard({ onLogout }) {
     //   )
     // },
     { 
-      id: 'threats', 
-      name: 'Threat Monitor', 
+      id: 'malware-defacement', 
+      name: 'Malware & Defacement Monitor', 
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1v4m0 14v4M1 12h4m14 0h4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
         </svg>
       )
     },
+    // Threat Monitor removed per request
     { 
       id: 'logs', 
       name: 'System Logs', 
@@ -145,8 +156,9 @@ function Dashboard({ onLogout }) {
         return <ServerScanning />
       // case 'security':
       //   return <SecurityCenter />
-      case 'threats':
-        return <ThreatMonitor />
+      case 'malware-defacement':
+        return <MalwareDefacementMonitor />
+      // Threat Monitor removed
       case 'logs':
         return <SystemLogs />
       // case 'users':
@@ -155,6 +167,8 @@ function Dashboard({ onLogout }) {
         return <WordPressCloudShield />
       case 'shopify-shield':
         return <ShopifyCloudShield />
+      case 'website-audit':
+        return <SecurityAnalyzer />
       case 'settings':
         return <SettingsPanel />
       default:

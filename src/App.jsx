@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import "./index.css"
 import Dashboard from './Dashboard'
+import Setup from './components/Setup'
+import NetworkStatus from './components/NetworkStatus'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -16,6 +18,42 @@ const AppContent = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentToastId, setCurrentToastId] = useState(null)
+  const [setupComplete, setSetupComplete] = useState(false)
+  const [checkingSetup, setCheckingSetup] = useState(true)
+  const [installPath, setInstallPath] = useState(null)
+
+  // Check setup completion status on app load
+  useEffect(() => {
+    const checkSetupStatus = async () => {
+      try {
+        if (window.cyberGuard) {
+          const setupStatus = await window.cyberGuard.checkSetupComplete()
+          setSetupComplete(setupStatus.completed)
+          setInstallPath(setupStatus.installPath)
+        }
+      } catch (error) {
+        console.error('Error checking setup status:', error)
+        setSetupComplete(false)
+      } finally {
+        setCheckingSetup(false)
+      }
+    }
+
+    checkSetupStatus()
+  }, [])
+
+  const handleSetupComplete = async (path) => {
+    try {
+      // Mark setup as complete
+      await window.cyberGuard.markSetupComplete(path)
+      setSetupComplete(true)
+      setInstallPath(path)
+      showSuccess('Setup completed successfully! Welcome to Cyberix.')
+    } catch (error) {
+      console.error('Error completing setup:', error)
+      showError('Failed to complete setup. Please try again.')
+    }
+  }
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -117,23 +155,61 @@ const AppContent = () => {
     })
   }
 
+  // Show loading screen while checking setup status
+  if (checkingSetup) {
+    return (
+      <NetworkStatus>
+        <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Loading Cyberix...
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300">
+              Checking setup status
+            </p>
+          </div>
+        </div>
+      </NetworkStatus>
+    )
+  }
+
+  // Show setup screen if setup is not complete
+  if (!setupComplete) {
+    return (
+      <NetworkStatus>
+        <Setup onSetupComplete={handleSetupComplete} />
+      </NetworkStatus>
+    )
+  }
+
   if (isAuthenticated) {
-    return <Dashboard onLogout={handleLogout} />
+    return (
+      <NetworkStatus>
+        <Dashboard onLogout={handleLogout} />
+      </NetworkStatus>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div className="text-center">
-          <div>
-          <h2 className="text-3xl font-bold text-white bg-orange-500 w-fit text-center mx-auto p-3 rounded-lg mb-2">
-           Cyberix
-          </h2>
+    <NetworkStatus>
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
+          <div className="text-center">
+            <div>
+            <h2 className="text-3xl font-bold text-white bg-orange-500 w-fit text-center mx-auto p-3 rounded-lg mb-2">
+             Cyberix
+            </h2>
+            </div>
+            <p className="text-gray-600 dark:text-gray-300">
+              Please sign in to your account
+            </p>
           </div>
-          <p className="text-gray-600 dark:text-gray-300">
-            Please sign in to your account
-          </p>
-        </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 p-8">
           <form className="space-y-6" onSubmit={handleSubmit}>
@@ -255,6 +331,7 @@ const AppContent = () => {
         </div>
       </div>
     </div>
+    </NetworkStatus>
   )
 }
 

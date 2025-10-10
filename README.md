@@ -1,16 +1,24 @@
-# React + Vite
+# Cyberix Desktop Security Suite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Electron + React app for scanning and monitoring.
 
-Currently, two official plugins are available:
+## Malware & Defacement Monitor (Prototype)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+This module crawls pages with a headless browser (Puppeteer), captures artifacts (rendered HTML, screenshots, network logs), computes SHA-256 hashes, and optionally runs YARA/ClamAV inside WSL. It maintains a baseline of page hashes to detect defacement via hash changes and displays a simple diff list in the UI.
 
-## React Compiler
+Key files:
+- `src/maldef/pwScanner.js`: Puppeteer crawler and artifact capture
+- `src/maldef/orchestrator.js`: Orchestrates crawl + WSL scans + baseline compare
+- `src/maldef/wslRunner.js`: Thin wrapper to run commands in WSL
+- `src/maldef/baselineManager.js`: Load/save baseline and compare
+- `src/maldef/wsl-setup.sh`: Installs YARA/ClamAV and a sample YARA rule in WSL
+- `src/components/MalwareDefacementMonitor.jsx`: UI to start scans and view logs
+- `src/components/DiffViewer.jsx`: Displays baseline comparison results
 
-The React Compiler is currently not compatible with SWC. See [this issue](https://github.com/vitejs/vite-plugin-react/issues/428) for tracking the progress.
+### WSL Setup (Ubuntu/Kali)
 
-## Expanding the ESLint configuration
+1. Open WSL terminal
+2. Run: `sudo bash /mnt/<drive>/path/to/repo/src/maldef/wsl-setup.sh`
+3. Ensure `yara` and `clamscan` are available
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Security: do not hardcode API keys; store secrets securely and prompt users for permission before scans.

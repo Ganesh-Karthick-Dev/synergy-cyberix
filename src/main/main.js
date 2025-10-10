@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('child_process');
 const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
 require('dotenv').config();
@@ -252,7 +252,21 @@ async function createMainWindow() {
   return mainWindow;
 }
 
-app.whenReady().then(async () => {
+  // Allow renderer to request opening a URL explicitly (register early)
+  ipcMain.handle('app:openExternal', async (_e, u) => {
+    try {
+      const nu = new URL(u.startsWith('http') ? u : `https://${u}`)
+      if (nu.protocol === 'http:' || nu.protocol === 'https:') {
+        await shell.openExternal(nu.toString())
+        return { ok: true }
+      }
+      return { error: 'Invalid URL' }
+    } catch (e) {
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  app.whenReady().then(async () => {
   const win = await createMainWindow();
 
   // IPC: expose OS helpers
@@ -260,6 +274,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('os:checkWsl', async () => {
     try { return await checkWslInstalled(); } catch { return false; }
   });
+
   ipcMain.handle('os:installWsl', async (event) => {
     return await new Promise((resolve) => {
       installWsl(
@@ -638,7 +653,15 @@ app.whenReady().then(async () => {
             onProgress: (update) => {
               event.sender.send('portscan:progress', update);
             },
-            dryRun: false
+            dryRun: false,
+            // Ensure full-range scan when fallback is used
+            fullPortScan: true,
+            // Tuneables: keep reasonable to avoid overwhelming network/OS
+            concurrency: 300,
+            timeout: 1000,
+            startPort: 1,
+            endPort: 65535,
+            runVulnScripts: false
           });
           
           event.sender.send('portscan:done', { success: true, summary: 'Port scan completed successfully', result });
@@ -1152,6 +1175,257 @@ app.whenReady().then(async () => {
       return { success: true };
     }
     return { error: 'No server scan running' };
+  });
+
+  // Website Security Audit (authorized, read-only)
+  ipcMain.handle('websiteAudit:start', async (event, payload) => {
+    try {
+      const { url, credentials } = typeof payload === 'object' ? payload : { url: payload, credentials: null }
+      const websiteAuditModule = require(path.join(__dirname, '..', 'scanners', 'website-audit.js'))
+      const outDir = path.join(process.cwd(), 'temp-scans', `website-audit-${Date.now()}`)
+      fs.mkdirSync(outDir, { recursive: true })
+      // Launch target site in default browser (read-only view) for user context
+      try {
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+          } catch {}
+          return null
+        })()
+        if (safeUrl) shell.openExternal(safeUrl)
+      } catch {}
+      const options = {
+        outputDir: outDir,
+        onProgress: (u) => event.sender.send('websiteAudit:progress', u)
+      }
+      const result = await websiteAuditModule.runWebsiteAudit(url, { ...options, credentials })
+      event.sender.send('websiteAudit:done', { success: true, result })
+      return { success: true }
+    } catch (e) {
+      event.sender.send('websiteAudit:done', { error: e?.message || String(e) })
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Security Analyzer (comprehensive defensive analysis)
+  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
+    try {
+      const { url, credentials, options } = payload
+      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
+      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
+      fs.mkdirSync(outDir, { recursive: true })
+      
+      // Launch target site in default browser for transparency
+      try {
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+          } catch {}
+          return null
+        })()
+        if (safeUrl) shell.openExternal(safeUrl)
+      } catch {}
+      
+      const scanOptions = {
+        outputDir: outDir,
+        onProgress: (update) => event.sender.send('securityAnalysis:progress', update),
+        ...options
+      }
+      
+      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
+      event.sender.send('securityAnalysis:complete', { success: true, result })
+      return { success: true }
+    } catch (e) {
+      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Malware & Defacement orchestrated scan
+  ipcMain.handle('maldef:start', async (event, url) => {
+    try {
+      const { runMaldefScan } = require(path.join(__dirname, '..', 'maldef', 'orchestrator.js'))
+      const outRoot = path.join(process.cwd(), 'temp-scans')
+      const report = await runMaldefScan(url, {
+        outRoot,
+        onProgress: (u) => event.sender.send('maldef:progress', u)
+      })
+      event.sender.send('maldef:done', report)
+      return { ok: true }
+    } catch (e) {
+      event.sender.send('maldef:progress', { stage: 'error', message: e?.message || String(e) })
+      event.sender.send('maldef:done', null)
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Setup IPC handlers
+  ipcMain.handle('setup:selectDirectory', async () => {
+    try {
+      console.log('setup:selectDirectory handler called');
+      
+      if (!win) {
+        console.error('Main window not available');
+        throw new Error('Main window not available');
+      }
+
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory'],
+        title: 'Select Installation Directory',
+        defaultPath: 'C:\\Program Files'
+      });
+      
+      console.log('Dialog result:', result);
+      
+      if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+        console.log('Selected directory:', result.filePaths[0]);
+        return result.filePaths;
+      }
+      
+      console.log('No directory selected or dialog cancelled');
+      return null;
+    } catch (error) {
+      console.error('Error selecting directory:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('setup:createDirectory', async (event, dirPath) => {
+    try {
+      console.log('setup:createDirectory handler called with path:', dirPath);
+      
+      // Create the main directory if it doesn't exist
+      if (!fs.existsSync(dirPath)) {
+        console.log('Creating main directory:', dirPath);
+        fs.mkdirSync(dirPath, { recursive: true });
+      } else {
+        console.log('Main directory already exists:', dirPath);
+      }
+      
+      // Create the cyberix_system_logs subdirectory
+      const logsPath = path.join(dirPath, 'cyberix_system_logs');
+      if (!fs.existsSync(logsPath)) {
+        console.log('Creating logs directory:', logsPath);
+        fs.mkdirSync(logsPath, { recursive: true });
+      } else {
+        console.log('Logs directory already exists:', logsPath);
+      }
+      
+      console.log('Directory creation successful');
+      return { success: true, path: logsPath };
+    } catch (error) {
+      console.error('Error creating directory:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('setup:checkComplete', async () => {
+    try {
+      // Check if setup has been completed by looking for a setup config file
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        return { completed: true, installPath: config.installPath };
+      }
+      return { completed: false };
+    } catch (error) {
+      console.error('Error checking setup status:', error);
+      return { completed: false };
+    }
+  });
+
+  ipcMain.handle('setup:markComplete', async (event, installPath) => {
+    try {
+      // Save setup completion status
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      const config = {
+        completed: true,
+        installPath: installPath,
+        completedAt: new Date().toISOString()
+      };
+      fs.writeFileSync(setupConfigPath, JSON.stringify(config, null, 2));
+      return { success: true };
+    } catch (error) {
+      console.error('Error marking setup complete:', error);
+      throw error;
+    }
+  });
+
+  // File system operations for logging
+  ipcMain.handle('fs:getInstallPath', async () => {
+    try {
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        return config.installPath || null;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting install path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:getDownloadsPath', async () => {
+    try {
+      return app.getPath('downloads');
+    } catch (error) {
+      console.error('Error getting downloads path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Error creating directory:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
+    try {
+      // Ensure directory exists
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, data, 'utf8');
+      return { success: true };
+    } catch (error) {
+      console.error('Error writing file:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:readFile', async (event, filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        throw new Error('File does not exist');
+      }
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+      console.error('Error reading file:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:listFiles', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        return [];
+      }
+      return fs.readdirSync(dirPath);
+    } catch (error) {
+      console.error('Error listing files:', error);
+      return [];
+    }
   });
 
   console.log('Server scan IPC handlers registered successfully');
