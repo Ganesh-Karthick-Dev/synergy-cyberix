@@ -10,6 +10,7 @@ export const useScanning = () => {
   return context
 }
 
+
 export const ScanningProvider = ({ children }) => {
   const [scanStatus, setScanStatus] = useState({
     isScanning: false,
