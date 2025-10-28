@@ -3,9 +3,11 @@ import "./index.css"
 import Dashboard from './Dashboard'
 import Setup from './components/Setup'
 import NetworkStatus from './components/NetworkStatus'
+import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
@@ -21,6 +23,10 @@ const AppContent = () => {
   const [setupComplete, setSetupComplete] = useState(false)
   const [checkingSetup, setCheckingSetup] = useState(true)
   const [installPath, setInstallPath] = useState(null)
+  
+  // New states for WSL credential flow
+  const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
+  const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
 
   // Check setup completion status on app load
   useEffect(() => {
@@ -85,10 +91,8 @@ const AppContent = () => {
           duration: 3000
         })
         
-        // Small delay for better UX
-        setTimeout(() => {
-          setIsAuthenticated(true)
-        }, 800)
+        // Start the WSL credential and tool checking flow
+        await handlePostLoginFlow()
         
       } else {
         // Dismiss loading toast
@@ -110,6 +114,78 @@ const AppContent = () => {
     } finally {
       setIsLoading(false)
       setCurrentToastId(null)
+    }
+  }
+
+  const handlePostLoginFlow = async () => {
+    try {
+      console.log('🚀 [APP] Starting post-login flow...')
+      setIsCheckingCredentials(true)
+      
+      // Check if we have stored WSL credentials
+      if (hasSecurePassword()) {
+        console.log('🔐 [APP] Found stored WSL password, validating...')
+        
+        // Validate the stored password
+        const isValid = await validateStoredPassword()
+        
+        if (isValid) {
+          console.log('✅ [APP] Stored password is valid, checking tools...')
+          
+      // Check which tools are missing
+      const password = getSecurePassword()
+      if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
+        console.log('🔧 [APP] Calling checkRequiredToolsOnly with password:', password ? 'EXISTS' : 'NULL')
+        const toolCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
+        
+        console.log('🔧 [APP] ===== TOOL CHECK RESULT =====')
+        console.log('🔧 [APP] Tool check result:', toolCheck)
+        console.log('🔧 [APP] Tool check success:', toolCheck?.success)
+        console.log('🔧 [APP] Tool check missingTools:', toolCheck?.missingTools)
+        console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
+        console.log('🔧 [APP] ===== END TOOL CHECK RESULT =====')
+        
+        if (toolCheck && toolCheck.success) {
+              console.log('✅ [APP] All tools are ready!')
+              // Navigate directly to dashboard
+              setTimeout(() => {
+                setIsAuthenticated(true)
+              }, 800)
+            } else if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
+              console.log('⚠️ [APP] Some tools are missing:', toolCheck.missingTools)
+              console.log('🔧 [APP] Missing tools detected, stopping here for now')
+              // Just show the missing tools info and navigate to dashboard
+              showError(`Missing ${toolCheck.missingTools.length} tools: ${toolCheck.missingTools.join(', ')}. Please install them manually.`)
+              setTimeout(() => {
+                setIsAuthenticated(true)
+              }, 2000)
+            } else {
+              console.log('✅ [APP] Tool check completed, navigating to dashboard')
+              setTimeout(() => {
+                setIsAuthenticated(true)
+              }, 800)
+            }
+          } else {
+            console.log('✅ [APP] Tool check API not available, navigating to dashboard')
+            setTimeout(() => {
+              setIsAuthenticated(true)
+            }, 800)
+          }
+        } else {
+          console.log('❌ [APP] Stored password is invalid, asking for new password')
+          // Password is invalid, ask for new password
+          setShowWslPasswordDialog(true)
+        }
+      } else {
+        console.log('🔐 [APP] No stored WSL password found, asking for password')
+        // No stored password, ask for password
+        setShowWslPasswordDialog(true)
+      }
+    } catch (error) {
+      console.error('❌ [APP] Post-login flow failed:', error)
+      showError('Failed to initialize system. Please try again.')
+    } finally {
+      setIsCheckingCredentials(false)
     }
   }
 
@@ -155,6 +231,61 @@ const AppContent = () => {
     })
   }
 
+  const handleWslPasswordSuccess = async (password) => {
+    console.log('✅ [APP] WSL password validated, checking tools...')
+    setShowWslPasswordDialog(false)
+    
+    try {
+      // Check which tools are missing
+      if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
+        console.log('🔧 [APP] Calling checkRequiredToolsOnly with password:', password ? 'EXISTS' : 'NULL')
+        const toolCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
+        
+        console.log('🔧 [APP] ===== TOOL CHECK RESULT (PASSWORD SUCCESS) =====')
+        console.log('🔧 [APP] Tool check result:', toolCheck)
+        console.log('🔧 [APP] Tool check success:', toolCheck?.success)
+        console.log('🔧 [APP] Tool check missingTools:', toolCheck?.missingTools)
+        console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
+        console.log('🔧 [APP] ===== END TOOL CHECK RESULT (PASSWORD SUCCESS) =====')
+        
+        if (toolCheck && toolCheck.success) {
+          console.log('✅ [APP] All tools are ready!')
+          // Navigate directly to dashboard
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 800)
+        } else if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
+          console.log('⚠️ [APP] Some tools are missing:', toolCheck.missingTools)
+          console.log('🔧 [APP] Missing tools detected, stopping here for now')
+          // Just show the missing tools info and navigate to dashboard
+          showError(`Missing ${toolCheck.missingTools.length} tools: ${toolCheck.missingTools.join(', ')}. Please install them manually.`)
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 2000)
+        } else {
+          console.log('✅ [APP] Tool check completed, navigating to dashboard')
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 800)
+        }
+      } else {
+        console.log('✅ [APP] Tool check API not available, navigating to dashboard')
+        setTimeout(() => {
+          setIsAuthenticated(true)
+        }, 800)
+      }
+    } catch (error) {
+      console.error('❌ [APP] Tool check failed:', error)
+      showError('Failed to check security tools. Please try again.')
+    }
+  }
+
+  const handleWslPasswordCancel = () => {
+    setShowWslPasswordDialog(false)
+    // User cancelled, stay on login screen
+  }
+
+
   // Show loading screen while checking setup status
   if (checkingSetup) {
     return (
@@ -192,6 +323,30 @@ const AppContent = () => {
     return (
       <NetworkStatus>
         <Dashboard onLogout={handleLogout} />
+      </NetworkStatus>
+    )
+  }
+
+  // Show credential checking screen
+  if (isCheckingCredentials) {
+    return (
+      <NetworkStatus>
+        <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              Initializing System...
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300">
+              Checking WSL credentials and security tools
+            </p>
+          </div>
+        </div>
       </NetworkStatus>
     )
   }
@@ -331,6 +486,13 @@ const AppContent = () => {
         </div>
       </div>
     </div>
+
+    {/* WSL Password Dialog */}
+    <SimpleWslPasswordDialog
+      isOpen={showWslPasswordDialog}
+      onClose={handleWslPasswordCancel}
+      onSuccess={handleWslPasswordSuccess}
+    />
     </NetworkStatus>
   )
 }

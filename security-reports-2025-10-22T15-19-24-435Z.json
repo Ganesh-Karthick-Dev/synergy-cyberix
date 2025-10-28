@@ -1,0 +1,387 @@
+{
+  "target": "https://webnox.in",
+  "scanDate": "2025-10-22T15:19:24.435Z",
+  "summary": {
+    "totalTests": 20,
+    "completedTests": 20,
+    "criticalFindings": 0,
+    "highFindings": 0,
+    "mediumFindings": 0
+  },
+  "tests": {
+    "dns-resolution": {
+      "testId": "dns-resolution",
+      "testName": "DNS Resolution & Analysis",
+      "category": "Infrastructure",
+      "severity": "info",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:54.008Z",
+      "findings": [
+        {
+          "type": "error",
+          "message": "DNS analysis failed",
+          "details": "bash: line 1: dig: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check DNS configuration and target accessibility"
+      ]
+    },
+    "ssl-tls-analysis": {
+      "testId": "ssl-tls-analysis",
+      "testName": "SSL/TLS Certificate Analysis",
+      "category": "Infrastructure",
+      "severity": "high",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:54.739Z",
+      "findings": [
+        {
+          "type": "success",
+          "message": "SSL certificate valid",
+          "details": "Certificate verification successful"
+        },
+        {
+          "type": "success",
+          "message": "TLS 1.3 supported",
+          "details": "Modern TLS version available"
+        }
+      ],
+      "recommendations": []
+    },
+    "security-headers": {
+      "testId": "security-headers",
+      "testName": "Security Headers Analysis",
+      "category": "Web Security",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:55.053Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Missing Content Security Policy",
+          "details": "XSS protection not implemented"
+        },
+        {
+          "type": "warning",
+          "message": "X-Frame-Options not set",
+          "details": "Clickjacking protection missing"
+        },
+        {
+          "type": "warning",
+          "message": "X-Content-Type-Options not set",
+          "details": "MIME sniffing protection missing"
+        },
+        {
+          "type": "warning",
+          "message": "HSTS not implemented",
+          "details": "HTTP Strict Transport Security not configured"
+        }
+      ],
+      "recommendations": [
+        "Implement Content Security Policy (CSP)",
+        "Add X-Frame-Options header",
+        "Configure X-Content-Type-Options header",
+        "Enable HSTS header for HTTPS sites"
+      ]
+    },
+    "cms-detection": {
+      "testId": "cms-detection",
+      "testName": "CMS & Framework Detection",
+      "category": "Reconnaissance",
+      "severity": "info",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:55.098Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "No CMS information detected",
+          "details": "Web server information not exposed"
+        }
+      ],
+      "recommendations": []
+    },
+    "subdomain-enumeration": {
+      "testId": "subdomain-enumeration",
+      "testName": "Subdomain Enumeration",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:55.499Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Subdomain Enumeration failed",
+          "details": "bash: line 1: amass: command not found\nbash: line 1: dig: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "port-scanning": {
+      "testId": "port-scanning",
+      "testName": "Port Scanning",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:55.753Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Port Scanning failed",
+          "details": "bash: line 1: nmap: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "directory-enumeration": {
+      "testId": "directory-enumeration",
+      "testName": "Directory Enumeration",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:55.999Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Directory Enumeration failed",
+          "details": "bash: line 1: ffuf: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "sql-injection": {
+      "testId": "sql-injection",
+      "testName": "SQL Injection",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:56.240Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "SQL Injection failed",
+          "details": "bash: line 1: sqlmap: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "xss-testing": {
+      "testId": "xss-testing",
+      "testName": "XSS Testing",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:56.481Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "XSS Testing failed",
+          "details": "bash: line 1: dalfox: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "csrf-testing": {
+      "testId": "csrf-testing",
+      "testName": "CSRF Testing",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:56.741Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "CSRF Testing completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "authentication-bypass": {
+      "testId": "authentication-bypass",
+      "testName": "Auth Bypass",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:57.010Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Auth Bypass failed",
+          "details": "bash: line 1: hydra: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "file-upload-testing": {
+      "testId": "file-upload-testing",
+      "testName": "File Upload",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:57.293Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "File Upload completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "insecure-direct-objects": {
+      "testId": "insecure-direct-objects",
+      "testName": "IDOR Testing",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:57.570Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "IDOR Testing completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "server-side-request-forgery": {
+      "testId": "server-side-request-forgery",
+      "testName": "SSRF Testing",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:57.837Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "SSRF Testing completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "xml-external-entity": {
+      "testId": "xml-external-entity",
+      "testName": "XXE Testing",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:58.125Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "XXE Testing completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "command-injection": {
+      "testId": "command-injection",
+      "testName": "Command Injection",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:58.439Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "Command Injection completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "business-logic-flaws": {
+      "testId": "business-logic-flaws",
+      "testName": "Business Logic",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:58.689Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Business Logic failed",
+          "details": "bash: -c: line 1: unexpected EOF while looking for matching `\"'\n'item_id' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "information-disclosure": {
+      "testId": "information-disclosure",
+      "testName": "Info Disclosure",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:59.128Z",
+      "findings": [
+        {
+          "type": "info",
+          "message": "Info Disclosure completed",
+          "details": "Test executed successfully using Kali tools"
+        }
+      ],
+      "recommendations": []
+    },
+    "api-security-testing": {
+      "testId": "api-security-testing",
+      "testName": "API Security",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:59.341Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "API Security failed",
+          "details": "bash: line 1: nuclei: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    },
+    "vulnerability-scanning": {
+      "testId": "vulnerability-scanning",
+      "testName": "Vulnerability Scan",
+      "category": "Web Application",
+      "severity": "medium",
+      "status": "completed",
+      "timestamp": "2025-10-22T14:18:59.574Z",
+      "findings": [
+        {
+          "type": "warning",
+          "message": "Vulnerability Scan failed",
+          "details": "bash: line 1: nmap: command not found\n"
+        }
+      ],
+      "recommendations": [
+        "Check if required Kali tools are installed",
+        "Verify target accessibility"
+      ]
+    }
+  }
+}

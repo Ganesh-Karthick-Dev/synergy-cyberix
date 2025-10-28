@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   startScan: (target) => ipcRenderer.invoke('scan:start', target),
   onScanProgress: (listener) => ipcRenderer.on('scan:progress', (_e, upd) => listener(upd)),
   onScanDone: (listener) => ipcRenderer.on('scan:done', (_e, data) => listener(data)),
+  onScanAutoStart: (listener) => ipcRenderer.on('scan:autoStart', (_e) => listener()),
   cancelScan: () => ipcRenderer.invoke('scan:cancel'),
   // Comprehensive scan
   startComprehensiveScan: (target, outDir) => ipcRenderer.invoke('cscan:start', target, outDir),
@@ -43,6 +44,40 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   installKali: () => ipcRenderer.invoke('kali:install'),
   onKaliInstallProgress: (listener) => ipcRenderer.on('kali:installProgress', (_e, message) => listener(message)),
   onKaliInstallComplete: (listener) => ipcRenderer.once('kali:installComplete', (_e, success) => listener(success)),
+  // Kali Security Scanner for Overview tab
+  testKaliHandlers: () => ipcRenderer.invoke('kali:test'),
+  startKaliScan: (targetUrl) => ipcRenderer.invoke('kali:startScan', targetUrl),
+  onKaliProgress: (listener) => ipcRenderer.on('kali:progress', (_e, progress) => listener(progress)),
+  onKaliComplete: (listener) => ipcRenderer.on('kali:complete', (_e, results) => listener(results)),
+  // Additional Security Scans
+  startAdditionalScans: (targetDomain) => ipcRenderer.invoke('kali:startAdditionalScans', targetDomain),
+  onAdditionalProgress: (listener) => ipcRenderer.on('kali:additionalProgress', (_e, progress) => listener(progress)),
+  onAdditionalComplete: (listener) => ipcRenderer.on('kali:additionalComplete', (_e, results) => listener(results)),
+  saveReport: (data, fileName) => ipcRenderer.invoke('report:saveAs', data, fileName),
+  // Tool Installer
+  testToolsIPC: () => ipcRenderer.invoke('tools:test'),
+  checkMissingTools: () => ipcRenderer.invoke('tools:checkMissing'),
+  installMissingTools: (selectedTools) => ipcRenderer.invoke('tools:installMissing', selectedTools),
+  onToolsInstallProgress: (listener) => ipcRenderer.on('tools:installProgress', (_e, progress) => listener(progress)),
+  // New tool checker functions
+  checkTool: (toolName, password) => ipcRenderer.invoke('tools:checkTool', toolName, password),
+  installTools: (aptCommand, goCommands, password) => ipcRenderer.invoke('tools:installTools', aptCommand, goCommands, password),
+  // WSL Password Management
+  testWslCredentials: (password) => ipcRenderer.invoke('wsl:testCredentials', password),
+  testWslRootCredentials: (password) => {
+    console.log('🔐 [PRELOAD] testWslRootCredentials called with password length:', password ? password.length : 0);
+    console.log('🔐 [PRELOAD] About to invoke wsl:testRootCredentials IPC...');
+    return ipcRenderer.invoke('wsl:testRootCredentials', password);
+  },
+  testWslConnectivity: () => {
+    console.log('🔍 [PRELOAD] testWslConnectivity called');
+    return ipcRenderer.invoke('wsl:testConnectivity');
+  },
+  getWslUsername: () => ipcRenderer.invoke('wsl:getUsername'),
+  runWslCommand: (command, password) => ipcRenderer.invoke('wsl:runCommand', command, password),
+  // Auto-install all tools
+  autoInstallAllTools: () => ipcRenderer.invoke('tools:autoInstallAll'),
+  onAutoInstallProgress: (listener) => ipcRenderer.on('tools:autoInstallProgress', (_e, progress) => listener(progress)),
   // Malware & Defacement
   startMaldefScan: (url) => ipcRenderer.invoke('maldef:start', url),
   onMaldefProgress: (listener) => ipcRenderer.on('maldef:progress', (_e, upd) => listener(upd)),
@@ -58,7 +93,22 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   ensureDirectoryExists: (path) => ipcRenderer.invoke('fs:ensureDirectoryExists', path),
   writeFile: (path, data) => ipcRenderer.invoke('fs:writeFile', path, data),
   readFile: (path) => ipcRenderer.invoke('fs:readFile', path),
-  listFiles: (dir) => ipcRenderer.invoke('fs:listFiles', dir)
+  listFiles: (dir) => ipcRenderer.invoke('fs:listFiles', dir),
+  // WSL Root Execution API - SECURITY CRITICAL
+  runAsRoot: ({ distro, command, requireConfirm = true, useStoredPassword = true }) => 
+    ipcRenderer.invoke('wsl-run-as-root', { distro, command, requireConfirm, useStoredPassword }),
+  // Get stored root password for main process
+  getStoredRootPassword: () => ipcRenderer.invoke('wsl:getStoredRootPassword'),
+  storeRootPassword: (password) => ipcRenderer.invoke('wsl:storeRootPassword', password),
+  clearRootPassword: () => ipcRenderer.invoke('wsl:clearRootPassword'),
+  // Auto-scan trigger
+  triggerAutoScan: () => ipcRenderer.invoke('scan:triggerAutoScan'),
+  // Install missing tools
+  installMissingTools: (missingTools) => ipcRenderer.invoke('tools:installMissing', missingTools),
+  // Install single tool
+  installSingleTool: (toolName, password) => ipcRenderer.invoke('tools:installSingle', toolName, password),
+  // Check required tools only (without installing)
+  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password)
 });
 
 

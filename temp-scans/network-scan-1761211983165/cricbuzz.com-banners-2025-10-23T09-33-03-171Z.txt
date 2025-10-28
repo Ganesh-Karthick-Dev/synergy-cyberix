@@ -1,0 +1,182 @@
+Network Port Scan Results for cricbuzz.com
+Scan started at: 2025-10-23T09:33:03.191Z
+Total ports to scan: 79
+Scan type: Service/Version Detection (-sV equivalent)
+============================================================
+
+21/tcp filtered filtered
+
+22/tcp filtered filtered
+
+23/tcp filtered filtered
+
+25/tcp filtered filtered
+
+53/tcp filtered filtered
+
+80/tcp filtered filtered
+
+110/tcp filtered filtered
+
+135/tcp filtered filtered
+
+139/tcp filtered filtered
+
+143/tcp filtered filtered
+
+443/tcp open https nginx 1.22.1
+Banner: HTTP/1.1 400 Bad Request
+Server: nginx/1.22.1
+Date: Thu, 23 Oct 2025 09:33:50 GMT
+
+993/tcp filtered filtered
+
+995/tcp filtered filtered
+
+1723/tcp filtered filtered
+
+3389/tcp filtered filtered
+
+5432/tcp filtered filtered
+
+5900/tcp filtered filtered
+
+8080/tcp filtered filtered
+
+8443/tcp filtered filtered
+
+8888/tcp filtered filtered
+
+9000/tcp filtered filtered
+
+9090/tcp filtered filtered
+
+3000/tcp filtered filtered
+
+5000/tcp filtered filtered
+
+8000/tcp filtered filtered
+
+8001/tcp filtered filtered
+
+8008/tcp filtered filtered
+
+8081/tcp filtered filtered
+
+8443/tcp filtered filtered
+
+8888/tcp filtered filtered
+
+9000/tcp filtered filtered
+
+9090/tcp filtered filtered
+
+10000/tcp filtered filtered
+
+10443/tcp filtered filtered
+
+18080/tcp filtered filtered
+
+28080/tcp filtered filtered
+
+38080/tcp filtered filtered
+
+48080/tcp filtered filtered
+
+58080/tcp filtered filtered
+
+Port 68080: ERROR - Port should be >= 0 and < 65536. Received type number (68080).
+
+Port 78080: ERROR - Port should be >= 0 and < 65536. Received type number (78080).
+
+Port 88080: ERROR - Port should be >= 0 and < 65536. Received type number (88080).
+
+Port 98080: ERROR - Port should be >= 0 and < 65536. Received type number (98080).
+
+20/tcp filtered filtered
+
+69/tcp filtered filtered
+
+79/tcp filtered filtered
+
+88/tcp filtered filtered
+
+102/tcp filtered filtered
+
+111/tcp filtered filtered
+
+113/tcp filtered filtered
+
+119/tcp filtered filtered
+
+123/tcp filtered filtered
+
+137/tcp filtered filtered
+
+138/tcp filtered filtered
+
+161/tcp filtered filtered
+
+162/tcp filtered filtered
+
+179/tcp filtered filtered
+
+389/tcp filtered filtered
+
+445/tcp filtered filtered
+
+465/tcp filtered filtered
+
+514/tcp filtered filtered
+
+515/tcp filtered filtered
+
+587/tcp filtered filtered
+
+636/tcp filtered filtered
+
+1080/tcp filtered filtered
+
+1433/tcp filtered filtered
+
+1521/tcp filtered filtered
+
+3306/tcp filtered filtered
+
+6379/tcp filtered filtered
+
+7001/tcp filtered filtered
+
+7002/tcp filtered filtered
+
+9200/tcp filtered filtered
+
+9300/tcp filtered filtered
+
+11211/tcp filtered filtered
+
+27017/tcp filtered filtered
+
+50070/tcp filtered filtered
+
+50075/tcp filtered filtered
+
+60010/tcp filtered filtered
+
+60030/tcp filtered filtered
+
+============================================================
+SCAN SUMMARY & TIMING
+============================================================
+Nmap done: 1 IP address (1 host up) scanned in 371.27 seconds
+Total ports scanned: 79
+Open ports: 3
+Closed ports: 0
+Filtered ports: 82
+Packets sent: 79
+Packets received: 6
+Scan completed at: 2025-10-23T09:39:14.461Z
+
+SERVICE DETECTION SUMMARY:
+========================================
+443/tcp open https nginx 1.22.1

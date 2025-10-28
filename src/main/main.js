@@ -1,11 +1,102 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('child_process');
 const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
 require('dotenv').config();
 
 const isDev = process.env.NODE_ENV !== 'production';
+
+// Secure password storage functions
+function getPasswordFilePath() {
+  const userDataPath = app.getPath('userData');
+  return path.join(userDataPath, 'wsl_password.enc');
+}
+
+function encryptPassword(password) {
+  const algorithm = 'aes-256-gcm';
+  const key = crypto.scryptSync('synergy-cyberix-key', 'salt', 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipher(algorithm, key);
+  cipher.setAAD(Buffer.from('synergy-cyberix', 'utf8'));
+  
+  let encrypted = cipher.update(password, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  
+  const authTag = cipher.getAuthTag();
+  
+  return {
+    encrypted,
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+function decryptPassword(encryptedData) {
+  try {
+    const algorithm = 'aes-256-gcm';
+    const key = crypto.scryptSync('synergy-cyberix-key', 'salt', 32);
+    const iv = Buffer.from(encryptedData.iv, 'hex');
+    const authTag = Buffer.from(encryptedData.authTag, 'hex');
+    
+    const decipher = crypto.createDecipher(algorithm, key);
+    decipher.setAAD(Buffer.from('synergy-cyberix', 'utf8'));
+    decipher.setAuthTag(authTag);
+    
+    let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  } catch (error) {
+    console.error('Failed to decrypt password:', error);
+    return null;
+  }
+}
+
+function storePasswordSecurely(password) {
+  try {
+    const encryptedData = encryptPassword(password);
+    const passwordFile = getPasswordFilePath();
+    fs.writeFileSync(passwordFile, JSON.stringify(encryptedData));
+    console.log('🔐 Password stored securely');
+    return true;
+  } catch (error) {
+    console.error('Failed to store password:', error);
+    return false;
+  }
+}
+
+function loadStoredPassword() {
+  try {
+    const passwordFile = getPasswordFilePath();
+    if (!fs.existsSync(passwordFile)) {
+      return null;
+    }
+    
+    const encryptedData = JSON.parse(fs.readFileSync(passwordFile, 'utf8'));
+    const password = decryptPassword(encryptedData);
+    console.log('🔐 Password loaded from secure storage');
+    return password;
+  } catch (error) {
+    console.error('Failed to load password:', error);
+    return null;
+  }
+}
+
+function clearStoredPassword() {
+  try {
+    const passwordFile = getPasswordFilePath();
+    if (fs.existsSync(passwordFile)) {
+      fs.unlinkSync(passwordFile);
+      console.log('🔐 Stored password cleared');
+    }
+    return true;
+  } catch (error) {
+    console.error('Failed to clear password:', error);
+    return false;
+  }
+}
 
 // Helper: check if Kali Linux is installed in WSL
 function checkKaliInstalled() {
@@ -266,8 +357,423 @@ async function createMainWindow() {
     }
   })
 
+  // Kali Security Scanner handlers (registered early)
+  let kaliScanChild = null;
+  
+  // Test handler to verify registration
+  ipcMain.handle('kali:test', async () => {
+    console.log('🔍 [KALI-TEST] Test handler called successfully');
+    return { success: true, message: 'Kali handlers are working' };
+  });
+  
+  ipcMain.handle('kali:startScan', async (event, targetUrl) => {
+    console.log('🔍 [KALI-SCAN-HANDLER] ===== STARTING KALI SCAN =====');
+    console.log('🔍 [KALI-SCAN-HANDLER] Target URL:', targetUrl);
+    console.log('🔍 [KALI-SCAN-HANDLER] Timestamp:', new Date().toISOString());
+    
+    if (kaliScanChild) {
+      console.log('🔍 [KALI-SCAN-HANDLER] Scan already running, returning error');
+      return { error: 'Kali scan already running' };
+    }
+    
+    try {
+      // Import the Kali security scanner module
+      // Try multiple possible paths for the scanner
+      const possiblePaths = [
+        path.join(__dirname, '..', 'scanners', 'kali-security-scanner.js'),
+        path.join(process.cwd(), 'src', 'scanners', 'kali-security-scanner.js'),
+        path.join(__dirname, 'scanners', 'kali-security-scanner.js')
+      ];
+      
+      console.log('🔍 [KALI-SCAN-HANDLER] Searching for scanner in paths:', possiblePaths);
+      
+      let scannerPath = null;
+      for (const testPath of possiblePaths) {
+        if (fs.existsSync(testPath)) {
+          scannerPath = testPath;
+          console.log('🔍 [KALI-SCAN-HANDLER] Found scanner at:', testPath);
+          break;
+        }
+      }
+      
+      if (!scannerPath) {
+        console.log('🔍 [KALI-SCAN-HANDLER] Scanner not found in any expected location');
+        throw new Error('KaliSecurityScanner file not found in any expected location');
+      }
+      
+      console.log('🔍 [KALI-SCAN-HANDLER] Loading KaliSecurityScanner from:', scannerPath);
+      console.log('🔍 [KALI-SCAN-HANDLER] File exists:', fs.existsSync(scannerPath));
+      
+      // Clear require cache to ensure fresh load
+      delete require.cache[require.resolve(scannerPath)];
+      
+      const KaliSecurityScanner = require(scannerPath);
+      console.log('🔍 [KALI-SCAN-HANDLER] KaliSecurityScanner loaded:', typeof KaliSecurityScanner);
+      console.log('🔍 [KALI-SCAN-HANDLER] Is constructor:', typeof KaliSecurityScanner === 'function');
+      
+      if (typeof KaliSecurityScanner !== 'function') {
+        console.log('🔍 [KALI-SCAN-HANDLER] ERROR: KaliSecurityScanner is not a constructor');
+        throw new Error(`KaliSecurityScanner is not a constructor. Got: ${typeof KaliSecurityScanner}`);
+      }
+      
+      // Create output directory
+      const outputDir = path.join(process.cwd(), 'temp-scans', `kali-scan-${Date.now()}`);
+      console.log('🔍 [KALI-SCAN-HANDLER] Creating output directory:', outputDir);
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+        console.log('🔍 [KALI-SCAN-HANDLER] Output directory created successfully');
+      }
+      
+      // Extract domain from URL for DNS scanning
+      let domain = targetUrl;
+      try {
+        // If it's a full URL, extract the domain
+        if (targetUrl.includes('://')) {
+          const url = new URL(targetUrl);
+          domain = url.hostname;
+        } else if (targetUrl.includes('/')) {
+          // Handle cases like "webnox.in/path"
+          domain = targetUrl.split('/')[0];
+        }
+        console.log('🔍 [KALI-SCAN-HANDLER] Extracted domain:', domain, 'from URL:', targetUrl);
+      } catch (error) {
+        console.log('🔍 [KALI-SCAN-HANDLER] Failed to parse URL, using as-is:', targetUrl);
+        domain = targetUrl;
+      }
+      
+      // Create scanner instance
+      console.log('🔍 [KALI-SCAN-HANDLER] Creating scanner instance...');
+      const scanner = new KaliSecurityScanner(domain, outputDir);
+      console.log('🔍 [KALI-SCAN-HANDLER] Scanner instance created successfully');
+      
+      // Set up progress tracking
+      console.log('🔍 [KALI-SCAN-HANDLER] Setting up progress callback...');
+      scanner.setProgressCallback((progress) => {
+        console.log('🔍 [KALI-SCAN-HANDLER] Progress received:', progress);
+        event.sender.send('kali:progress', progress);
+      });
+      
+      // Set up completion callback
+      console.log('🔍 [KALI-SCAN-HANDLER] Setting up completion callback...');
+      scanner.setCompleteCallback((results) => {
+        console.log('🔍 [KALI-SCAN-HANDLER] ===== SCAN COMPLETED =====');
+        console.log('🔍 [KALI-SCAN-HANDLER] Results received:', !!results);
+        console.log('🔍 [KALI-SCAN-HANDLER] Results keys:', results ? Object.keys(results) : 'null');
+        event.sender.send('kali:complete', results);
+        kaliScanChild = null;
+      });
+      
+      // Start the scan asynchronously
+      console.log('🔍 [KALI-SCAN-HANDLER] Starting scan asynchronously...');
+      scanner.runAllTests().catch((error) => {
+        console.log('🔍 [KALI-SCAN-HANDLER] ===== SCAN ERROR =====');
+        console.log('🔍 [KALI-SCAN-HANDLER] Error:', error.message);
+        event.sender.send('kali:progress', { 
+          stage: 'error', 
+          message: `Scan error: ${error.message}`,
+          testId: 'error'
+        });
+        event.sender.send('kali:complete', null);
+        kaliScanChild = null;
+      });
+      
+      console.log('🔍 [KALI-SCAN-HANDLER] Scan started successfully, returning OK');
+      return { ok: true };
+    } catch (error) {
+      console.log('🔍 [KALI-SCAN-HANDLER] ===== SCAN START FAILED =====');
+      console.log('🔍 [KALI-SCAN-HANDLER] Error:', error.message);
+      console.log('🔍 [KALI-SCAN-HANDLER] Stack:', error.stack);
+      event.sender.send('kali:progress', { 
+        stage: 'error', 
+        message: `Failed to start scan: ${error.message}`,
+        testId: 'error'
+      });
+      return { error: error.message };
+    }
+  });
+
+  // Additional Security Scans Handler
+  let additionalScanChild = null;
+  ipcMain.handle('kali:startAdditionalScans', async (event, targetDomain) => {
+    console.log('🔍 [ADDITIONAL-SCANS-HANDLER] ===== STARTING ADDITIONAL SCANS =====');
+    console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Target Domain:', targetDomain);
+    console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Timestamp:', new Date().toISOString());
+    
+    if (additionalScanChild) {
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Additional scans already running, returning error');
+      return { error: 'Additional scans already running' };
+    }
+    
+    try {
+      // Import the Additional Security Scanner module
+      const possiblePaths = [
+        path.join(__dirname, '..', 'scanners', 'additional-security-scanner.js'),
+        path.join(process.cwd(), 'src', 'scanners', 'additional-security-scanner.js'),
+        path.join(__dirname, 'scanners', 'additional-security-scanner.js')
+      ];
+      
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Searching for scanner in paths:', possiblePaths);
+      
+      let scannerPath = null;
+      for (const testPath of possiblePaths) {
+        if (fs.existsSync(testPath)) {
+          scannerPath = testPath;
+          console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Found scanner at:', testPath);
+          break;
+        }
+      }
+      
+      if (!scannerPath) {
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Scanner not found in any expected location');
+        throw new Error('AdditionalSecurityScanner file not found in any expected location');
+      }
+      
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Loading AdditionalSecurityScanner from:', scannerPath);
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] File exists:', fs.existsSync(scannerPath));
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] File size:', fs.statSync(scannerPath).size, 'bytes');
+      
+      // Clear require cache to ensure fresh load
+      delete require.cache[require.resolve(scannerPath)];
+      
+      const AdditionalSecurityScanner = require(scannerPath);
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] AdditionalSecurityScanner loaded:', typeof AdditionalSecurityScanner);
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] AdditionalSecurityScanner constructor:', AdditionalSecurityScanner.toString().substring(0, 200) + '...');
+      
+      if (typeof AdditionalSecurityScanner !== 'function') {
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] ERROR: AdditionalSecurityScanner is not a constructor');
+        throw new Error(`AdditionalSecurityScanner is not a constructor. Got: ${typeof AdditionalSecurityScanner}`);
+      }
+      
+      // Create scanner instance
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Creating scanner instance...');
+      const targetUrl = `https://${targetDomain}`;
+      const scanner = new AdditionalSecurityScanner(targetUrl, targetDomain);
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Scanner instance created successfully');
+      
+      // Commands will run directly in WSL environment without prefix
+      console.log('🔧 [ADDITIONAL-SCANS-HANDLER] Commands will run directly in WSL environment');
+      
+      // Set up progress tracking
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Setting up progress callback...');
+      scanner.setProgressCallback((progress) => {
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Progress received:', progress);
+        event.sender.send('kali:additionalProgress', progress);
+      });
+      
+      // Set up completion callback
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Setting up completion callback...');
+      scanner.setCompleteCallback((results) => {
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] ===== ADDITIONAL SCANS COMPLETED =====');
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Results received:', !!results);
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Results keys:', results ? Object.keys(results) : 'null');
+        event.sender.send('kali:additionalComplete', results);
+        additionalScanChild = null;
+      });
+      
+      // Start the scans asynchronously
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Starting additional scans asynchronously...');
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Scanner instance methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(scanner)));
+      
+      scanner.runAllScans().then((results) => {
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] ===== ADDITIONAL SCANS COMPLETED SUCCESSFULLY =====');
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Results:', results);
+      }).catch((error) => {
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] ===== ADDITIONAL SCANS FAILED =====');
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Error:', error.message);
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Stack:', error.stack);
+        console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Error details:', error);
+        event.sender.send('kali:additionalProgress', { 
+          testId: 'error',
+          message: `Additional scans failed: ${error.message}`,
+          type: 'error'
+        });
+        additionalScanChild = null;
+      });
+      
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Additional scans started successfully, returning OK');
+      return { ok: true };
+    } catch (error) {
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] ===== ADDITIONAL SCANS START FAILED =====');
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Error:', error.message);
+      console.log('🔍 [ADDITIONAL-SCANS-HANDLER] Stack:', error.stack);
+      event.sender.send('kali:additionalProgress', { 
+        testId: 'error',
+        message: `Failed to start additional scans: ${error.message}`,
+        type: 'error'
+      });
+      return { error: error.message };
+    }
+  });
+
   app.whenReady().then(async () => {
   const win = await createMainWindow();
+
+  // Setup IPC handlers (moved here to access win variable)
+  ipcMain.handle('setup:selectDirectory', async () => {
+    try {
+      console.log('setup:selectDirectory handler called');
+      
+      if (!win) {
+        console.error('Main window not available');
+        throw new Error('Main window not available');
+      }
+
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory'],
+        title: 'Select Installation Directory',
+        defaultPath: 'C:\\Program Files'
+      });
+      
+      console.log('Dialog result:', result);
+      
+      if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+        console.log('Selected directory:', result.filePaths[0]);
+        return result.filePaths;
+      }
+      
+      console.log('No directory selected or dialog cancelled');
+      return null;
+    } catch (error) {
+      console.error('Error selecting directory:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('setup:createDirectory', async (event, dirPath) => {
+    try {
+      console.log('setup:createDirectory handler called with path:', dirPath);
+      
+      // Create the main directory if it doesn't exist
+      if (!fs.existsSync(dirPath)) {
+        console.log('Creating main directory:', dirPath);
+        fs.mkdirSync(dirPath, { recursive: true });
+      } else {
+        console.log('Main directory already exists:', dirPath);
+      }
+      
+      // Create the cyberix_system_logs subdirectory
+      const logsPath = path.join(dirPath, 'cyberix_system_logs');
+      if (!fs.existsSync(logsPath)) {
+        console.log('Creating logs directory:', logsPath);
+        fs.mkdirSync(logsPath, { recursive: true });
+      } else {
+        console.log('Logs directory already exists:', logsPath);
+      }
+      
+      console.log('Directory creation successful');
+      return { success: true, path: logsPath };
+    } catch (error) {
+      console.error('Error creating directory:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('setup:checkComplete', async () => {
+    try {
+      // Check if setup has been completed by looking for a setup config file
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        return { completed: true, installPath: config.installPath };
+      }
+      return { completed: false };
+    } catch (error) {
+      console.error('Error checking setup status:', error);
+      return { completed: false };
+    }
+  });
+
+  ipcMain.handle('setup:markComplete', async (event, installPath) => {
+    try {
+      // Save setup completion status
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      const config = {
+        completed: true,
+        installPath: installPath,
+        completedAt: new Date().toISOString()
+      };
+      fs.writeFileSync(setupConfigPath, JSON.stringify(config, null, 2));
+      return { success: true };
+    } catch (error) {
+      console.error('Error marking setup complete:', error);
+      throw error;
+    }
+  });
+
+  // File system operations for logging
+  ipcMain.handle('fs:getInstallPath', async () => {
+    try {
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        return config.installPath || null;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting install path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:getDownloadsPath', async () => {
+    try {
+      return app.getPath('downloads');
+    } catch (error) {
+      console.error('Error getting downloads path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Error ensuring directory exists:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
+    try {
+      // Ensure directory exists
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, data, 'utf8');
+      return { success: true };
+    } catch (error) {
+      console.error('Error writing file:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:readFile', async (event, filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        throw new Error('File does not exist');
+      }
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+      console.error('Error reading file:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('fs:listFiles', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        return [];
+      }
+      return fs.readdirSync(dirPath);
+    } catch (error) {
+      console.error('Error listing files:', error);
+      return [];
+    }
+  });
 
   // IPC: expose OS helpers
   ipcMain.handle('os:getPlatform', async () => detectPlatform());
@@ -344,6 +850,318 @@ async function createMainWindow() {
     });
   }
 
+  // Helper: install security tools in WSL Kali Linux
+  async function installSecurityToolsInWsl() {
+    return new Promise((resolve) => {
+      // First update package lists
+      const updateChild = spawn('wsl', ['-d', 'kali-linux', 'sudo', 'apt', 'update'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      updateChild.on('close', (updateCode) => {
+        if (updateCode !== 0) {
+          resolve(false);
+          return;
+        }
+
+        // Install all security tools
+        const installChild = spawn('wsl', ['-d', 'kali-linux', 'sudo', 'apt', 'install', '-y',
+          'nmap', 'dnsutils', 'dnsrecon', 'dnsenum', 'nikto', 'sqlmap', 'gobuster'
+        ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+        installChild.on('close', (installCode) => {
+          resolve(installCode === 0);
+        });
+      });
+    });
+  }
+
+  // Tool checking only (no installation)
+  async function checkRequiredToolsOnly(password) {
+    console.log('🔧 [TOOL-CHECKER] Starting tool check (no installation)...');
+    console.log('🔧 [TOOL-CHECKER] Password provided:', password ? 'EXISTS' : 'NULL');
+    console.log('🔧 [TOOL-CHECKER] Password length:', password ? password.length : 0);
+  
+    const requiredTools = [
+      'jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb',
+      'amass','john','medusa','zaproxy','mitmproxy','socat','fail2ban',
+      'curl','wget'
+    ];
+  
+    const goTools = ['ffuf','nuclei','dalfox','go'];
+  
+    const allTools = [...requiredTools, ...goTools];
+  
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+  
+    // Build a safe single-quoted bash script so we don't have to escape $ inside JS
+    // The bash script loops through tools and prints either ✅ or ❌ lines
+    const bashScript = `for tool in ${allTools.join(' ')}; do
+      if command -v "$tool" >/dev/null 2>&1; then
+        echo "✅ $tool is installed -> $(command -v $tool)"
+      else
+        echo "❌ $tool is NOT installed"
+      fi
+    done`;
+  
+    // Wrap the bash script in single quotes so node doesn't expand $tool etc.
+    // Use -u root if you need root PATH, otherwise remove -u root
+    const toolCheckCommand = `wsl -d kali-linux -u root -- bash -lc '${bashScript.replace(/'/g, "'\"'\"'")}'`;
+  
+    console.log('🔧 [TOOL-CHECKER] Running tool check command:', toolCheckCommand);
+  
+    let stdout = '';
+    let stderr = '';
+    try {
+      const result = await execAsync(toolCheckCommand, { maxBuffer: 10 * 1024 * 1024 });
+      stdout = result.stdout || '';
+      stderr = result.stderr || '';
+      console.log('🔧 [TOOL-CHECKER] Command finished without throwing.');
+    } catch (execError) {
+      // execAsync throws on non-zero exit code; still attempt to capture output
+      stdout = execError.stdout || '';
+      stderr = execError.stderr || '';
+      console.log('🔧 [TOOL-CHECKER] Command threw an error. exitCode:', execError.code);
+      console.log('🔧 [TOOL-CHECKER] execError.message:', execError.message);
+      // We do NOT immediately throw — we want to parse any partial stdout for results
+    }
+  
+    console.log('🔧 [TOOL-CHECKER] Raw stdout length:', stdout.length);
+    console.log('🔧 [TOOL-CHECKER] Raw stderr length:', stderr.length);
+    if (stderr) console.log('🔧 [TOOL-CHECKER] Raw stderr (first 1000 chars):', stderr.slice(0, 1000));
+  
+    // Parse output
+    const missingTools = [];
+    const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    console.log('🔧 [TOOL-CHECKER] Parsed lines:', lines);
+  
+    for (const line of lines) {
+      if (line.startsWith('❌')) {
+        // Extract word-like tool name (letters, digits, hyphen, underscore)
+        const m = line.match(/❌\s+([A-Za-z0-9_\-]+)\s+is NOT installed/);
+        if (m && m[1]) {
+          missingTools.push(m[1]);
+        } else {
+          console.log('🔧 [TOOL-CHECKER] Could not extract tool name from line:', line);
+        }
+      } else if (line.startsWith('✅')) {
+        // installed line — you can parse path if needed
+      } else {
+        console.log('🔧 [TOOL-CHECKER] Unrecognized line format (ignored):', line);
+      }
+    }
+  
+    const success = missingTools.length === 0;
+    console.log('🔧 [TOOL-CHECKER] Missing tools:', missingTools);
+  
+    return {
+      success,
+      missingTools,
+      totalChecked: allTools.length,
+      installedCount: allTools.length - missingTools.length,
+      raw: { stdout, stderr }
+    };
+  }
+  
+
+  // Comprehensive tool checking and installation function
+  async function checkAndInstallRequiredTools(password, event = null) {
+    console.log('🔧 [TOOL-CHECKER] Starting comprehensive tool check and installation...');
+    
+    const requiredTools = [
+      'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
+      'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
+      'curl', 'wget'
+    ];
+
+    const goTools = [
+      'ffuf', 'nuclei', 'dalfox', 'go'
+    ];
+
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // Step 1: Update package lists
+      console.log('🔧 [TOOL-CHECKER] Step 1: Updating package lists...');
+      if (event) {
+        event.sender.send('scan:progress', { 
+          stage: 'installing', 
+          message: 'Updating package lists...' 
+        });
+      }
+      const updateCommand = `wsl -e bash -c "echo '${password}' | sudo -S apt update"`;
+      await execAsync(updateCommand);
+      console.log('✅ [TOOL-CHECKER] Package lists updated successfully');
+
+      // Step 2: Check which tools are already installed
+      console.log('🔧 [TOOL-CHECKER] Step 2: Checking installed tools...');
+      if (event) {
+        event.sender.send('scan:progress', { 
+          stage: 'installing', 
+          message: 'Checking which tools are already installed...' 
+        });
+      }
+      
+      // Check all tools using single efficient command
+      const allTools = [...requiredTools, ...goTools];
+      const toolCheckCommand = `wsl -e bash -c "for tool in ${allTools.join(' ')}; do if command -v \$tool >/dev/null 2>&1; then echo -e \"✅ \$tool is installed -> \$(command -v \$tool)\"; else echo -e \"❌ \$tool is NOT installed\"; fi; done"`;
+      
+      console.log('🔧 [TOOL-CHECKER] Running tool check command...');
+      const { stdout, stderr } = await execAsync(toolCheckCommand);
+      
+      // Parse the output to find missing tools
+      const missingTools = [];
+      const lines = stdout.split('\n').filter(line => line.trim());
+      
+      for (const line of lines) {
+        console.log(`🔧 [TOOL-CHECKER] ${line}`);
+        if (line.includes('❌') && line.includes('is NOT installed')) {
+          const toolName = line.match(/❌ (\w+) is NOT installed/)?.[1];
+          if (toolName) {
+            missingTools.push(toolName);
+          }
+        }
+      }
+
+      // Step 3: Install missing tools if any
+      if (missingTools.length > 0) {
+        console.log(`🔧 [TOOL-CHECKER] Step 3: Installing ${missingTools.length} missing tools...`);
+        console.log(`🔧 [TOOL-CHECKER] Missing tools: ${missingTools.join(', ')}`);
+        
+        // Install tools individually with specific methods for problematic tools
+        let installedCount = 0;
+        let failedTools = [];
+        
+        for (let i = 0; i < missingTools.length; i++) {
+          const tool = missingTools[i];
+          console.log(`🔧 [TOOL-CHECKER] Installing tool ${i + 1}/${missingTools.length}: ${tool}`);
+          
+          if (event) {
+            event.sender.send('scan:progress', { 
+              stage: 'installing', 
+              message: `Installing ${tool} (${i + 1}/${missingTools.length})` 
+            });
+          }
+          
+          let installCommand;
+          
+          // Special handling for specific tools that fail with regular apt
+          if (tool === 'amass') {
+            // Install amass via snap
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S snap install amass"`;
+          } else if (tool === 'zaproxy') {
+            // Install zaproxy via snap with classic flag
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S snap install zaproxy --classic"`;
+          } else if (tool === 'ffuf') {
+            // Install ffuf with proper setup and symlink
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S apt update && apt install -y golang git && go install github.com/ffuf/ffuf/v2@latest && ln -sf /root/go/bin/ffuf /usr/local/bin/ffuf && ffuf --version"`;
+          } else if (tool === 'nuclei') {
+            // Install nuclei v3 with proper setup
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S apt install -y golang-go && go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"`;
+          } else if (tool === 'dalfox') {
+            // Install dalfox with proper setup and symlink
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S apt install -y golang-go && go install github.com/hahwul/dalfox/v2@latest && ln -sf /root/go/bin/dalfox /usr/local/bin/dalfox && dalfox version"`;
+          } else {
+            // Regular apt installation for other tools
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S apt install -y ${tool}"`;
+          }
+          
+          console.log(`🔧 [TOOL-CHECKER] Command for ${tool}: ${installCommand.replace(password, '***')}`);
+          
+          try {
+            const { stdout, stderr } = await execAsync(installCommand);
+            console.log(`✅ [TOOL-CHECKER] ${tool} installed successfully`);
+            console.log(`🔧 [TOOL-CHECKER] STDOUT: ${stdout}`);
+            if (stderr) console.log(`🔧 [TOOL-CHECKER] STDERR: ${stderr}`);
+            installedCount++;
+          } catch (error) {
+            console.log(`❌ [TOOL-CHECKER] ${tool} failed: ${error.message}`);
+            console.log(`🔧 [TOOL-CHECKER] Error STDOUT: ${error.stdout || 'N/A'}`);
+            console.log(`🔧 [TOOL-CHECKER] Error STDERR: ${error.stderr || 'N/A'}`);
+            failedTools.push(tool);
+          }
+        }
+        
+        console.log(`🔧 [TOOL-CHECKER] Installation summary: ${installedCount}/${missingTools.length} tools installed`);
+        if (failedTools.length > 0) {
+          console.log(`⚠️ [TOOL-CHECKER] Failed tools: ${failedTools.join(', ')}`);
+        }
+      } else {
+        console.log('✅ [TOOL-CHECKER] All required tools are already installed');
+      }
+
+      // Step 4: Check and install Go tools
+      console.log('🔧 [TOOL-CHECKER] Step 4: Checking Go tools...');
+      
+      // Check Go tools using single efficient command
+      const goToolCheckCommand = `wsl -e bash -c "for tool in ${goTools.join(' ')}; do if command -v \$tool >/dev/null 2>&1; then echo -e \"✅ \$tool is installed -> \$(command -v \$tool)\"; else echo -e \"❌ \$tool is NOT installed\"; fi; done"`;
+      
+      console.log('🔧 [TOOL-CHECKER] Running Go tool check command...');
+      const { stdout: goStdout, stderr: goStderr } = await execAsync(goToolCheckCommand);
+      
+      // Parse the output to find missing Go tools
+      const missingGoTools = [];
+      const goLines = goStdout.split('\n').filter(line => line.trim());
+      
+      for (const line of goLines) {
+        console.log(`🔧 [TOOL-CHECKER] ${line}`);
+        if (line.includes('❌') && line.includes('is NOT installed')) {
+          const toolName = line.match(/❌ (\w+) is NOT installed/)?.[1];
+          if (toolName) {
+            missingGoTools.push(toolName);
+          }
+        }
+      }
+
+      // Step 5: Go tools are now handled in the main installation loop above with proper Go installation
+      console.log('🔧 [TOOL-CHECKER] Step 5: Go tools installation completed in main loop');
+
+      // Step 6: Final verification
+      console.log('🔧 [TOOL-CHECKER] Step 6: Final verification...');
+      
+      // Final check using single efficient command
+      const finalAllTools = [...requiredTools, ...goTools];
+      const finalCheckCommand = `wsl -e bash -c "for tool in ${finalAllTools.join(' ')}; do if command -v \$tool >/dev/null 2>&1; then echo -e \"✅ \$tool is installed -> \$(command -v \$tool)\"; else echo -e \"❌ \$tool is NOT installed\"; fi; done"`;
+      
+      console.log('🔧 [TOOL-CHECKER] Running final verification command...');
+      const { stdout: finalStdout, stderr: finalStderr } = await execAsync(finalCheckCommand);
+      
+      // Parse the output to find any remaining missing tools
+      const finalMissingTools = [];
+      const finalLines = finalStdout.split('\n').filter(line => line.trim());
+      
+      for (const line of finalLines) {
+        console.log(`🔧 [TOOL-CHECKER] ${line}`);
+        if (line.includes('❌') && line.includes('is NOT installed')) {
+          const toolName = line.match(/❌ (\w+) is NOT installed/)?.[1];
+          if (toolName) {
+            finalMissingTools.push(toolName);
+          }
+        }
+      }
+
+      const success = finalMissingTools.length === 0;
+      console.log(`🔧 [TOOL-CHECKER] Final result: ${success ? 'SUCCESS' : 'PARTIAL'}`);
+      console.log(`🔧 [TOOL-CHECKER] Missing tools: ${finalMissingTools.join(', ') || 'None'}`);
+
+      return {
+        success,
+        missingTools: finalMissingTools,
+        totalChecked: requiredTools.length + goTools.length,
+        installedCount: (requiredTools.length + goTools.length) - finalMissingTools.length
+      };
+
+    } catch (error) {
+      console.log('❌ [TOOL-CHECKER] Tool check failed:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        missingTools: requiredTools.concat(goTools)
+      };
+    }
+  }
+
   // Helper: quick preflight to check WSL, Kali, and nmap availability
   function detectWslAndNmap() {
     const result = { hasWsl: false, hasKali: false, wslNmap: false, winNmap: false, details: [] };
@@ -362,12 +1180,29 @@ async function createMainWindow() {
           result.details.push('❌ Kali Linux is not installed in WSL.');
         }
         
-        const nmapCheck = require('child_process').spawnSync('wsl', ['sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
-        if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
-          result.wslNmap = true;
-          result.details.push('✅ Found nmap inside WSL.');
+        // Check for DNS tools (dig, dnsrecon, dnsenum) and nmap
+        const digCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which dig || echo __NO_DIG__'], { encoding: 'utf8' });
+        const dnsreconCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which dnsrecon || echo __NO_DNSRECON__'], { encoding: 'utf8' });
+        const dnsenumCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which dnsenum || echo __NO_DNSENUM__'], { encoding: 'utf8' });
+        const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
+
+        const toolsStatus = {
+          dig: digCheck.status === 0 && (digCheck.stdout || '').includes('/dig'),
+          dnsrecon: dnsreconCheck.status === 0 && (dnsreconCheck.stdout || '').includes('/dnsrecon'),
+          dnsenum: dnsenumCheck.status === 0 && (dnsenumCheck.stdout || '').includes('/dnsenum'),
+          nmap: nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')
+        };
+
+        if (toolsStatus.dig && toolsStatus.dnsrecon && toolsStatus.dnsenum && toolsStatus.nmap) {
+          result.details.push('✅ Found all required tools inside WSL Kali Linux.');
         } else {
-          result.details.push('⚠️ nmap not found inside WSL. Attempting to install...');
+          const missingTools = Object.entries(toolsStatus)
+            .filter(([tool, installed]) => !installed)
+            .map(([tool]) => tool);
+
+          if (missingTools.length > 0) {
+            result.details.push(`⚠️ Missing tools in WSL Kali Linux: ${missingTools.join(', ')}. Attempting to install...`);
+          }
         }
       } else {
         result.details.push('WSL not available or no distributions installed.');
@@ -429,31 +1264,36 @@ async function createMainWindow() {
       }
     }
     
-    // Auto-install nmap in WSL if missing
-    if (process.platform === 'win32' && pre.hasWsl && !pre.wslNmap) {
-      event.sender.send('scan:progress', { stage: 'installing', message: 'Installing nmap in WSL...' });
-      const installed = await installNmapInWsl();
-      if (installed) {
-        event.sender.send('scan:progress', { stage: 'installing', message: 'nmap installed successfully in WSL' });
-        pre.wslNmap = true;
-      } else {
-        event.sender.send('scan:progress', { stage: 'warning', message: 'Failed to install nmap in WSL. Will use fallback scanner.' });
+    // Auto-install security tools in WSL if missing
+    if (process.platform === 'win32' && pre.hasWsl && pre.hasKali) {
+      // Check which tools are missing and install them
+      const missingTools = [];
+      if (!pre.details.some(d => d.includes('Found all required tools'))) {
+        // If we didn't find all tools, try to install the missing ones
+        event.sender.send('scan:progress', { stage: 'installing', message: 'Installing security tools in WSL Kali Linux...' });
+
+        const installed = await installSecurityToolsInWsl();
+        if (installed) {
+          event.sender.send('scan:progress', { stage: 'installing', message: 'Security tools installed successfully in WSL Kali Linux' });
+        } else {
+          event.sender.send('scan:progress', { stage: 'warning', message: 'Failed to install some security tools in WSL Kali Linux. Some scans may not work properly.' });
+        }
       }
     }
     
-    // Always prefer WSL nmap when available, never use native Windows nmap
-    const useWsl = process.platform === 'win32' && pre.hasWsl && pre.wslNmap;
-    const hasNmap = useWsl; // Only use WSL nmap, ignore native Windows nmap
+    // Always prefer WSL tools when available, never use native Windows tools
+    const useWsl = process.platform === 'win32' && pre.hasWsl && pre.hasKali;
+    const hasTools = useWsl; // Only use WSL tools, ignore native Windows tools
     
-    if (!hasNmap) {
+    if (!hasTools) {
       if (pre.hasWsl && pre.hasKali) {
-        event.sender.send('scan:progress', { stage: 'warning', message: 'WSL and Kali detected but nmap not found. Attempting to install nmap in WSL...' });
+        event.sender.send('scan:progress', { stage: 'warning', message: 'WSL and Kali detected but required tools not found. Attempting to install tools in WSL...' });
       } else {
-        event.sender.send('scan:progress', { stage: 'warning', message: 'WSL nmap not available. Using fallback scanner.' });
+        event.sender.send('scan:progress', { stage: 'warning', message: 'WSL tools not available. Using fallback scanner.' });
       }
     }
     
-    event.sender.send('scan:progress', { stage: 'starting', message: `Launching scanner for target: ${target} using ${hasNmap ? (useWsl ? 'WSL nmap' : 'native nmap') : 'fallback scanner'}` });
+    event.sender.send('scan:progress', { stage: 'starting', message: `Launching scanner for target: ${target} using ${hasTools ? (useWsl ? 'WSL Kali Linux tools' : 'native tools') : 'fallback scanner'}` });
     event.sender.send('scan:progress', { stage: 'log', message: `Scanner configuration: ${useWsl ? 'WSL Kali Linux' : 'Native Windows'} environment` });
     // Create a temporary directory for scan output
     const tempDir = path.join(process.cwd(), 'temp-scans')
@@ -466,7 +1306,7 @@ async function createMainWindow() {
     event.sender.send('scan:progress', { stage: 'log', message: `Scan entry: ${scanEntry}` });
     event.sender.send('scan:progress', { stage: 'log', message: `USE_WSL environment: ${useWsl ? '1' : '0'}` });
     
-    // Run with WSL environment hint so scan.ts can choose 'wsl nmap' if desired later
+    // Run with WSL environment hint so scan script can use WSL tools if available
     scanChild = spawn(nodeExec, [scanEntry, '--target', target, '--out', tempDir], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, USE_WSL: useWsl ? '1' : '' }
@@ -530,19 +1370,20 @@ async function createMainWindow() {
     return { ok: true };
   });
 
-  // Comprehensive scan orchestration (calls dist/comprehensive-scan.js)
+  // Comprehensive scan orchestration using Kali tools (calls dist/comprehensive-scan-kali.js)
   let cscanChild = null;
   ipcMain.handle('cscan:start', async (event, target, outDir) => {
     if (cscanChild) return { error: 'Comprehensive scan already running' };
     let nodeExec = process.env.npm_node_execpath || 'node';
     if (/electron/i.test(nodeExec)) nodeExec = 'node';
-    const scanEntry = path.join(process.cwd(), 'dist', 'comprehensive-scan.js');
+    const scanEntry = path.join(process.cwd(), 'dist', 'comprehensive-scan-kali.js');
     if (!fs.existsSync(scanEntry)) {
-      event.sender.send('cscan:progress', { stage: 'error', message: 'Scanner not built. Run npm run build:ts' });
-      return { error: 'Scanner not built' };
+      event.sender.send('cscan:progress', { stage: 'error', message: 'Kali scanner not found. Please ensure the scanner is built.' });
+      return { error: 'Kali scanner not found' };
     }
-    const outputDir = outDir || path.join(process.cwd(), 'reports');
-    event.sender.send('cscan:progress', { stage: 'starting', message: `Launching comprehensive scanner for: ${target}` });
+    const outputDir = outDir || path.join(process.cwd(), 'kali_scan_results');
+    event.sender.send('cscan:progress', { stage: 'starting', message: `🚀 Launching Kali comprehensive security scanner for: ${target}` });
+    event.sender.send('cscan:progress', { stage: 'info', message: 'Using actual Kali Linux tools for authentic security testing' });
     cscanChild = spawn(nodeExec, [scanEntry, target, outputDir], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env }
@@ -552,7 +1393,20 @@ async function createMainWindow() {
       const lines = d.toString().split(/\r?\n/);
       for (const line of lines) {
         if (!line) continue;
-        event.sender.send('cscan:progress', { stage: 'log', message: line });
+        // Parse structured log messages
+        const logMatch = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (.+)$/);
+        if (logMatch) {
+          const [, timestamp, testId, message] = logMatch;
+          event.sender.send('cscan:progress', { 
+            stage: 'log', 
+            message: message,
+            testId: testId,
+            timestamp: timestamp
+          });
+        } else {
+          event.sender.send('cscan:progress', { stage: 'log', message: line });
+        }
+        // Check for final JSON result
         if (line.trim().startsWith('{')) {
           try { finalJson = JSON.parse(line.trim()); } catch {}
         }
@@ -568,18 +1422,1049 @@ async function createMainWindow() {
     });
     cscanChild.on('close', (code) => {
       if (code !== 0) {
-        event.sender.send('cscan:progress', { stage: 'error', message: `Comprehensive scan exited with code ${code}` });
+        event.sender.send('cscan:progress', { stage: 'error', message: `Kali comprehensive scan exited with code ${code}` });
       }
       event.sender.send('cscan:done', finalJson || null);
       cscanChild = null;
     });
     cscanChild.on('error', (err) => {
-      event.sender.send('cscan:progress', { stage: 'error', message: String(err?.message || err) });
+      event.sender.send('cscan:progress', { stage: 'error', message: `Kali scanner error: ${String(err?.message || err)}` });
       event.sender.send('cscan:done', null);
       cscanChild = null;
     });
     return { ok: true };
   });
+
+  // Test handler to verify IPC is working
+  ipcMain.handle('tools:test', async () => {
+    console.log('Test handler called successfully');
+    return { success: true, message: 'IPC is working' };
+  });
+
+  // Tool Installer for missing Kali tools
+  ipcMain.handle('tools:checkMissing', async () => {
+    try {
+      const { existsCmd, TOOLS } = require(path.join(__dirname, '..', 'tools', 'cursor-installer.js'));
+      
+      const missingTools = [];
+      for (const tool of TOOLS) {
+        const exists = await existsCmd(tool.name);
+        if (!exists) {
+          missingTools.push(tool);
+        }
+      }
+      
+      return { missingTools, totalTools: TOOLS.length };
+    } catch (error) {
+      console.error('Error checking missing tools:', error);
+      return { missingTools: [], totalTools: 0, error: error.message };
+    }
+  });
+
+  // WSL Password Management
+  ipcMain.handle('wsl:testCredentials', async (event, password) => {
+    const startTime = Date.now();
+    console.log('🔐 [WSL-USER-AUTH] Starting user credential verification...');
+    console.log('🔐 [WSL-USER-AUTH] Timestamp:', new Date().toISOString());
+    console.log('🔐 [WSL-USER-AUTH] Password length:', password ? password.length : 0);
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Test credentials by trying to run a simple command with password
+      // This will use the default WSL user (no -u flag needed)
+      const testCommand = `echo "${password}" | wsl sudo whoami`;
+      console.log('🔐 [WSL-USER-AUTH] Command to execute:', testCommand.replace(password, '***'));
+      console.log('🔐 [WSL-USER-AUTH] Full command (DEBUG):', testCommand);
+      console.log('🔐 [WSL-USER-AUTH] WSL distribution: kali-linux');
+      console.log('🔐 [WSL-USER-AUTH] Using sudo to elevate to root');
+      console.log('🔐 [WSL-USER-AUTH] Test command: whoami');
+      
+      console.log('🔐 [WSL-USER-AUTH] Executing command...');
+      const { stdout, stderr } = await execAsync(testCommand);
+      const duration = Date.now() - startTime;
+      
+      console.log('🔐 [WSL-USER-AUTH] Command execution completed in', duration, 'ms');
+      console.log('🔐 [WSL-USER-AUTH] STDOUT:', JSON.stringify(stdout));
+      console.log('🔐 [WSL-USER-AUTH] STDERR:', JSON.stringify(stderr));
+      console.log('🔐 [WSL-USER-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
+      
+      const output = stdout.trim();
+      console.log('🔐 [WSL-USER-AUTH] Checking if output equals "root"...');
+      console.log('🔐 [WSL-USER-AUTH] Output === "root":', output === 'root');
+      
+      if (output === 'root') {
+        console.log('✅ [WSL-USER-AUTH] WSL credentials VALID');
+        console.log('✅ [WSL-USER-AUTH] Authentication successful');
+        return { success: true, debug: { duration, stdout, stderr } };
+      } else {
+        console.log('❌ [WSL-USER-AUTH] WSL credentials INVALID');
+        console.log('❌ [WSL-USER-AUTH] Expected output: "root"');
+        console.log('❌ [WSL-USER-AUTH] Actual output:', JSON.stringify(output));
+        console.log('❌ [WSL-USER-AUTH] Authentication failed');
+        return { 
+          success: false, 
+          error: 'Invalid password', 
+          debug: { 
+            duration, 
+            stdout, 
+            stderr, 
+            expected: 'root', 
+            actual: output 
+          } 
+        };
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      console.log('❌ [WSL-USER-AUTH] WSL credential test FAILED');
+      console.log('❌ [WSL-USER-AUTH] Error type:', error.constructor.name);
+      console.log('❌ [WSL-USER-AUTH] Error message:', error.message);
+      console.log('❌ [WSL-USER-AUTH] Error code:', error.code);
+      console.log('❌ [WSL-USER-AUTH] Error signal:', error.signal);
+      console.log('❌ [WSL-USER-AUTH] Error stack:', error.stack);
+      console.log('❌ [WSL-USER-AUTH] Duration before error:', duration, 'ms');
+      
+      return { 
+        success: false, 
+        error: error.message, 
+        debug: { 
+          duration, 
+          errorType: error.constructor.name,
+          errorCode: error.code,
+          errorSignal: error.signal,
+          errorStack: error.stack
+        } 
+      };
+    }
+  });
+
+  // WSL Connectivity Test
+  ipcMain.handle('wsl:testConnectivity', async () => {
+    console.log('🔍 [WSL-CONNECTIVITY] Testing WSL connectivity...');
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      const testCommand = 'wsl echo "WSL connectivity test successful"';
+      console.log('🔍 [WSL-CONNECTIVITY] Command:', testCommand);
+      
+      const { stdout, stderr } = await execAsync(testCommand);
+      console.log('🔍 [WSL-CONNECTIVITY] STDOUT:', stdout.trim());
+      console.log('🔍 [WSL-CONNECTIVITY] STDERR:', stderr.trim());
+      
+      return { 
+        success: true, 
+        message: 'WSL is working properly',
+        output: stdout.trim()
+      };
+    } catch (error) {
+      console.log('🔍 [WSL-CONNECTIVITY] WSL connectivity test failed:', error.message);
+      return { 
+        success: false, 
+        error: error.message,
+        message: 'WSL is not working properly'
+      };
+    }
+  });
+
+  // WSL Root Password Management
+  ipcMain.handle('wsl:testRootCredentials', async (event, password) => {
+    console.log('🔐 [WSL-ROOT-AUTH] ===== HANDLER CALLED =====');
+    console.log('🔐 [WSL-ROOT-AUTH] IPC Handler wsl:testRootCredentials invoked');
+    console.log('🔐 [WSL-ROOT-AUTH] Event sender:', event.sender);
+    console.log('🔐 [WSL-ROOT-AUTH] Password parameter:', password);
+    
+    const startTime = Date.now();
+    console.log('🔐 [WSL-ROOT-AUTH] Starting root credential verification...');
+    console.log('🔐 [WSL-ROOT-AUTH] Timestamp:', new Date().toISOString());
+    console.log('🔐 [WSL-ROOT-AUTH] Password length:', password ? password.length : 0);
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Step 1: Execute wsl command
+      console.log('🔐 [WSL-ROOT-AUTH] Step 1: Executing wsl command...');
+      const wslCommand = 'wsl';
+      console.log('🔐 [WSL-ROOT-AUTH] WSL command:', wslCommand);
+      
+      // Step 2: Run sudo su command
+      console.log('🔐 [WSL-ROOT-AUTH] Step 2: Running sudo su command...');
+      const sudoSuCommand = 'sudo su';
+      console.log('🔐 [WSL-ROOT-AUTH] Sudo su command:', sudoSuCommand);
+      
+      // Step 3: Provide user password
+      console.log('🔐 [WSL-ROOT-AUTH] Step 3: Providing user password...');
+      console.log('🔐 [WSL-ROOT-AUTH] Password length:', password.length);
+      console.log('🔐 [WSL-ROOT-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
+      
+      // Use interactive approach: wsl with expect-like behavior
+      // This approach simulates the manual process: wsl -> sudo su -> password -> whoami
+      const testCommand = `wsl -e bash -c "echo '${password}' | sudo -S whoami"`;
+      console.log('🔐 [WSL-ROOT-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
+      console.log('🔐 [WSL-ROOT-AUTH] Full final command (DEBUG):', testCommand);
+      console.log('🔐 [WSL-ROOT-AUTH] Using: wsl -e bash -c with sudo -S whoami');
+      
+      // First, test if WSL is working at all
+      console.log('🔐 [WSL-ROOT-AUTH] Testing basic WSL connectivity...');
+      try {
+        const basicTest = await execAsync('wsl echo "WSL is working"');
+        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test result:', basicTest.stdout.trim());
+      } catch (basicError) {
+        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test failed:', basicError.message);
+        return { 
+          success: false, 
+          error: 'WSL is not working properly: ' + basicError.message,
+          debug: { basicError: basicError.message }
+        };
+      }
+      
+      console.log('🔐 [WSL-ROOT-AUTH] Executing final command...');
+      console.log('🔐 [WSL-ROOT-AUTH] Command timeout: 10000ms');
+      
+      // Add timeout to prevent hanging
+      const { stdout, stderr } = await Promise.race([
+        execAsync(testCommand),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
+        )
+      ]);
+      const duration = Date.now() - startTime;
+      
+      console.log('🔐 [WSL-ROOT-AUTH] Command execution completed in', duration, 'ms');
+      console.log('🔐 [WSL-ROOT-AUTH] ===== EXECUTION RESULTS =====');
+      console.log('🔐 [WSL-ROOT-AUTH] STDOUT:', JSON.stringify(stdout));
+      console.log('🔐 [WSL-ROOT-AUTH] STDERR:', JSON.stringify(stderr));
+      console.log('🔐 [WSL-ROOT-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
+      console.log('🔐 [WSL-ROOT-AUTH] STDERR (trimmed):', JSON.stringify(stderr.trim()));
+      
+      const output = stdout.trim();
+      const errorOutput = stderr.trim();
+      
+      console.log('🔐 [WSL-ROOT-AUTH] ===== ANALYSIS =====');
+      console.log('🔐 [WSL-ROOT-AUTH] Raw output length:', output.length);
+      console.log('🔐 [WSL-ROOT-AUTH] Raw error length:', errorOutput.length);
+      console.log('🔐 [WSL-ROOT-AUTH] Output contains "root":', output.includes('root'));
+      console.log('🔐 [WSL-ROOT-AUTH] Error contains "Authentication failure":', errorOutput.includes('Authentication failure'));
+      console.log('🔐 [WSL-ROOT-AUTH] Error contains "sudo":', errorOutput.includes('sudo'));
+      console.log('🔐 [WSL-ROOT-AUTH] Error contains "su":', errorOutput.includes('su'));
+      
+      console.log('🔐 [WSL-ROOT-AUTH] Checking if output equals "root"...');
+      console.log('🔐 [WSL-ROOT-AUTH] Output === "root":', output === 'root');
+      
+      if (output === 'root') {
+        console.log('✅ [WSL-ROOT-AUTH] WSL root credentials VALID');
+        console.log('✅ [WSL-ROOT-AUTH] Authentication successful');
+        return { success: true, debug: { duration, stdout, stderr } };
+      } else {
+        console.log('❌ [WSL-ROOT-AUTH] First method failed, trying alternative approach...');
+        
+        // Alternative approach: Try with expect-like behavior using printf
+        console.log('🔐 [WSL-ROOT-AUTH] Alternative: Trying printf approach...');
+        const altCommand = `wsl -e bash -c "printf '${password}\\n' | sudo -S whoami"`;
+        console.log('🔐 [WSL-ROOT-AUTH] Alternative command (DEBUG):', altCommand.replace(password, '***'));
+        console.log('🔐 [WSL-ROOT-AUTH] Full alternative command (DEBUG):', altCommand);
+        
+        try {
+          console.log('🔐 [WSL-ROOT-AUTH] Executing alternative command with timeout...');
+          const { stdout: altStdout, stderr: altStderr } = await Promise.race([
+            execAsync(altCommand),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Alternative command timeout after 10 seconds')), 10000)
+            )
+          ]);
+          const altOutput = altStdout.trim();
+          
+          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDOUT:', JSON.stringify(altStdout));
+          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDERR:', JSON.stringify(altStderr));
+          console.log('🔐 [WSL-ROOT-AUTH] Alternative output (trimmed):', JSON.stringify(altOutput));
+          
+          if (altOutput === 'root') {
+            console.log('✅ [WSL-ROOT-AUTH] Alternative method SUCCESS - WSL root credentials VALID');
+            return { success: true, debug: { duration, stdout: altStdout, stderr: altStderr, method: 'alternative' } };
+          } else {
+            console.log('❌ [WSL-ROOT-AUTH] Both methods failed');
+            console.log('❌ [WSL-ROOT-AUTH] Expected output: "root"');
+            console.log('❌ [WSL-ROOT-AUTH] Method 1 output:', JSON.stringify(output));
+            console.log('❌ [WSL-ROOT-AUTH] Method 2 output:', JSON.stringify(altOutput));
+            console.log('❌ [WSL-ROOT-AUTH] Authentication failed');
+            return { 
+              success: false, 
+              error: 'Invalid root password', 
+              debug: { 
+                duration, 
+                method1: { stdout, stderr, output },
+                method2: { stdout: altStdout, stderr: altStderr, output: altOutput },
+                expected: 'root'
+              } 
+            };
+          }
+        } catch (altError) {
+          console.log('❌ [WSL-ROOT-AUTH] Alternative method also failed:', altError.message);
+          console.log('❌ [WSL-ROOT-AUTH] Trying third method: direct sudo su approach...');
+          
+          // Third approach: Try to simulate the exact manual process
+          try {
+            const thirdCommand = `wsl -e bash -c "echo '${password}' | sudo -S su -c 'whoami'"`;
+            console.log('🔐 [WSL-ROOT-AUTH] Third command (DEBUG):', thirdCommand.replace(password, '***'));
+            
+            const { stdout: thirdStdout, stderr: thirdStderr } = await Promise.race([
+              execAsync(thirdCommand),
+              new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Third method timeout after 10 seconds')), 10000)
+              )
+            ]);
+            
+            const thirdOutput = thirdStdout.trim();
+            console.log('🔐 [WSL-ROOT-AUTH] Third method STDOUT:', JSON.stringify(thirdStdout));
+            console.log('🔐 [WSL-ROOT-AUTH] Third method STDERR:', JSON.stringify(thirdStderr));
+            console.log('🔐 [WSL-ROOT-AUTH] Third method output (trimmed):', JSON.stringify(thirdOutput));
+            
+            if (thirdOutput === 'root') {
+              console.log('✅ [WSL-ROOT-AUTH] Third method SUCCESS - WSL root credentials VALID');
+              return { success: true, debug: { duration, stdout: thirdStdout, stderr: thirdStderr, method: 'third' } };
+            } else {
+              console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
+              return { 
+                success: false, 
+                error: 'Invalid root password - all authentication methods failed', 
+                debug: { 
+                  duration, 
+                  method1: { stdout, stderr, output },
+                  method2: { error: altError.message },
+                  method3: { stdout: thirdStdout, stderr: thirdStderr, output: thirdOutput },
+                  expected: 'root'
+                } 
+              };
+            }
+          } catch (thirdError) {
+            console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
+            return { 
+              success: false, 
+              error: 'Invalid root password - all authentication methods failed', 
+              debug: { 
+                duration, 
+                method1: { stdout, stderr, output },
+                method2: { error: altError.message },
+                method3: { error: thirdError.message },
+                expected: 'root'
+              } 
+            };
+          }
+        }
+      }
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      console.log('❌ [WSL-ROOT-AUTH] WSL root credential test FAILED');
+      console.log('❌ [WSL-ROOT-AUTH] Error type:', error.constructor.name);
+      console.log('❌ [WSL-ROOT-AUTH] Error message:', error.message);
+      console.log('❌ [WSL-ROOT-AUTH] Error code:', error.code);
+      console.log('❌ [WSL-ROOT-AUTH] Error signal:', error.signal);
+      console.log('❌ [WSL-ROOT-AUTH] Error stack:', error.stack);
+      console.log('❌ [WSL-ROOT-AUTH] Duration before error:', duration, 'ms');
+      
+      return { 
+        success: false, 
+        error: error.message, 
+        debug: { 
+          duration, 
+          errorType: error.constructor.name,
+          errorCode: error.code,
+          errorSignal: error.signal,
+          errorStack: error.stack
+        } 
+      };
+    }
+  });
+
+  ipcMain.handle('wsl:getUsername', async () => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Get the default WSL username (this is what shows up when you run 'wsl')
+      const command = 'wsl whoami';
+      console.log('👤 Getting WSL username...');
+      console.log('📝 Command:', command);
+      
+      const { stdout } = await execAsync(command);
+      const username = stdout.trim();
+      console.log('📤 Username:', username);
+      
+      return { username };
+    } catch (error) {
+      console.log('❌ Failed to get WSL username:', error.message);
+      return { username: 'WSL User' };
+    }
+  });
+
+  // Global storage for WSL credentials (in-memory only)
+  let storedWslRootPassword = null;
+
+  // Load stored credentials on startup
+  const loadStoredCredentials = async () => {
+    try {
+      // This would load from secure storage in a production environment
+      // For now, we'll start with empty credentials
+      console.log('🔐 Loading stored WSL credentials...');
+      storedWslRootPassword = null;
+    } catch (error) {
+      console.error('Failed to load stored credentials:', error);
+    }
+  };
+
+  // Load credentials when app starts
+  loadStoredCredentials();
+  
+  // Load stored WSL password when app starts
+  const loadStoredWslPassword = () => {
+    try {
+      const password = loadStoredPassword();
+      if (password) {
+        storedWslRootPassword = password;
+        console.log('🔐 WSL password loaded from secure storage on app start');
+      }
+    } catch (error) {
+      console.log('❌ Failed to load WSL password on app start:', error.message);
+    }
+  };
+  
+  loadStoredWslPassword();
+
+  ipcMain.handle('wsl:getStoredRootPassword', async () => {
+    try {
+      console.log('🔐 Getting stored root password...');
+      console.log('🔐 Current stored password in memory:', storedWslRootPassword ? 'EXISTS' : 'NULL');
+      
+      // First try to load from secure storage
+      if (!storedWslRootPassword) {
+        const loadedPassword = loadStoredPassword();
+        if (loadedPassword) {
+          storedWslRootPassword = loadedPassword;
+          console.log('🔐 Password loaded from secure storage');
+          console.log('🔐 Password length:', loadedPassword.length);
+          console.log('🔐 Password (masked):', loadedPassword.replace(/./g, '*'));
+        } else {
+          console.log('🔐 No password found in secure storage');
+        }
+      } else {
+        console.log('🔐 Using password from memory');
+        console.log('🔐 Password length:', storedWslRootPassword.length);
+        console.log('🔐 Password (masked):', storedWslRootPassword.replace(/./g, '*'));
+      }
+      
+      return storedWslRootPassword;
+    } catch (error) {
+      console.log('❌ Failed to get stored root password:', error.message);
+      return null;
+    }
+  });
+
+  ipcMain.handle('wsl:storeRootPassword', async (event, password) => {
+    try {
+      console.log('🔐 Storing root password securely...');
+      console.log('🔐 Password length:', password.length);
+      console.log('🔐 Password (masked):', password.replace(/./g, '*'));
+      
+      // Store password securely in encrypted file
+      const stored = storePasswordSecurely(password);
+      if (!stored) {
+        return { success: false, error: 'Failed to store password securely' };
+      }
+      
+      // Store in memory for current session
+      storedWslRootPassword = password;
+      
+      // After storing password, check which tools are missing (but don't install yet)
+      console.log('🔧 Auto-checking required security tools...');
+      event.sender.send('scan:progress', { 
+        stage: 'checking', 
+        message: 'Password saved securely! Now checking which security tools are available...' 
+      });
+      
+      const toolResult = await checkRequiredToolsOnly(password);
+      
+      if (toolResult.success) {
+        console.log('✅ All required tools are available');
+        event.sender.send('scan:progress', { 
+          stage: 'complete', 
+          message: `All required security tools are ready! (${toolResult.installedCount}/${toolResult.totalChecked} tools)` 
+        });
+      } else {
+        console.log('⚠️ Some tools are missing');
+        event.sender.send('scan:progress', { 
+          stage: 'warning', 
+          message: `Tool check completed: ${toolResult.installedCount}/${toolResult.totalChecked} tools available. Missing: ${toolResult.missingTools?.join(', ') || 'Unknown'}` 
+        });
+      }
+      
+      return { 
+        success: true, 
+        toolCheck: toolResult 
+      };
+    } catch (error) {
+      console.log('❌ Failed to store root password:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('wsl:clearRootPassword', async () => {
+    try {
+      console.log('🔐 Clearing stored root password...');
+      storedWslRootPassword = null;
+      clearStoredPassword();
+      return { success: true };
+    } catch (error) {
+      console.log('❌ Failed to clear root password:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Auto-scan trigger handler
+  ipcMain.handle('scan:triggerAutoScan', async (event) => {
+    try {
+      console.log('🚀 [AUTO-SCAN] Triggering automatic scan...');
+      
+      // Send event to frontend to start scanning
+      event.sender.send('scan:autoStart');
+      
+      return { success: true };
+    } catch (error) {
+      console.log('❌ [AUTO-SCAN] Failed to trigger auto-scan:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Install missing tools handler
+  ipcMain.handle('tools:installMissing', async (event, missingTools) => {
+    try {
+      console.log('🔧 [TOOL-INSTALL] Installing missing tools:', missingTools);
+      
+      if (!storedWslRootPassword) {
+        return { success: false, error: 'WSL root password not available' };
+      }
+      
+      const result = await checkAndInstallRequiredTools(storedWslRootPassword, event);
+      return result;
+    } catch (error) {
+      console.log('❌ [TOOL-INSTALL] Failed to install tools:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Check required tools only (without installing)
+  ipcMain.handle('tools:checkRequiredToolsOnly', async (event, password) => {
+    try {
+      console.log('🔧 [TOOLS-CHECK] Checking required tools only...');
+      console.log('🔧 [TOOLS-CHECK] Password received:', password ? 'EXISTS' : 'NULL');
+      console.log('🔧 [TOOLS-CHECK] Password length:', password ? password.length : 0);
+      console.log('🔧 [TOOLS-CHECK] Password (masked):', password ? password.replace(/./g, '*') : 'NULL');
+      
+      if (!password) {
+        console.log('❌ [TOOLS-CHECK] No password provided');
+        return { success: false, error: 'Password required for tool checking' };
+      }
+      
+      const result = await checkRequiredToolsOnly(password);
+      console.log('🔧 [TOOLS-CHECK] Tool check result:', result);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ [TOOLS-CHECK] Tool check failed:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Install single tool handler
+  ipcMain.handle('tools:installSingle', async (event, toolName, password) => {
+    try {
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] ===== STARTING INSTALLATION =====`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Installing tool: ${toolName}`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Timestamp: ${new Date().toISOString()}`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Using NEW installSingleTool handler`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Password provided: ${password ? 'EXISTS' : 'NULL'}`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Password length: ${password ? password.length : 0}`);
+      
+      // Use provided password or fall back to stored password
+      const usePassword = password || storedWslRootPassword;
+      
+      if (!usePassword) {
+        console.log(`❌ [SINGLE-TOOL-INSTALL] No password available (provided: ${!!password}, stored: ${!!storedWslRootPassword})`);
+        return { success: false, error: 'WSL root password not available' };
+      }
+      
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Using password: ${usePassword ? 'YES' : 'NO'}`);
+      
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Check if it's a Go tool
+      const goTools = {
+        'ffuf': 'go install github.com/ffuf/ffuf@latest',
+        'nuclei': 'go install github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest',
+        'dalfox': 'go install github.com/hahwul/dalfox/v2@latest'
+      };
+
+      // Special packages that need different installation methods
+      const specialPackages = {
+        'theharvester': 'python3-theharvester',
+        'amass': 'amass',
+        'metasploit-framework': 'metasploit-framework',
+        'zaproxy': 'zaproxy'
+      };
+      
+      let installCommand;
+      if (goTools[toolName]) {
+        // First install Go if not present, then install Go tool
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] Go tool detected: ${toolName}`);
+        
+        // Check if Go is installed
+        try {
+          await execAsync(`wsl -e bash -c "which go"`);
+          console.log(`🔧 [SINGLE-TOOL-INSTALL] Go is already installed`);
+        } catch (goError) {
+          console.log(`🔧 [SINGLE-TOOL-INSTALL] Go not found, installing Go first...`);
+          const goInstallCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y golang-go"`;
+          await execAsync(goInstallCommand);
+          console.log(`🔧 [SINGLE-TOOL-INSTALL] Go installed successfully`);
+        }
+        
+        installCommand = `wsl -e bash -c "${goTools[toolName]}"`;
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] Go command: ${installCommand}`);
+      } else if (specialPackages[toolName]) {
+        // Install special packages with alternative methods
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] Special package detected: ${toolName}`);
+        
+        if (toolName === 'theharvester') {
+          // Try multiple methods for theharvester
+          console.log(`🔧 [SINGLE-TOOL-INSTALL] Trying theharvester installation via pip...`);
+          try {
+            // First try pip installation
+            const pipCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y python3-pip && pip3 install theharvester"`;
+            const { stdout, stderr } = await execAsync(pipCommand);
+            console.log(`✅ [SINGLE-TOOL-INSTALL] theharvester installed via pip successfully`);
+            return { success: true, tool: toolName, stdout: stdout, stderr: stderr };
+          } catch (pipError) {
+            console.log(`⚠️ [SINGLE-TOOL-INSTALL] pip installation failed, trying git clone method...`);
+            // Fallback to git clone method
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y git python3-pip && cd /tmp && git clone https://github.com/laramies/theHarvester.git && cd theHarvester && pip3 install -r requirements.txt && sudo ln -sf /tmp/theHarvester/theHarvester.py /usr/local/bin/theharvester"`;
+          }
+        } else if (toolName === 'amass') {
+          // Install amass via snap
+          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install amass"`;
+        } else if (toolName === 'metasploit-framework') {
+          // Install metasploit CLI only via apt (lighter installation)
+          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y metasploit-framework"`;
+        } else if (toolName === 'zaproxy') {
+          // Install zaproxy via snap
+          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install zaproxy"`;
+        }
+        
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] Special command: ${installCommand.replace(usePassword, '***')}`);
+      } else {
+        // Install regular apt package
+        installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y ${toolName}"`;
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] APT package detected: ${toolName}`);
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] Apt command: ${installCommand.replace(usePassword, '***')}`);
+      }
+      
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] About to execute command...`);
+      
+      // First test if WSL is working
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] Testing WSL connectivity...`);
+      try {
+        const testCommand = `wsl -e bash -c "echo 'WSL test successful'"`;
+        const testResult = await execAsync(testCommand);
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] WSL test result: ${testResult.stdout.trim()}`);
+      } catch (testError) {
+        console.log(`❌ [SINGLE-TOOL-INSTALL] WSL test failed: ${testError.message}`);
+        return { 
+          success: false, 
+          tool: toolName,
+          error: `WSL connectivity test failed: ${testError.message}`,
+          errorType: 'WSL_CONNECTIVITY_ERROR'
+        };
+      }
+
+      // Update package lists before installation (only for APT packages)
+      if (!goTools[toolName]) {
+        console.log(`🔧 [SINGLE-TOOL-INSTALL] Updating package lists...`);
+        try {
+          const updateCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt update"`;
+          await execAsync(updateCommand);
+          console.log(`🔧 [SINGLE-TOOL-INSTALL] Package lists updated successfully`);
+        } catch (updateError) {
+          console.log(`⚠️ [SINGLE-TOOL-INSTALL] Package list update failed, continuing anyway: ${updateError.message}`);
+        }
+      }
+      
+      // Execute installation with timeout
+      const { stdout, stderr } = await Promise.race([
+        execAsync(installCommand),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Command timeout after 60 seconds')), 60000)
+        )
+      ]);
+      
+      console.log(`✅ [SINGLE-TOOL-INSTALL] ${toolName} installed successfully`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDOUT length: ${stdout ? stdout.length : 0}`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDOUT: ${stdout}`);
+      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDERR length: ${stderr ? stderr.length : 0}`);
+      if (stderr) console.log(`🔧 [SINGLE-TOOL-INSTALL] STDERR: ${stderr}`);
+      
+      return { 
+        success: true, 
+        tool: toolName,
+        stdout: stdout,
+        stderr: stderr
+      };
+      
+    } catch (error) {
+      console.log(`❌ [SINGLE-TOOL-INSTALL] ===== INSTALLATION FAILED =====`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Tool: ${toolName}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Error type: ${error.constructor.name}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Error message: ${error.message}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Error code: ${error.code || 'N/A'}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Error signal: ${error.signal || 'N/A'}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Error STDOUT: ${error.stdout || 'N/A'}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Error STDERR: ${error.stderr || 'N/A'}`);
+      console.log(`❌ [SINGLE-TOOL-INSTALL] Full error object:`, error);
+      
+      return { 
+        success: false, 
+        tool: toolName,
+        error: error.message,
+        errorType: error.constructor.name,
+        errorCode: error.code,
+        errorSignal: error.signal,
+        stdout: error.stdout,
+        stderr: error.stderr
+      };
+    }
+  });
+
+  ipcMain.handle('wsl:runCommand', async (event, command, password) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Run command with password authentication (uses default WSL user)
+      const fullCommand = `echo "${password}" | wsl ${command}`;
+      console.log('🚀 Running WSL command...');
+      console.log('📝 Command:', fullCommand.replace(password, '***'));
+      
+      const { stdout, stderr } = await execAsync(fullCommand);
+      console.log('📤 Output:', stdout);
+      if (stderr) console.log('⚠️  Errors:', stderr);
+      
+      return { 
+        success: true, 
+        stdout: stdout, 
+        stderr: stderr 
+      };
+    } catch (error) {
+      console.log('❌ WSL command failed:', error.message);
+      console.log('📤 Error output:', error.stdout || '');
+      console.log('⚠️  Error stderr:', error.stderr || '');
+      
+      return { 
+        success: false, 
+        error: error.message,
+        stdout: error.stdout || '',
+        stderr: error.stderr || ''
+      };
+    }
+  });
+
+  // Tool checking handlers for the new tool checker
+  ipcMain.handle('tools:checkTool', async (event, toolName, password) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      let command;
+      if (password) {
+        // Use provided password with default WSL user
+        command = `echo "${password}" | wsl command -v "${toolName}"`;
+      } else {
+        // Try without credentials (for already authenticated sessions)
+        command = `wsl command -v "${toolName}"`;
+      }
+      
+      console.log(`🔍 Checking tool: ${toolName}`);
+      console.log('📝 Command:', command.replace(password || '', '***'));
+      
+      const { stdout } = await execAsync(command);
+      const toolPath = stdout.trim();
+      
+      if (toolPath) {
+        console.log(`✅ ${toolName} found at: ${toolPath}`);
+        return { installed: true, path: toolPath };
+      } else {
+        console.log(`❌ ${toolName} not found`);
+        return { installed: false };
+      }
+    } catch (error) {
+      console.log(`❌ Error checking ${toolName}:`, error.message);
+      return { installed: false };
+    }
+  });
+
+  ipcMain.handle('tools:installTools', async (event, aptCommand, goCommands, password) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      console.log('🔧 Installing security tools...');
+      console.log('📋 APT Command:', aptCommand);
+      
+      let wslAptCommand;
+      if (password) {
+        // Use provided password with default WSL user
+        wslAptCommand = `echo "${password}" | wsl ${aptCommand}`;
+      } else {
+        // Try without credentials (for already authenticated sessions)
+        wslAptCommand = `wsl ${aptCommand}`;
+      }
+      
+      console.log('📝 Full Command:', wslAptCommand.replace(password || '', '***'));
+      console.log('⏳ Executing APT installation...');
+      
+      const { stdout, stderr } = await execAsync(wslAptCommand);
+      
+      console.log('📤 APT Output:', stdout);
+      if (stderr && !stderr.includes('already installed')) {
+        console.log('⚠️  APT Warnings:', stderr);
+      }
+      
+      console.log('✅ Basic tools installation completed');
+      
+      // Install Go-based tools if Go is available
+      try {
+        let goCheckCommand;
+        if (password) {
+          goCheckCommand = `echo "${password}" | wsl command -v go`;
+        } else {
+          goCheckCommand = `wsl command -v go`;
+        }
+        
+        console.log('🔍 Checking for Go...');
+        console.log('📝 Command:', goCheckCommand.replace(password || '', '***'));
+        
+        await execAsync(goCheckCommand);
+        console.log('✅ Go is available, installing Go-based tools...');
+        
+        for (const cmd of goCommands) {
+          try {
+            let goInstallCommand;
+            if (password) {
+              goInstallCommand = `echo "${password}" | wsl ${cmd}`;
+            } else {
+              goInstallCommand = `wsl ${cmd}`;
+            }
+            
+            console.log(`🔧 Installing Go tool: ${cmd}`);
+            console.log('📝 Command:', goInstallCommand.replace(password || '', '***'));
+            
+            const { stdout: goStdout, stderr: goStderr } = await execAsync(goInstallCommand);
+            console.log('📤 Go Output:', goStdout);
+            if (goStderr) console.log('⚠️  Go Warnings:', goStderr);
+            console.log('✅ Go tool installed successfully');
+          } catch (error) {
+            console.log(`❌ Failed to install Go tool ${cmd}:`, error.message);
+          }
+        }
+      } catch (goError) {
+        console.log('⚠️  Go not available, skipping Go-based tools installation');
+      }
+      
+      console.log('🎉 All tool installations completed');
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Tool installation failed:', error.message);
+      console.error('📤 Error output:', error.stdout || '');
+      console.error('⚠️  Error stderr:', error.stderr || '');
+      
+      // Check if it's an authentication error
+      if (error.message.includes('sudo is disabled') || error.message.includes('authentication')) {
+        return { 
+          success: false, 
+          error: error.message,
+          requiresAuth: true,
+          message: 'WSL authentication required. Please provide credentials.'
+        };
+      }
+      
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Auto-install all tools
+  ipcMain.handle('tools:autoInstallAll', async (event) => {
+    try {
+      const autoInstallerPath = path.join(process.cwd(), 'auto-install-tools.js');
+      const { spawn } = require('child_process');
+      
+      console.log('Auto-install: Starting installer at', autoInstallerPath);
+      
+      event.sender.send('tools:autoInstallProgress', { 
+        stage: 'starting', 
+        message: 'Starting automatic installation of all tools...' 
+      });
+      
+      return new Promise((resolve) => {
+        const child = spawn('node', [autoInstallerPath], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let output = '';
+        
+        child.stdout.on('data', (data) => {
+          const text = data.toString();
+          output += text;
+          console.log('Auto-install stdout:', text);
+          
+          // Split by lines and send each line as a separate progress message
+          const lines = text.split('\n').filter(line => line.trim());
+          lines.forEach(line => {
+            console.log('Sending progress message:', line.trim());
+            event.sender.send('tools:autoInstallProgress', { 
+              stage: 'progress', 
+              message: line.trim() 
+            });
+          });
+        });
+        
+        child.stderr.on('data', (data) => {
+          const text = data.toString();
+          console.log('Auto-install stderr:', text);
+          
+          // Split by lines and send each line as a separate error message
+          const lines = text.split('\n').filter(line => line.trim());
+          lines.forEach(line => {
+            event.sender.send('tools:autoInstallProgress', { 
+              stage: 'error', 
+              message: line.trim() 
+            });
+          });
+        });
+        
+        child.on('close', (code) => {
+          console.log('Auto-install process closed with code:', code);
+          if (code === 0) {
+            event.sender.send('tools:autoInstallProgress', { 
+              stage: 'complete', 
+              message: 'All tools installed successfully!' 
+            });
+            resolve({ success: true, output });
+          } else {
+            event.sender.send('tools:autoInstallProgress', { 
+              stage: 'error', 
+              message: `Installation failed with code ${code}` 
+            });
+            resolve({ success: false, output, error: `Process exited with code ${code}` });
+          }
+        });
+        
+        child.on('error', (error) => {
+          console.log('Auto-install process error:', error);
+          event.sender.send('tools:autoInstallProgress', { 
+            stage: 'error', 
+            message: `Failed to start installer: ${error.message}` 
+          });
+          resolve({ success: false, error: error.message });
+        });
+      });
+    } catch (error) {
+      console.error('Error in auto-install:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('tools:installMissing', async (event, selectedTools) => {
+    try {
+      const { runShell, TOOLS } = require(path.join(__dirname, '..', 'tools', 'cursor-installer.js'));
+      const os = require('os');
+      const isWindows = os.platform() === 'win32';
+      
+      const results = [];
+      
+      // Check if WSL is available for Windows users
+      let wslAvailable = false;
+      if (isWindows) {
+        try {
+          await runShell('wsl --status', false);
+          wslAvailable = true;
+        } catch (e) {
+          console.log('WSL not available for tool installation');
+        }
+      }
+      
+      for (const toolName of selectedTools) {
+        const tool = TOOLS.find(t => t.name === toolName);
+        if (!tool) continue;
+        
+        event.sender.send('tools:installProgress', { 
+          tool: toolName, 
+          status: 'installing', 
+          message: `Installing ${toolName}...` 
+        });
+        
+        // Choose the right installation command based on platform and tool type
+        let installCmd = tool.install;
+        if (isWindows) {
+          if (tool.type === 'wsl' && wslAvailable) {
+            installCmd = tool.install; // Use WSL command
+          } else if (tool.type === 'winget') {
+            installCmd = tool.install; // Use winget command
+          } else if (tool.wslInstall && wslAvailable) {
+            installCmd = tool.wslInstall; // Fallback to WSL
+          }
+        }
+        
+        const result = await runShell(installCmd, false);
+        
+        if (result.ok) {
+          event.sender.send('tools:installProgress', { 
+            tool: toolName, 
+            status: 'success', 
+            message: `${toolName} installed successfully` 
+          });
+          results.push({ tool: toolName, success: true });
+        } else {
+          let errorMessage = `${toolName} installation failed`;
+          if (isWindows && !wslAvailable && tool.type === 'wsl') {
+            errorMessage += ' - WSL not available. Please install WSL and Kali Linux first.';
+          } else {
+            errorMessage += `: ${result.out}`;
+          }
+          
+          event.sender.send('tools:installProgress', { 
+            tool: toolName, 
+            status: 'error', 
+            message: errorMessage
+          });
+          results.push({ tool: toolName, success: false, error: result.out });
+        }
+      }
+      
+      return { results, wslAvailable };
+    } catch (error) {
+      console.error('Error installing tools:', error);
+      return { error: error.message };
+    }
+  });
+
 
   // Save-as for report files
   ipcMain.handle('report:saveAs', async (event, sourcePath, defaultName) => {
@@ -1261,428 +3146,6 @@ async function createMainWindow() {
     }
   })
 
-  // Setup IPC handlers
-  ipcMain.handle('setup:selectDirectory', async () => {
-    try {
-      console.log('setup:selectDirectory handler called');
-      
-      if (!win) {
-        console.error('Main window not available');
-        throw new Error('Main window not available');
-      }
-
-      const result = await dialog.showOpenDialog(win, {
-        properties: ['openDirectory'],
-        title: 'Select Installation Directory',
-        defaultPath: 'C:\\Program Files'
-      });
-      
-      console.log('Dialog result:', result);
-      
-      if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-        console.log('Selected directory:', result.filePaths[0]);
-        return result.filePaths;
-      }
-      
-      console.log('No directory selected or dialog cancelled');
-      return null;
-    } catch (error) {
-      console.error('Error selecting directory:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('setup:createDirectory', async (event, dirPath) => {
-    try {
-      console.log('setup:createDirectory handler called with path:', dirPath);
-      
-      // Create the main directory if it doesn't exist
-      if (!fs.existsSync(dirPath)) {
-        console.log('Creating main directory:', dirPath);
-        fs.mkdirSync(dirPath, { recursive: true });
-      } else {
-        console.log('Main directory already exists:', dirPath);
-      }
-      
-      // Create the cyberix_system_logs subdirectory
-      const logsPath = path.join(dirPath, 'cyberix_system_logs');
-      if (!fs.existsSync(logsPath)) {
-        console.log('Creating logs directory:', logsPath);
-        fs.mkdirSync(logsPath, { recursive: true });
-      } else {
-        console.log('Logs directory already exists:', logsPath);
-      }
-      
-      console.log('Directory creation successful');
-      return { success: true, path: logsPath };
-    } catch (error) {
-      console.error('Error creating directory:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('setup:checkComplete', async () => {
-    try {
-      // Check if setup has been completed by looking for a setup config file
-      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
-      if (fs.existsSync(setupConfigPath)) {
-        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
-        return { completed: true, installPath: config.installPath };
-      }
-      return { completed: false };
-    } catch (error) {
-      console.error('Error checking setup status:', error);
-      return { completed: false };
-    }
-  });
-
-  ipcMain.handle('setup:markComplete', async (event, installPath) => {
-    try {
-      // Save setup completion status
-      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
-      const config = {
-        completed: true,
-        installPath: installPath,
-        completedAt: new Date().toISOString()
-      };
-      fs.writeFileSync(setupConfigPath, JSON.stringify(config, null, 2));
-      return { success: true };
-    } catch (error) {
-      console.error('Error marking setup complete:', error);
-      throw error;
-    }
-  });
-
-  // File system operations for logging
-  ipcMain.handle('fs:getInstallPath', async () => {
-    try {
-      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
-      if (fs.existsSync(setupConfigPath)) {
-        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
-        return config.installPath || null;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error getting install path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:getDownloadsPath', async () => {
-    try {
-      return app.getPath('downloads');
-    } catch (error) {
-      console.error('Error getting downloads path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
-    try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-      return { success: true };
-    } catch (error) {
-      console.error('Error creating directory:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
-    try {
-      // Ensure directory exists
-      const dir = path.dirname(filePath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(filePath, data, 'utf8');
-      return { success: true };
-    } catch (error) {
-      console.error('Error writing file:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('fs:readFile', async (event, filePath) => {
-    try {
-      if (!fs.existsSync(filePath)) {
-        throw new Error('File does not exist');
-      }
-      return fs.readFileSync(filePath, 'utf8');
-    } catch (error) {
-      console.error('Error reading file:', error);
-      throw error;
-    }
-  });
-
-  ipcMain.handle('fs:listFiles', async (event, dirPath) => {
-    try {
-      if (!fs.existsSync(dirPath)) {
-        return [];
-      }
-      return fs.readdirSync(dirPath);
-    } catch (error) {
-      console.error('Error listing files:', error);
-      return [];
-    }
-  });
-
-  console.log('Server scan IPC handlers registered successfully');
-
-  const platform = detectPlatform();
-  if (platform === 'mac') {
-    dialog.showMessageBox(win, {
-      type: 'info',
-      title: 'Not Available on Mac',
-      message: 'Currently our product is not available for Mac. Please wait for some days.'
-    });
-    win.webContents.executeJavaScript("window.postMessage('CYBER_GUARD_DISABLE_UI','*')");
-    return;
-  }
-
-  // Check and automatically handle Kali Linux installation on Windows
-  if (platform === 'windows') {
-    try {
-      const hasWsl = await checkWslInstalled();
-      console.log('WSL check result:', hasWsl);
-      
-      if (hasWsl) {
-        console.log('WSL is installed, checking Kali Linux...');
-        const kaliInstalled = checkKaliInstalled();
-        console.log('Kali check result:', kaliInstalled);
-        
-        if (kaliInstalled) {
-          console.log('✅ Kali Linux is already installed and detected');
-          // Wait for the page to load before updating UI
-          win.webContents.once('did-finish-load', () => {
-            try {
-              win.webContents.executeJavaScript(`
-                if (document.getElementById('kali-status')) {
-                  document.getElementById('kali-status').textContent = '✅ Kali Linux is installed';
-                  document.getElementById('kali-status').style.color = '#10b981';
-                  if (document.getElementById('install-kali-btn')) {
-                    document.getElementById('install-kali-btn').style.display = 'none';
-                  }
-                }
-              `);
-            } catch (jsError) {
-              console.log('Could not update kali-status element:', jsError.message);
-            }
-          });
-        } else {
-          console.log('Kali Linux not installed, but WSL is available');
-          // Wait for the page to load before updating UI
-          win.webContents.once('did-finish-load', () => {
-            try {
-              win.webContents.executeJavaScript(`
-                if (document.getElementById('kali-status')) {
-                  document.getElementById('kali-status').textContent = '⚠️ WSL available, Kali not installed';
-                  document.getElementById('kali-status').style.color = '#f59e0b';
-                  if (document.getElementById('install-kali-btn')) {
-                    document.getElementById('install-kali-btn').style.display = 'inline-block';
-                  }
-                }
-              `);
-            } catch (jsError) {
-              console.log('Could not update kali-status element:', jsError.message);
-            }
-          });
-          
-          // Show installation popup after a delay to ensure page is loaded
-          setTimeout(async () => {
-            try {
-              const installKali = await dialog.showMessageBox(win, {
-                type: 'question',
-                title: '🔧 Kali Linux Installation (Optional)',
-                message: 'Kali Linux is not installed in WSL.',
-                detail: 'Kali Linux provides advanced security tools for penetration testing.\n\n• Framework detection works without Kali Linux\n• Kali Linux adds professional security tools (nmap, nikto, etc.)\n• Installation is optional - you can skip and use browser-based detection\n\nWould you like to install Kali Linux now?',
-                buttons: ['🚀 Install Kali Linux', '⏭️ Skip - Use Browser Detection'],
-                defaultId: 1, // Default to skip
-                cancelId: 1
-              });
-            
-            if (installKali.response === 0) {
-          // Show installation progress
-          const progressWindow = new BrowserWindow({
-            width: 600,
-            height: 400,
-            parent: win,
-            modal: true,
-            resizable: false,
-            webPreferences: {
-              nodeIntegration: false,
-              contextIsolation: true
-            }
-          });
-          
-          progressWindow.loadURL(`data:text/html,
-            <!DOCTYPE html>
-            <html>
-              <head>
-                <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" />
-                <title>Installing Kali Linux</title>
-              </head>
-              <body style="font-family: system-ui; padding: 20px; background: #1a1a1a; color: white;">
-                <h2>🔧 Installing Kali Linux in WSL</h2>
-                <div style="background: #2d3748; padding: 15px; border-radius: 8px; margin: 15px 0;">
-                  <p><strong>📋 What's happening:</strong></p>
-                  <ul style="margin: 10px 0; padding-left: 20px;">
-                    <li>Checking system requirements</li>
-                    <li>Requesting administrator access</li>
-                    <li>Downloading and installing Kali Linux</li>
-                    <li>Verifying installation</li>
-                  </ul>
-                </div>
-                <p style="background: #f59e0b; color: #000; padding: 10px; border-radius: 5px; margin: 15px 0;">
-                  <strong>⚠️ Important:</strong> You will be prompted for administrator access. Please click "Yes" when Windows asks for permission.
-                </p>
-                <div id="progress" style="margin-top: 20px; font-family: monospace; white-space: pre-wrap; background: #000; padding: 15px; border-radius: 8px; max-height: 250px; overflow-y: auto; border: 1px solid #4a5568;"></div>
-              </body>
-            </html>
-          `);
-          
-          // Check if WSL and Kali are installed
-          const checkWslAndKali = async () => {
-            try {
-              // Check if WSL is installed
-              const wslCheck = await execPromise('wsl --status');
-              
-              // Check if Kali is installed in WSL
-              const kaliCheck = await execPromise('wsl -d kali-linux -e echo "Kali is installed"').catch(() => null);
-              
-              return {
-                wslInstalled: true,
-                kaliInstalled: kaliCheck !== null
-              };
-            } catch (error) {
-              return {
-                wslInstalled: false,
-                kaliInstalled: false
-              };
-            }
-          };
-          
-          // Define the installKaliInWsl function
-          const installKaliInWsl = async (webContents) => {
-            // Check if WSL and Kali are already installed
-            const { wslInstalled, kaliInstalled } = await checkWslAndKali();
-            
-            if (kaliInstalled) {
-              webContents.send('progress-update', '✅ Kali Linux is already installed in WSL');
-              return true;
-            }
-            
-            if (!wslInstalled) {
-              webContents.send('progress-update', '⚠️ WSL is not installed. Installing WSL first...');
-              // In a production app, you would add WSL installation code here
-            }
-            
-            // In development mode, we'll skip the actual installation
-            if (isDev) {
-              webContents.send('progress-update', 'Kali installation skipped in development mode');
-              return true; // Return true to indicate "success"
-            }
-            
-            // In production, you would add Kali installation code here
-            webContents.send('progress-update', 'Installing Kali Linux...');
-            // Actual installation code would go here
-            
-            return true;
-          };
-          
-          const kaliInstalled = await installKaliInWsl(progressWindow.webContents);
-          progressWindow.close();
-          
-          if (kaliInstalled) {
-            dialog.showMessageBox(win, {
-              type: 'info',
-              title: '🎉 Installation Complete!',
-              message: 'Kali Linux has been successfully installed in WSL!',
-              detail: 'You can now run security scans with professional tools like nmap, nikto, and more. The installation includes all necessary security tools for penetration testing.'
-            });
-            // Update the renderer status
-            win.webContents.executeJavaScript(`
-              document.getElementById('kali-status').textContent = '✅ Kali Linux is installed';
-              document.getElementById('kali-status').style.color = '#10b981';
-            `);
-          } else {
-            dialog.showMessageBox(win, {
-              type: 'error',
-              title: '❌ Installation Failed',
-              message: 'Failed to install Kali Linux.',
-              detail: 'Possible solutions:\n• Run the app as administrator\n• Check if WSL is properly installed\n• Try installing manually: wsl --install -d kali-linux\n• Check your internet connection'
-            });
-            win.webContents.executeJavaScript(`
-              document.getElementById('kali-status').textContent = '❌ Kali Linux installation failed';
-              document.getElementById('kali-status').style.color = '#ef4444';
-              document.getElementById('install-kali-btn').style.display = 'block';
-            `);
-          }
-            } else {
-              // User clicked Skip - this is perfectly fine!
-              console.log('✅ User skipped Kali Linux installation - using browser-based detection');
-              win.webContents.once('did-finish-load', () => {
-                try {
-                  win.webContents.executeJavaScript(`
-                    if (document.getElementById('kali-status')) {
-                      document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
-                      document.getElementById('kali-status').style.color = '#10b981';
-                      if (document.getElementById('install-kali-btn')) {
-                        document.getElementById('install-kali-btn').style.display = 'inline-block';
-                      }
-                    }
-                  `);
-                } catch (jsError) {
-                  console.log('Could not update kali-status element:', jsError.message);
-                }
-              });
-            }
-            } catch (dialogError) {
-              console.log('Dialog error:', dialogError.message);
-            }
-          }, 3000); // Increased delay to ensure page is fully loaded
-        }
-      } else {
-        console.log('WSL not available - using browser-based detection');
-        // Wait for the page to load before updating UI
-        win.webContents.once('did-finish-load', () => {
-          try {
-            win.webContents.executeJavaScript(`
-              if (document.getElementById('kali-status')) {
-                document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
-                document.getElementById('kali-status').style.color = '#10b981';
-                if (document.getElementById('install-kali-btn')) {
-                  document.getElementById('install-kali-btn').style.display = 'inline-block';
-                }
-              }
-            `);
-          } catch (jsError) {
-            console.log('Could not update kali-status element:', jsError.message);
-          }
-        });
-      }
-    } catch (wslError) {
-      console.log('WSL check failed:', wslError.message);
-      // Wait for the page to load before updating UI
-      win.webContents.once('did-finish-load', () => {
-        try {
-          win.webContents.executeJavaScript(`
-            if (document.getElementById('kali-status')) {
-              document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
-              document.getElementById('kali-status').style.color = '#10b981';
-              if (document.getElementById('install-kali-btn')) {
-                document.getElementById('install-kali-btn').style.display = 'inline-block';
-              }
-            }
-          `);
-        } catch (jsError) {
-          console.log('Could not update kali-status element:', jsError.message);
-        }
-      });
-    }
-  }
-
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createMainWindow();
@@ -1695,5 +3158,3 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-
-

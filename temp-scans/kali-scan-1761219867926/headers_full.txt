@@ -1,0 +1,10 @@
+HTTP/2 200 
+server: nginx
+date: Thu, 23 Oct 2025 11:44:34 GMT
+content-type: text/html; charset=UTF-8
+vary: Accept-Encoding
+last-modified: Thu, 23 Oct 2025 10:18:28 GMT
+cache-control: max-age=0
+expires: Thu, 23 Oct 2025 11:44:34 GMT
+vary: Accept-Encoding
+
