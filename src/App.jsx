@@ -8,6 +8,7 @@ import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
+import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
@@ -131,6 +132,21 @@ const AppContent = () => {
         
         if (isValid) {
           console.log('✅ [APP] Stored password is valid, checking tools...')
+          // Also ensure Kali repos are prepared (supports future multiple URLs)
+          try {
+            const password = getSecurePassword()
+            const urls = [
+              'https://github.com/almandin/fuxploider.git'
+            ]
+            const progressToast = showLoading('Things are getting ready to serve you...')
+            const setupResult = await ensureReposInstalled(urls, password)
+            dismissToast(progressToast)
+            if (!setupResult.success) {
+              console.warn('Repo setup failed:', setupResult.error)
+            }
+          } catch (e) {
+            console.warn('Repo setup skipped/failed:', e?.message)
+          }
           
       // Check which tools are missing
       const password = getSecurePassword()
@@ -236,6 +252,18 @@ const AppContent = () => {
     setShowWslPasswordDialog(false)
     
     try {
+      // Prepare Kali environment: pip, /root/cyberix, clone URLs, install requirements
+      const urls = [
+        'https://github.com/almandin/fuxploider.git'
+      ]
+      // Show progress to the user
+      const progressToast = showLoading('Things are getting ready to serve you...')
+      const setupResult = await ensureReposInstalled(urls, password)
+      dismissToast(progressToast)
+      if (!setupResult.success) {
+        showError(setupResult.error || 'Failed to prepare Kali environment')
+      }
+
       // Check which tools are missing
       if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
         console.log('🔧 [APP] Calling checkRequiredToolsOnly with password:', password ? 'EXISTS' : 'NULL')

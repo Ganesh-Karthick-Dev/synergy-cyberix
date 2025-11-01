@@ -9,14 +9,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
   const [auditCompleted, setAuditCompleted] = useState(false)
   const [currentModule, setCurrentModule] = useState(null)
   const [modules, setModules] = useState([
-    { id: 'cms-detection', name: 'CMS Detection', status: 'pending', progress: 0 },
-    { id: 'vulnerability-scanning', name: 'Vulnerability Scanning', status: 'pending', progress: 0 },
-    { id: 'plugin-theme-audit', name: 'Plugin & Theme Status Audit', status: 'pending', progress: 0 },
-    { id: 'config-hardening', name: 'Configuration Hardening Checks', status: 'pending', progress: 0 },
-    { id: 'admin-security', name: 'Admin Account Security Audit', status: 'pending', progress: 0 },
-    { id: 'backup-restoration', name: 'Backup & Restoration', status: 'pending', progress: 0 },
-    { id: 'update-management', name: 'Update Management', status: 'pending', progress: 0 },
-    { id: 'firewall-ddos', name: 'Firewall & DDoS Protection', status: 'pending', progress: 0 }
+    { id: 'waf-detection', name: 'WAF (Firewall) Detection', status: 'pending', progress: 0 }
   ])
   
   // Timing
@@ -28,6 +21,8 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
   const [auditResults, setAuditResults] = useState({})
   const [logs, setLogs] = useState([])
   const [finalReport, setFinalReport] = useState(null)
+  const [cancelRequested, setCancelRequested] = useState(false)
+  const [combinedJson, setCombinedJson] = useState(null)
   
   // UI state
   const [showReportPreview, setShowReportPreview] = useState(false)
@@ -91,16 +86,142 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
     }
   }
 
-  const estimateAuditTime = () => {
-    // Base time estimation based on site complexity
-    let baseMinutes = 5 // Small site default
-    
-    // Add time for authenticated scans
-    if (adminProvided) {
-      baseMinutes += 10
+  // Execute a Kali command via WSL and capture stdout/stderr into logs
+  const runKaliCommand = async (moduleId, step, command) => {
+    addLog(moduleId, step, command, 'Executing...')
+    try {
+      if (!window.cyberGuard || !window.cyberGuard.runAsRoot) {
+        throw new Error('WSL execution API not available')
+      }
+
+      const result = await window.cyberGuard.runAsRoot({
+        command,
+        requireConfirm: false // Skip confirmation for WordPress audit commands
+      })
+
+      const stdout = result?.stdout || ''
+      const stderr = result?.stderr || ''
+      const exitCode = typeof result?.code === 'number' ? result.code : (result?.success ? 0 : 1)
+      const combined = stdout + (stderr ? `\n[stderr]\n${stderr}` : '')
+
+      addLog(moduleId, `${step}-output`, command, combined, exitCode)
+      return { success: !!result?.success, stdout, stderr, exitCode }
+    } catch (err) {
+      addLog(moduleId, `${step}-error`, command, err.message, 1)
+      return { success: false, stdout: '', stderr: err.message, exitCode: 1 }
     }
-    
-    return baseMinutes * 60 // Convert to seconds
+  }
+
+  const estimateAuditTime = () => {
+    // WAF Detection takes 15-45 seconds (quick fingerprint)
+    return 45 // Maximum estimated time in seconds
+  }
+
+  // Install required Kali tools before audit
+  const installRequiredTools = async () => {
+    addLog('setup', 'install-tools', 'Installing required Kali tools', 'Checking and installing wafw00f...')
+
+    // 0) Ensure Kali repositories are configured and update
+    try {
+      const repoCmd = 'echo "deb http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" > /etc/apt/sources.list && echo "deb-src http://http.kali.org/kali kali-rolling main contrib non-free non-free-firmware" >> /etc/apt/sources.list'
+      addLog('setup', 'configure-repos', repoCmd, 'Configuring Kali repositories...')
+      await window.cyberGuard.runAsRoot({ command: repoCmd, requireConfirm: false })
+      
+      const updateCmd = 'export DEBIAN_FRONTEND=noninteractive; apt-get -yq update'
+      addLog('setup', 'apt-update', updateCmd, 'Updating package lists...')
+      await window.cyberGuard.runAsRoot({ command: updateCmd, requireConfirm: false })
+      addLog('setup', 'apt-update-done', updateCmd, 'Package lists updated')
+    } catch (e) {
+      addLog('setup', 'apt-update-warn', 'apt-get update', `Warning: apt update reported issues: ${e.message}`)
+    }
+
+    // 1) Check if wafw00f is installed
+    try {
+      const checkCmd = 'command -v wafw00f >/dev/null 2>&1 && echo OK || echo MISSING'
+      const checkRes = await window.cyberGuard.runAsRoot({ command: checkCmd, requireConfirm: false })
+      const isInstalled = (checkRes?.stdout || '').includes('OK')
+      
+      if (isInstalled) {
+        addLog('setup', 'wafw00f-check', checkCmd, 'wafw00f is already installed')
+      } else {
+        addLog('setup', 'wafw00f-check', checkCmd, 'wafw00f is missing, installing...')
+        
+        // 2) Install wafw00f via pip (preferred method)
+        try {
+          const pipCmd = 'export DEBIAN_FRONTEND=noninteractive; pip3 install wafw00f 2>&1 || pip install wafw00f 2>&1'
+          addLog('setup', 'install-wafw00f-pip', pipCmd, 'Installing wafw00f via pip...')
+          const pipResult = await window.cyberGuard.runAsRoot({ command: pipCmd, requireConfirm: false })
+          
+          if (pipResult?.success) {
+            addLog('setup', 'wafw00f-pip-success', pipCmd, 'wafw00f installed via pip successfully')
+          } else {
+            // Try apt install as fallback
+            throw new Error('pip installation failed, trying apt')
+          }
+        } catch (pipErr) {
+          addLog('setup', 'wafw00f-pip-fallback', 'pip install failed', 'Trying apt-get install...')
+          
+          // 3) Install wafw00f via apt-get (fallback)
+          const aptCmd = 'export DEBIAN_FRONTEND=noninteractive; apt-get -yq install wafw00f'
+          addLog('setup', 'install-wafw00f-apt', aptCmd, 'Installing wafw00f via apt-get...')
+          
+          let hb = setInterval(() => {
+            addLog('setup', 'install-progress', aptCmd, 'Still installing wafw00f...')
+          }, 10000)
+          
+          try {
+            const aptResult = await window.cyberGuard.runAsRoot({ command: aptCmd, requireConfirm: false })
+            clearInterval(hb)
+            
+            if (aptResult?.success) {
+              addLog('setup', 'wafw00f-apt-success', aptCmd, 'wafw00f installed via apt-get successfully')
+            } else {
+              addLog('setup', 'wafw00f-install-error', aptCmd, `Installation issues: ${aptResult?.stderr || 'Unknown error'}`)
+            }
+          } catch (aptErr) {
+            clearInterval(hb)
+            addLog('setup', 'wafw00f-install-error', aptCmd, `Error during installation: ${aptErr.message}`)
+          }
+        }
+        
+        // 4) Verify installation
+        const verifyCmd = 'command -v wafw00f >/dev/null 2>&1 && echo OK || echo MISSING'
+        const verifyRes = await window.cyberGuard.runAsRoot({ command: verifyCmd, requireConfirm: false })
+        const isNowInstalled = (verifyRes?.stdout || '').includes('OK')
+        
+        if (isNowInstalled) {
+          addLog('setup', 'wafw00f-verify', verifyCmd, 'wafw00f installation verified')
+        } else {
+          addLog('setup', 'wafw00f-verify-fail', verifyCmd, 'wafw00f installation verification failed')
+        }
+      }
+    } catch (e) {
+      addLog('setup', 'wafw00f-check-error', 'wafw00f check', `Warning: wafw00f check/installation issues: ${e.message}`)
+    }
+  }
+
+  // Quick preflight check (no installs) – only logs availability
+  const verifyRequiredTools = async () => {
+    const tools = ['wafw00f']
+    addLog('setup', 'preflight', 'Checking tool availability', tools.join(', '))
+    for (const tool of tools) {
+      try {
+        const res = await window.cyberGuard.runAsRoot({
+          command: `command -v ${tool} >/dev/null 2>&1 && echo OK || echo MISSING`,
+          requireConfirm: false
+        })
+        const ok = (res?.stdout || '').includes('OK')
+        addLog('setup', `preflight-${tool}`, `command -v ${tool}`, ok ? `${tool} available` : `${tool} missing`)
+        
+        // If missing, install it
+        if (!ok) {
+          addLog('setup', `preflight-${tool}-install`, `Installing ${tool}`, `Tool missing, installing ${tool}...`)
+          await installRequiredTools()
+        }
+      } catch (e) {
+        addLog('setup', `preflight-${tool}-error`, `command -v ${tool}`, e.message)
+      }
+    }
   }
 
   const startAudit = async () => {
@@ -111,6 +232,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
 
     setAuditStarted(true)
     setAuditCompleted(false)
+    setCancelRequested(false)
     setStartedTime(new Date().toISOString())
     setElapsedTime(0)
     setLogs([])
@@ -120,70 +242,243 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
     const expectedEnd = new Date(Date.now() + estimatedDuration * 1000)
     setExpectedCompletionTime(expectedEnd.toISOString())
     
-    const loadingToastId = showLoading('Starting WordPress Security Audit...')
+    const loadingToastId = showLoading('Starting WAF Detection scan...')
     
     try {
-      // Run all modules sequentially
-      await runCMSDetection()
-      await runVulnerabilityScanning()
-      await runPluginThemeAudit()
-      await runConfigHardening()
-      await runAdminSecurity()
-      await runBackupRestoration()
-      await runUpdateManagement()
-      await runFirewallDDoS()
+      // Verify and install tools if needed
+      await verifyRequiredTools()
+      
+      // Run WAF Detection module only
+      if (cancelRequested) throw new Error('Scan cancelled')
+      await runWAFDetection(); if (cancelRequested) throw new Error('Scan cancelled')
       
       // Generate final report
       await generateFinalReport()
+      await generateCombinedJson()
       
       setAuditCompleted(true)
       dismissToast(loadingToastId)
-      showSuccess('WordPress Security Audit completed successfully!')
+      showSuccess('WAF Detection scan completed successfully!')
       
     } catch (error) {
       dismissToast(loadingToastId)
+      if (error.message === 'Scan cancelled') {
+        addLog('report', 'cancelled', 'User cancelled scan', 'Scan terminated by user', 0)
+        showError('Scan cancelled')
+      } else {
       showError(`Audit failed: ${error.message}`)
+      }
       console.error('Audit error:', error)
     }
   }
 
-  // Module 1: CMS Detection
+  // -------------------- Parsers -> Combined JSON --------------------
+  const parseWafw00f = (stdout = '') => {
+    const result = {
+      tool: 'wafw00f',
+      detected: false,
+      wafType: null,
+      wafVendor: null,
+      wafInfo: null,
+      reason: null,
+      responseCode: null,
+      numberOfRequests: null,
+      raw: stdout
+    }
+
+    // Check for WAF detection patterns
+    const lines = stdout.split(/\r?\n/)
+    
+    // Pattern 1: Specific WAF detected (e.g., "is behind Cloudflare (Cloudflare Inc.) WAF")
+    const wafDetectedPattern = /is behind (.+?)(?:\s*\(([^)]+)\))?\s*WAF/i
+    const detectedMatch = stdout.match(wafDetectedPattern)
+    
+    if (detectedMatch) {
+      result.detected = true
+      result.wafType = detectedMatch[1]?.trim() || null
+      result.wafVendor = detectedMatch[2]?.trim() || detectedMatch[1]?.trim() || null
+      result.wafInfo = `The site is behind ${result.wafType}${result.wafVendor && result.wafVendor !== result.wafType ? ` (${result.wafVendor})` : ''} WAF`
+    }
+    
+    // Pattern 2: Generic detection (e.g., "seems to be behind a WAF or some sort of security solution")
+    const genericPattern = /seems to be behind (?:a )?WAF|behind (?:a )?WAF or|Generic Detection results/i
+    if (!result.detected && genericPattern.test(stdout)) {
+      result.detected = true
+      result.wafType = 'Generic/Unknown'
+      result.wafInfo = 'The site seems to be behind a WAF or some sort of security solution'
+    }
+    
+    // Extract reason for generic detection
+    const reasonMatch = stdout.match(/Reason:\s*(.+?)(?:\n|$)/i)
+    if (reasonMatch) {
+      result.reason = reasonMatch[1]?.trim() || null
+      
+      // Try to extract response codes from reason
+      const responseCodeMatch = result.reason.match(/response code (?:is|to) "?(\d+)"?/i)
+      if (responseCodeMatch) {
+        result.responseCode = responseCodeMatch[1]
+      }
+    }
+    
+    // Extract number of requests
+    const requestsMatch = stdout.match(/Number of requests:\s*(\d+)/i)
+    if (requestsMatch) {
+      result.numberOfRequests = parseInt(requestsMatch[1], 10)
+    }
+    
+    // Extract target URL if present
+    const targetMatch = stdout.match(/Checking (.+)/i)
+    if (targetMatch) {
+      result.target = targetMatch[1]?.trim() || null
+    }
+    
+    return result
+  }
+
+  const parseWhatweb = (stdout = '') => {
+    const result = { tool: 'whatweb', summary: {}, headers: {}, raw: stdout }
+    const titleMatch = stdout.match(/^Title\s*:\s*(.*)$/m)
+    const statusMatch = stdout.match(/^Status\s*:\s*(.*)$/m)
+    const ipMatch = stdout.match(/^IP\s*:\s*(.*)$/m)
+    const countryMatch = stdout.match(/^Country\s*:\s*(.*)$/m)
+    const summaryLine = stdout.match(/^Summary\s*:\s*(.*)$/m)
+    if (titleMatch) result.summary.title = titleMatch[1].trim()
+    if (statusMatch) result.summary.status = statusMatch[1].trim()
+    if (ipMatch) result.summary.ip = ipMatch[1].trim()
+    if (countryMatch) result.summary.country = countryMatch[1].trim()
+    if (summaryLine) result.summary.stack = summaryLine[1].split(',').map(s => s.trim())
+    // Headers block
+    const headersBlock = stdout.split('HTTP Headers:')[1]
+    if (headersBlock) {
+      headersBlock.split(/\r?\n/).forEach(line => {
+        const m = line.match(/^\s*([^:]+):\s*(.*)$/)
+        if (m) result.headers[m[1].trim()] = m[2].trim()
+      })
+    }
+    return result
+  }
+
+  const parseNmap = (stdout = '') => {
+    const result = { tool: 'nmap', ports: [], httpEnum: [], raw: stdout }
+    const portLines = stdout.match(/^\d+\/tcp\s+\w+\s+\w+/mg) || []
+    result.ports = portLines.map(l => {
+      const m = l.trim().split(/\s+/)
+      return { port: m[0], state: m[1], service: m[2] }
+    })
+    // http-enum section
+    const enumStart = stdout.indexOf('| http-enum:')
+    if (enumStart !== -1) {
+      const lines = stdout.slice(enumStart).split(/\r?\n/)
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i]
+        if (!line.startsWith('|')) break
+        const path = line.replace(/^\|\s*/, '').trim()
+        if (path) result.httpEnum.push(path)
+      }
+    }
+    return result
+  }
+
+  const parseDirDiscovery = (toolStdoutMap) => {
+    const result = { tool: 'dir-discovery', findings: [], errors: {}, raw: toolStdoutMap }
+    const addFinding = (path, meta) => result.findings.push({ path, meta })
+    const gobuster = toolStdoutMap.gobuster || ''
+    const dirb = toolStdoutMap.dirb || ''
+    // Very light parsing: collect common http paths in outputs if present
+    ;[gobuster, dirb].forEach(out => {
+      (out.match(/\/(?:wp-|admin|login|readme\.html|robots\.txt)[^\s]*/g) || [])
+        .forEach(p => addFinding(p, 'heuristic'))
+    })
+    // Record errors for transparency
+    if (/does not exist/i.test(toolStdoutMap.gobuster || '')) result.errors.gobuster = 'wordlist missing'
+    if (/FATAL: Error opening wordlist/i.test(toolStdoutMap.dirb || '')) result.errors.dirb = 'wordlist missing'
+    return result
+  }
+
+  const parseWapitiNikto = (wapitiStdout = '', niktoStdout = '') => {
+    const result = { tool: 'wapiti/nikto', findings: [], raw: { wapiti: wapitiStdout, nikto: niktoStdout } }
+    if (/Invalid argument for option -s/i.test(wapitiStdout)) {
+      result.findings.push({ source: 'wapiti', note: 'invalid -s option; rerun without -s for deeper scan' })
+    }
+    if (/Server\s*:\s*/i.test(niktoStdout)) {
+      // minimal capture of nikto output lines mentioning OS/Server
+      const lines = niktoStdout.split(/\r?\n/).filter(l => /\b(Server|OS)\b/i.test(l))
+      lines.forEach(l => result.findings.push({ source: 'nikto', note: l.trim() }))
+    }
+    return result
+  }
+
+  const generateCombinedJson = async () => {
+    const waf = auditResults['waf-detection']
+    const combined = {
+      target: siteUrl,
+      timestamp: new Date().toISOString(),
+      tools: {}
+    }
+    if (waf?.rawLog) {
+      combined.tools.wafw00f = parseWafw00f(waf.rawLog)
+    }
+    setCombinedJson(combined)
+    addLog('report', 'json-ready', 'Combined JSON built', 'Parsed results are ready')
+  }
+
+  // Module: WAF Detection (via wafw00f)
+  const runWAFDetection = async () => {
+    setCurrentModule('waf-detection')
+    updateModuleStatus('waf-detection', 'running', 10)
+    
+    addLog('waf-detection', 'start', 'Starting WAF Detection', 'Running wafw00f for Web Application Firewall detection...')
+    try {
+      // Run wafw00f command
+      const cmd = `wafw00f ${siteUrl}`
+      const res = await runKaliCommand('waf-detection', 'wafw00f', cmd)
+      
+      // Parse results
+      const parsedResults = parseWafw00f(res.stdout)
+      
+      const results = {
+        rawLog: res.stdout,
+        rawError: res.stderr,
+        toolUsed: 'wafw00f',
+        parsed: parsedResults
+      }
+      
+      updateModuleStatus('waf-detection', 'completed', 100, results)
+      addLog('waf-detection', 'complete', 'WAF Detection completed', parsedResults.detected ? 
+        `WAF detected: ${parsedResults.wafType || 'Generic/Unknown'}` : 
+        'No WAF detected')
+    } catch (error) {
+      updateModuleStatus('waf-detection', 'failed', 0)
+      addLog('waf-detection', 'error', 'WAF Detection failed', error.message, 1)
+      throw error
+    }
+  }
+
+  // Module 1: CMS Detection (dynamic via whatweb)
   const runCMSDetection = async () => {
     setCurrentModule('cms-detection')
     updateModuleStatus('cms-detection', 'running', 10)
     
-    addLog('cms-detection', 'start', 'Starting CMS detection', 'Initializing detection tools...')
-    
+    addLog('cms-detection', 'start', 'Starting CMS detection', 'Running whatweb for CMS/plugin fingerprinting...')
     try {
-      // Simulate whatweb command
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      addLog('cms-detection', 'whatweb', 'whatweb --no-errors --color=never ' + siteUrl, 'WordPress detected')
+      // Try whatweb (raw command as requested)
+      let cmd = `whatweb -v -a 3 ${siteUrl}`
+      let res = await runKaliCommand('cms-detection', 'whatweb', cmd)
       
-      updateModuleStatus('cms-detection', 'running', 50)
-      
-      // Simulate cmseek command
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      addLog('cms-detection', 'cmseek', 'cmseek -u ' + siteUrl + ' --no-plugins', 'CMS: WordPress 6.4.2')
-      
-      updateModuleStatus('cms-detection', 'running', 80)
-      
-      // Simulate wpscan detection
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addLog('cms-detection', 'wpscan', 'wpscan --url ' + siteUrl + ' --no-update', 'WordPress version: 6.4.2')
-      
-      const results = {
-        cmsType: 'WordPress',
-        version: '6.4.2',
-        serverHeaders: {
-          'Server': 'Apache/2.4.41',
-          'X-Powered-By': 'PHP/8.1.2'
-        },
-        technologies: ['WordPress', 'PHP', 'Apache', 'MySQL']
+      // If whatweb fails, try alternative approach
+      if (!res.success || res.exitCode !== 0) {
+        addLog('cms-detection', 'whatweb-fallback', 'whatweb failed, trying alternative', 'Using curl + grep for basic detection...')
+        cmd = `curl -s -I ${siteUrl} | grep -i "server\\|x-powered-by\\|generator" || echo "No server headers found"`
+        res = await runKaliCommand('cms-detection', 'curl-fallback', cmd)
       }
-      
+
+      const results = {
+        rawLog: res.stdout,
+        rawError: res.stderr,
+        toolUsed: res.success ? 'whatweb' : 'curl-fallback'
+      }
       updateModuleStatus('cms-detection', 'completed', 100, results)
-      addLog('cms-detection', 'complete', 'CMS Detection completed', 'WordPress 6.4.2 detected successfully')
-      
+      addLog('cms-detection', 'complete', 'CMS Detection completed', res.success ? 'whatweb finished' : 'fallback method used')
     } catch (error) {
       updateModuleStatus('cms-detection', 'failed', 0)
       addLog('cms-detection', 'error', 'CMS Detection failed', error.message, 1)
@@ -191,61 +486,69 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
     }
   }
 
-  // Module 2: Vulnerability Scanning
+  // Module 2: Vulnerability Scanning (dynamic via nmap/gobuster/dirb/wapiti)
   const runVulnerabilityScanning = async () => {
     setCurrentModule('vulnerability-scanning')
     updateModuleStatus('vulnerability-scanning', 'running', 10)
     
-    addLog('vulnerability-scanning', 'start', 'Starting vulnerability scan', 'Initializing WPScan...')
-    
+    addLog('vulnerability-scanning', 'start', 'Starting vulnerability scan', 'Running nmap/gobuster/dirb/wapiti...')
     try {
-      // Unauthenticated scan
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      addLog('vulnerability-scanning', 'wpscan', 'wpscan --url ' + siteUrl + ' --enumerate p,t,u --format json --no-update', 'Found 3 vulnerabilities')
+      const results = { rawLogs: {} }
       
-      updateModuleStatus('vulnerability-scanning', 'running', 40)
+      // 2) nmap — ports + WordPress NSE scripts
+      const nmapTarget = siteUrl.replace(/^https?:\/\//, '')
+      let nmapCmd = `nmap -Pn -T4 -p 80,443 --script=http-enum,http-wordpress-users --script-args=timeout=10s ${nmapTarget}`
+      let nmapRes = await runKaliCommand('vulnerability-scanning', 'nmap', nmapCmd)
       
-      // Authenticated scan if credentials provided
-      if (adminProvided && adminCreds) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        addLog('vulnerability-scanning', 'wpscan-auth', 'wpscan --url ' + siteUrl + ' --username ' + adminCreds.username + ' --enumerate ap,at,tt --format json', 'Authenticated scan completed')
-        updateModuleStatus('vulnerability-scanning', 'running', 70)
+      // If nmap fails, try basic port scan
+      if (!nmapRes.success || nmapRes.exitCode !== 0) {
+        addLog('vulnerability-scanning', 'nmap-fallback', 'nmap failed, trying basic scan', 'Using basic nmap scan...')
+        nmapCmd = `nmap -Pn -T4 -p 80,443 ${nmapTarget}`
+        nmapRes = await runKaliCommand('vulnerability-scanning', 'nmap-basic', nmapCmd)
       }
+      results.rawLogs.nmap = nmapRes.stdout
+      updateModuleStatus('vulnerability-scanning', 'running', 35)
+
+      // 3) gobuster — directory discovery
+      let gobusterCmd = `gobuster dir -u ${siteUrl} -w /usr/share/wordlists/dirb/common.txt -t 40`
+      let gobusterRes = await runKaliCommand('vulnerability-scanning', 'gobuster', gobusterCmd)
       
-      // Simulate wapiti scan
-      await new Promise(resolve => setTimeout(resolve, 2500))
-      addLog('vulnerability-scanning', 'wapiti', 'wapiti -u ' + siteUrl + ' -f json -o wapiti_report.json', 'Deep scan completed')
-      
-      const results = {
-        vulnerabilities: [
-          {
-            id: 'CVE-2023-1234',
-            title: 'WordPress Plugin XSS Vulnerability',
-            severity: 'High',
-            cvss: 7.5,
-            description: 'Cross-site scripting vulnerability in plugin',
-            affected: 'Plugin: Contact Form 7 v5.7.7',
-            status: 'Vulnerable'
-          },
-          {
-            id: 'CVE-2023-5678',
-            title: 'WordPress Core SQL Injection',
-            severity: 'Critical',
-            cvss: 9.1,
-            description: 'SQL injection in core functionality',
-            affected: 'WordPress Core 6.4.2',
-            status: 'Vulnerable'
-          }
-        ],
-        totalVulnerabilities: 3,
-        criticalCount: 1,
-        highCount: 1,
-        mediumCount: 1
+      // If gobuster fails, try ffuf
+      if (!gobusterRes.success || gobusterRes.exitCode !== 0) {
+        addLog('vulnerability-scanning', 'gobuster-fallback', 'gobuster failed, trying ffuf', 'Using ffuf for directory discovery...')
+        gobusterCmd = `ffuf -u ${siteUrl}/FUZZ -w /usr/share/wordlists/dirb/common.txt -t 40 -o /dev/null`
+        gobusterRes = await runKaliCommand('vulnerability-scanning', 'ffuf', gobusterCmd)
       }
+      results.rawLogs.gobuster = gobusterRes.stdout
+      updateModuleStatus('vulnerability-scanning', 'running', 60)
+
+      // 4) dirb — complementary discovery
+      let dirbCmd = `dirb ${siteUrl} /usr/share/wordlists/dirb/common.txt`
+      let dirbRes = await runKaliCommand('vulnerability-scanning', 'dirb', dirbCmd)
       
+      // If dirb fails, try wfuzz
+      if (!dirbRes.success || dirbRes.exitCode !== 0) {
+        addLog('vulnerability-scanning', 'dirb-fallback', 'dirb failed, trying wfuzz', 'Using wfuzz for directory discovery...')
+        dirbCmd = `wfuzz -c -z file,/usr/share/wordlists/dirb/common.txt --hc 404 ${siteUrl}/FUZZ`
+        dirbRes = await runKaliCommand('vulnerability-scanning', 'wfuzz', dirbCmd)
+      }
+      results.rawLogs.dirb = dirbRes.stdout
+      updateModuleStatus('vulnerability-scanning', 'running', 80)
+
+      // 5) wapiti — black-box scan
+      let wapitiCmd = `wapiti -u ${siteUrl} -s small`
+      let wapitiRes = await runKaliCommand('vulnerability-scanning', 'wapiti', wapitiCmd)
+      
+      // If wapiti fails, try nikto
+      if (!wapitiRes.success || wapitiRes.exitCode !== 0) {
+        addLog('vulnerability-scanning', 'wapiti-fallback', 'wapiti failed, trying nikto', 'Using nikto for vulnerability scan...')
+        wapitiCmd = `nikto -h ${siteUrl}`
+        wapitiRes = await runKaliCommand('vulnerability-scanning', 'nikto', wapitiCmd)
+      }
+      results.rawLogs.wapiti = wapitiRes.stdout
+
       updateModuleStatus('vulnerability-scanning', 'completed', 100, results)
-      addLog('vulnerability-scanning', 'complete', 'Vulnerability scanning completed', 'Found 3 vulnerabilities (1 Critical, 1 High, 1 Medium)')
-      
+      addLog('vulnerability-scanning', 'complete', 'Vulnerability scanning completed', 'All tools finished')
     } catch (error) {
       updateModuleStatus('vulnerability-scanning', 'failed', 0)
       addLog('vulnerability-scanning', 'error', 'Vulnerability scanning failed', error.message, 1)
@@ -589,16 +892,8 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
   // Generate final comprehensive report
   const generateFinalReport = async () => {
     // Get the actual data from completed modules
-    const cmsDetection = auditResults['cms-detection']
-    const vulnerabilityScanning = auditResults['vulnerability-scanning']
-    const pluginThemeAudit = auditResults['plugin-theme-audit']
-    const configHardening = auditResults['config-hardening']
-    const adminSecurity = auditResults['admin-security']
-    const backupRestoration = auditResults['backup-restoration']
-    const updateManagement = auditResults['update-management']
-    const firewallDdos = auditResults['firewall-ddos']
+    const wafDetection = auditResults['waf-detection']
     
-
     const report = {
       metadata: {
         siteUrl,
@@ -608,39 +903,19 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
         adminProvided,
         totalDuration: elapsedTime
       },
-      detection: cmsDetection || {},
-      vulnerabilities: vulnerabilityScanning || {},
-      plugins: pluginThemeAudit || {},
-      hardening: configHardening || {},
-      adminAccounts: adminSecurity || {},
-      backups: backupRestoration || {},
-      updates: updateManagement || {},
-      firewall: firewallDdos || {},
+      wafDetection: wafDetection || {},
       logs,
       remediationPlan: {
-        critical: [
-          'Update Contact Form 7 plugin immediately',
-          'Remove accessible readme files',
-          'Enable 2FA for admin accounts'
-        ],
-        high: [
-          'Disable XMLRPC if not needed',
-          'Update WordPress core if available',
-          'Implement automated backups'
-        ],
-        medium: [
-          'Review firewall rules',
-          'Enable auto-updates for minor versions',
-          'Test backup restoration process'
+        info: [
+          wafDetection?.parsed?.detected 
+            ? `WAF detected: ${wafDetection.parsed.wafType || 'Generic/Unknown'}. This is informational - verify WAF configuration is appropriate for your security needs.`
+            : 'No WAF detected. Consider implementing a Web Application Firewall for additional protection.'
         ]
       }
     }
     
-    
-    
-    
     setFinalReport(report)
-    addLog('report', 'generate', 'Final report generated', 'Comprehensive security audit report created')
+    addLog('report', 'generate', 'Final report generated', 'WAF Detection report created')
   }
 
   const downloadReport = (format) => {
@@ -922,6 +1197,62 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
 
   const generateModuleHTMLReport = (moduleId, results) => {
     switch (moduleId) {
+      case 'waf-detection':
+        const parsed = results?.parsed || {}
+        return `
+          <div class="space-y-3">
+            <div class="flex items-center space-x-2">
+              <span class="font-semibold text-gray-700">WAF Detected:</span>
+              <span class="px-2 py-1 ${parsed.detected ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'} rounded text-sm">
+                ${parsed.detected ? 'Yes' : 'No'}
+              </span>
+            </div>
+            ${parsed.detected ? `
+              <div class="space-y-2">
+                ${parsed.wafType ? `
+                  <div class="flex items-center space-x-2">
+                    <span class="font-semibold text-gray-700">WAF Type:</span>
+                    <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm">${parsed.wafType}</span>
+                  </div>
+                ` : ''}
+                ${parsed.wafVendor ? `
+                  <div class="flex items-center space-x-2">
+                    <span class="font-semibold text-gray-700">Vendor:</span>
+                    <span class="text-sm text-gray-600 dark:text-gray-400">${parsed.wafVendor}</span>
+                  </div>
+                ` : ''}
+                ${parsed.wafInfo ? `
+                  <div class="bg-blue-50 border-l-4 border-blue-500 pl-3 py-2 rounded">
+                    <div class="text-sm font-medium text-blue-800">${parsed.wafInfo}</div>
+                  </div>
+                ` : ''}
+                ${parsed.reason ? `
+                  <div class="bg-yellow-50 border-l-4 border-yellow-500 pl-3 py-2 rounded">
+                    <div class="text-xs font-medium text-yellow-800 mb-1">Detection Reason:</div>
+                    <div class="text-sm text-yellow-700">${parsed.reason}</div>
+                  </div>
+                ` : ''}
+                ${parsed.responseCode ? `
+                  <div class="flex items-center space-x-2">
+                    <span class="font-semibold text-gray-700">Response Code:</span>
+                    <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">${parsed.responseCode}</span>
+                  </div>
+                ` : ''}
+                ${parsed.numberOfRequests ? `
+                  <div class="flex items-center space-x-2">
+                    <span class="font-semibold text-gray-700">Number of Requests:</span>
+                    <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">${parsed.numberOfRequests}</span>
+                  </div>
+                ` : ''}
+              </div>
+            ` : `
+              <div class="bg-gray-50 border-l-4 border-gray-400 pl-3 py-2 rounded">
+                <div class="text-sm text-gray-700">No Web Application Firewall detected. The target appears to be unprotected or using an undetected WAF solution.</div>
+              </div>
+            `}
+          </div>
+        `
+      
       case 'cms-detection':
         return `
           <div class="space-y-3">
@@ -1185,8 +1516,8 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 </svg>
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">WordPress Security Audit</h1>
-                <p className="text-lg text-gray-600 dark:text-gray-400">Comprehensive security analysis and management audit</p>
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">WAF (Firewall) Detection</h1>
+                <p className="text-lg text-gray-600 dark:text-gray-400">Web Application Firewall detection and fingerprinting</p>
               </div>
             </div>
             
@@ -1196,6 +1527,14 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
               >
                 Start Audit
+              </button>
+            )}
+            {auditStarted && !auditCompleted && (
+              <button
+                onClick={() => setCancelRequested(true)}
+                className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+              >
+                Stop Scan
               </button>
             )}
           </div>
@@ -1278,7 +1617,12 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
         {auditStarted && logs.length > 0 && (
           <div className="mb-8">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Audit Logs</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center">
+                <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Kali Command Execution Logs
+              </h3>
               <div className="flex items-center space-x-3">
                 <div className="text-sm text-gray-500 dark:text-gray-400">
                   {logs.length} log entries
@@ -1291,29 +1635,60 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                     navigator.clipboard.writeText(logText)
                     showSuccess('Audit logs copied to clipboard!')
                   }}
-                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   title="Copy logs to clipboard"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
                 </button>
+                <button
+                  onClick={() => {
+                    const logText = logs.map(log => 
+                      `[${new Date(log.timestamp).toLocaleTimeString()}][${log.module}]${log.step}:${log.output}${log.exitCode !== 0 ? ` (Exit: ${log.exitCode})` : ''}`
+                    ).join('\n')
+                    const blob = new Blob([logText], { type: 'text/plain' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `wordpress-audit-logs-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                    URL.revokeObjectURL(url)
+                    showSuccess('Logs downloaded successfully!')
+                  }}
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Download logs as file"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </button>
               </div>
             </div>
-            <div className="bg-gray-900 rounded-lg p-4 max-h-64 overflow-y-auto">
-              <div className="space-y-2">
-                {logs.slice(-10).map((log, index) => (
+            <div className="bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto border border-gray-700">
+              <div className="space-y-1">
+                {logs.map((log, index) => (
                   <div key={index} className="text-sm font-mono">
-                    <span className="text-gray-400">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                    <span className="text-blue-400 ml-2">[{log.module}]</span>
-                    <span className="text-yellow-400 ml-2">{log.step}:</span>
-                    <span className="text-white ml-2">{log.output}</span>
+                    <div className="flex items-start space-x-2">
+                      <span className="text-gray-400 text-xs whitespace-nowrap">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
+                      <span className="text-blue-400 text-xs whitespace-nowrap">[{log.module}]</span>
+                      <span className="text-yellow-400 text-xs whitespace-nowrap">{log.step}:</span>
                     {log.exitCode !== 0 && (
-                      <span className="text-red-400 ml-2">(Exit: {log.exitCode})</span>
+                        <span className="text-red-400 text-xs">(Exit: {log.exitCode})</span>
                     )}
+                    </div>
+                    <div className="ml-4 mt-1">
+                      <div className="text-green-400 text-xs mb-1">$ {log.command}</div>
+                      <pre className="text-white text-xs whitespace-pre-wrap break-words">{log.output}</pre>
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              💡 These are real-time logs from Kali Linux tools. Commands are executed via WSL with root privileges.
             </div>
           </div>
         )}
@@ -1337,12 +1712,23 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                 
                 <div className="flex items-center space-x-3">
                   {module.status === 'completed' && module.results && (
-                    <button
-                      onClick={() => downloadReport('json')}
-                      className="text-sm px-3 py-1 bg-white dark:bg-slate-800 bg-opacity-50 rounded hover:bg-opacity-75 transition-colors"
-                    >
-                      Download
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          setSelectedModuleReport({ id: module.id, name: module.name, results: module.results })
+                          setShowReportPreview(true)
+                        }}
+                        className="text-sm px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                      >
+                        View Details
+                      </button>
+                      <button
+                        onClick={() => downloadReport('json')}
+                        className="text-sm px-3 py-1 bg-white dark:bg-slate-800 bg-opacity-50 rounded hover:bg-opacity-75 transition-colors"
+                      >
+                        Download
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -1374,6 +1760,36 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
             </div>
           ))}
         </div>
+
+        {/* Parsed JSON Output */}
+        {combinedJson && (
+          <div className="border-t pt-8 mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Parsed Results (JSON)</h3>
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={() => navigator.clipboard.writeText(JSON.stringify(combinedJson, null, 2))}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded"
+                >Copy</button>
+                <button
+                  onClick={() => {
+                    const blob = new Blob([JSON.stringify(combinedJson, null, 2)], { type: 'application/json' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `wordpress-audit-${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.json`
+                    document.body.appendChild(a)
+                    a.click()
+                    document.body.removeChild(a)
+                    URL.revokeObjectURL(url)
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded"
+                >Download</button>
+              </div>
+            </div>
+            <pre className="text-xs bg-gray-900 text-gray-100 rounded p-4 max-h-96 overflow-y-auto">{JSON.stringify(combinedJson, null, 2)}</pre>
+          </div>
+        )}
 
         {/* Final Report Section */}
         {auditCompleted && finalReport && (
@@ -1476,6 +1892,72 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
                       __html: generateHTMLReport(selectedModuleReport.results) 
                     }}
                   />
+                ) : selectedModuleReport.id === 'waf-detection' ? (
+                  <div className="space-y-4">
+                    <div className="bg-white dark:bg-slate-700 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
+                      <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">WAF Detection Results</h4>
+                      {selectedModuleReport.results?.parsed ? (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">WAF Detected:</span>
+                              <span className={`ml-2 px-2 py-1 rounded text-sm font-semibold ${
+                                selectedModuleReport.results.parsed.detected 
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                                  : 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200'
+                              }`}>
+                                {selectedModuleReport.results.parsed.detected ? 'Yes' : 'No'}
+                              </span>
+                            </div>
+                            {selectedModuleReport.results.parsed.wafType && (
+                              <div>
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">WAF Type:</span>
+                                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded text-sm font-semibold">
+                                  {selectedModuleReport.results.parsed.wafType}
+                                </span>
+                              </div>
+                            )}
+                            {selectedModuleReport.results.parsed.wafVendor && (
+                              <div>
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Vendor:</span>
+                                <span className="ml-2 text-sm text-gray-900 dark:text-gray-100">
+                                  {selectedModuleReport.results.parsed.wafVendor}
+                                </span>
+                              </div>
+                            )}
+                            {selectedModuleReport.results.parsed.numberOfRequests && (
+                              <div>
+                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Requests Made:</span>
+                                <span className="ml-2 text-sm text-gray-900 dark:text-gray-100">
+                                  {selectedModuleReport.results.parsed.numberOfRequests}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          {selectedModuleReport.results.parsed.wafInfo && (
+                            <div className="bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500 pl-4 py-3 rounded">
+                              <div className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-1">Detection Information</div>
+                              <div className="text-sm text-blue-800 dark:text-blue-300">{selectedModuleReport.results.parsed.wafInfo}</div>
+                            </div>
+                          )}
+                          {selectedModuleReport.results.parsed.reason && (
+                            <div className="bg-yellow-50 dark:bg-yellow-900/30 border-l-4 border-yellow-500 pl-4 py-3 rounded">
+                              <div className="text-xs font-medium text-yellow-900 dark:text-yellow-200 mb-1">Detection Reason</div>
+                              <div className="text-sm text-yellow-800 dark:text-yellow-300">{selectedModuleReport.results.parsed.reason}</div>
+                            </div>
+                          )}
+                          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-600">
+                            <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Full JSON Report</div>
+                            <pre className="bg-gray-900 text-gray-100 rounded p-4 overflow-x-auto text-xs">
+                              {JSON.stringify(selectedModuleReport.results.parsed, null, 2)}
+                            </pre>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-gray-600 dark:text-gray-400">No parsed results available</div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <pre className="text-sm text-gray-700 whitespace-pre-wrap">
                     {JSON.stringify(selectedModuleReport.results, null, 2)}

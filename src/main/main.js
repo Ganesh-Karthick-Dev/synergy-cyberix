@@ -2183,6 +2183,83 @@ async function createMainWindow() {
     }
   });
 
+  // Secure WSL root execution handler used by WordPress audit tools
+  ipcMain.handle('wsl-run-as-root', async (event, { distro, command, requireConfirm = true }) => {
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+    const { dialog, BrowserWindow } = require('electron');
+
+    if (!command || typeof command !== 'string' || command.trim().length === 0) {
+      return { success: false, error: 'Invalid command' };
+    }
+
+    // Optional confirmation dialog to show the exact command
+    if (requireConfirm) {
+      const win = BrowserWindow.getFocusedWindow();
+      const { response } = await dialog.showMessageBox(win || null, {
+        type: 'question',
+        buttons: ['Run', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Run command as root in WSL',
+        message: 'You are about to run the following command as root in WSL:',
+        detail: command
+      });
+      if (response !== 0) {
+        return { success: false, error: 'User cancelled' };
+      }
+    }
+
+    try {
+      // Execute command directly in WSL root environment (like nmap)
+      // Split command into executable and arguments
+      const parts = command.trim().split(/\s+/);
+      const executable = parts[0];
+      const args = parts.slice(1);
+
+      const runInDistro = async (targetDistro) => {
+        const base = targetDistro ? `wsl -d ${targetDistro} -u root` : `wsl -u root`;
+        const fullCommand = `${base} -- ${executable} ${args.join(' ')}`;
+        const start = Date.now();
+        const { stdout, stderr } = await execAsync(fullCommand, { windowsHide: true, maxBuffer: 10 * 1024 * 1024 });
+        const duration = Date.now() - start;
+        return { success: true, stdout, stderr, code: 0, timedOut: false, duration };
+      };
+
+      // First try with provided distro (if any)
+      try {
+        return await runInDistro(distro);
+      } catch (primaryError) {
+        // If a specific distro was requested and failed, retry once in default distro (no -d)
+        try {
+          const fallback = await runInDistro(null);
+          return fallback;
+        } catch (fallbackError) {
+          return {
+            success: false,
+            stdout: fallbackError.stdout,
+            stderr: fallbackError.stderr,
+            code: typeof fallbackError.code === 'number' ? fallbackError.code : 1,
+            timedOut: false,
+            duration: 0,
+            error: fallbackError.message
+          };
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        stdout: error.stdout,
+        stderr: error.stderr,
+        code: typeof error.code === 'number' ? error.code : 1,
+        timedOut: false,
+        duration: 0,
+        error: error.message
+      };
+    }
+  });
+
   // Tool checking handlers for the new tool checker
   ipcMain.handle('tools:checkTool', async (event, toolName, password) => {
     try {

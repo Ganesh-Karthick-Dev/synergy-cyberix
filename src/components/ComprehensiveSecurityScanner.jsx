@@ -39,14 +39,133 @@ const ComprehensiveSecurityScanner = () => {
   const [showScanDetailDialog, setShowScanDetailDialog] = useState(false)
   const [selectedScanResult, setSelectedScanResult] = useState(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [showHelpDialog, setShowHelpDialog] = useState(false)
   const logContainerRef = useRef(null)
   const timerRef = useRef(null)
   const scanTimeoutRef = useRef(null)
 
-  // Define security tests - REVERSE ORDER for debugging (newest scans first)
-  // Final order will be: 1.DNS 2.SSL/TLS 3.Security Headers 4.CMS 5.Subdomain 6.Port 7.SQL 8.XSS
-  // Current reverse order: 8.XSS 7.SQL 6.Port 5.Subdomain 4.CMS 3.Security Headers 2.SSL/TLS 1.DNS
+  // Define security tests - all visible in UI, but only File Upload Vulnerability Check runs
   const securityTests = [
+    {
+      id: 'quick-fingerprint',
+      name: 'Quick Fingerprint',
+      description: 'Fast technology fingerprint to identify server, CMS and common libraries.',
+      detailedDescription: 'This run performs a lightweight, non-intrusive fingerprint of the target site to quickly enumerate web server, CMS, common frameworks and observable headers. It\'s designed for reconnaissance with minimal requests and low noise so it\'s safe on production sites. Results are suitable for deciding follow-up scans (e.g., wpscan, nmap) and give a snapshot of what technologies are present. It does not try aggressive probes, so some plugins or obscure frameworks may be missed. Use this as the first step in a scanning workflow.',
+      category: 'Reconnaissance',
+      estimatedTime: 30,
+      severity: 'informational',
+      criticality: 'Fingerprinting helps identify technologies in use and potential attack surfaces.',
+      fixRecommendations: [
+        'Enable HSTS for HTTPS sites',
+        'Add a strict Content-Security-Policy',
+        'Keep CMS and plugins updated to latest versions',
+        'Minimize exposed technology information in headers'
+      ]
+    },
+    {
+      id: 'open-redirect-check',
+      name: 'Open Redirect Check',
+      description: 'Tests whether the server allows unvalidated redirects',
+      detailedDescription: 'Sends a benign redirect parameter to verify if the server redirects to an arbitrary external domain.',
+      category: 'Web Security / Input Validation',
+      estimatedTime: 20,
+      severity: 'high',
+      criticality: 'Unvalidated redirects can be abused for phishing and credential theft.',
+      fixRecommendations: [
+        'Restrict allowed redirect URLs to internal whitelisted domains.'
+      ]
+    },
+    {
+      id: 'cors-policy-validation',
+      name: 'CORS Policy Validation',
+      description: 'Checks if Access-Control-Allow-Origin is insecure',
+      detailedDescription: 'Sends a request with a malicious Origin to see if the response allows wildcard CORS.',
+      category: 'Web Security / Headers',
+      estimatedTime: 20,
+      severity: 'critical',
+      criticality: 'Overly-permissive CORS can allow data exfiltration from authenticated sessions.',
+      fixRecommendations: [
+        'Restrict CORS to trusted domains only and avoid use of wildcard *.'
+      ]
+    },
+    {
+      id: 'host-header-injection',
+      name: 'Host Trust Verification',
+      description: 'Ensures server does not use client-controlled host header',
+      detailedDescription: 'Sends a forged Host header and inspects if it appears in the response.',
+      category: 'Web Security / Headers',
+      estimatedTime: 20,
+      severity: 'high',
+      criticality: 'Host header injection can lead to cache poisoning, redirect abuse, and password reset poisoning.',
+      fixRecommendations: [
+        'Enforce host header validation at server or reverse proxy layer.'
+      ]
+    },
+    {
+      id: 'http-methods-check',
+      name: 'HTTP Allowed Methods Check',
+      description: 'Checks if dangerous HTTP methods are enabled',
+      detailedDescription: 'Performs an OPTIONS request to see if unsafe methods (PUT, DELETE, TRACE) are enabled.',
+      category: 'Web Security',
+      estimatedTime: 20,
+      severity: 'critical',
+      criticality: 'Dangerous HTTP methods can enable data tampering, file uploads, or debugging leaks.',
+      fixRecommendations: [
+        'Disable unsafe methods at server and web application firewall level.'
+      ]
+    },
+    {
+      id: 'ct-log-subdomain-discovery',
+      name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+      description: 'This test collects all publicly logged SSL/TLS certificates for the target domain.\nIt helps identify hidden, forgotten, or unmonitored subdomains that may expose security risks.',
+      detailedDescription: 'When any HTTPS domain is created, its certificate is recorded in public Certificate Transparency logs. This scan checks those logs to find all subdomains that have ever received a certificate — including internal, old, testing, or unpublished domains. Attackers use this same method to discover forgotten servers that might have security weaknesses. This test is safe, passive, and does not interact with the target website, it only reads public data.',
+      category: 'Reconnaissance',
+      estimatedTime: 30,
+      severity: 'medium',
+      criticality: 'Hidden or forgotten subdomains can expose security risks if not properly monitored and secured.',
+      fixRecommendations: [
+        'Audit all discovered subdomains and ensure they are properly secured',
+        'Remove or secure forgotten test or development subdomains',
+        'Implement subdomain monitoring and alerts',
+        'Ensure all subdomains follow security best practices'
+      ]
+    },
+    {
+      id: 'file-upload-check',
+      name: 'File Upload Vulnerability Check',
+      description: 'Verify whether uploads are improperly validated or web-accessible, potentially enabling code execution or data exposure',
+      detailedDescription: 'Simulates benign file uploads using curl and analyzes responses, headers, and any returned URLs. Checks if files are accepted without proper validation, stored in web-accessible locations, or processed in a way that could allow code execution. Only run with explicit authorization.',
+      category: 'Web Security / Input Validation',
+      estimatedTime: 120,
+      severity: 'high',
+      criticality: 'If uploads allow web shells or arbitrary code execution, this escalates to critical severity.',
+      fixRecommendations: [
+        'Validate file type and content server-side (MIME + magic bytes)',
+        'Store uploads outside webroot; serve via controlled handlers',
+        'Set X-Content-Type-Options: nosniff and Content-Disposition: attachment',
+        'Restrict allowed extensions; block executable types (.php, .jsp, .aspx)',
+        'Rename files and disable direct origin access; enforce auth where required',
+        'Log and monitor upload events; rate-limit if appropriate'
+      ]
+    },
+    {
+      id: 'waf-detection',
+      name: 'WAF (Firewall) Detection',
+      description: 'Detect whether a target web application is protected by a Web Application Firewall (WAF) and identify the vendor/type',
+      detailedDescription: 'WAF Detection determines whether network or application-layer filtering is active in front of a web server. The test fingerprints WAF products by sending a set of benign, non-exploit HTTP probes and analyzing response traits such as headers, error pages, cookies, redirects, and behavioral differences. Knowing a WAF is present helps legitimate testers avoid unnecessary blocking or accidental DoS during active tests, and helps site owners confirm protection is installed and returning expected responses.',
+      category: 'Web Security',
+      estimatedTime: 45,
+      severity: 'high',
+      criticality: 'WAF detection is informational to high severity depending on context. Presence of WAF affects further testing and indicates the level of protection in place.',
+      fixRecommendations: [
+        'Verify WAF configuration is appropriate for your security needs',
+        'Ensure WAF rules are properly tuned',
+        'Monitor WAF logs for false positives',
+        'Regularly update WAF rules and signatures',
+        'Test WAF effectiveness against common attack patterns',
+        'Consider implementing custom WAF rules for your application'
+      ]
+    },
     {
       id: 'csrf-test',
       name: 'Cross-Site Request Forgery (CSRF) Testing',
@@ -205,91 +324,6 @@ const ComprehensiveSecurityScanner = () => {
         'Regularly audit DNS configuration'
       ]
     }
-    // {
-    //   id: 'ssl-tls-analysis',
-    //   name: 'SSL/TLS Certificate Analysis',
-    //   description: 'Examine certificate validity, cipher suites, and TLS configuration',
-    //   detailedDescription: 'SSL/TLS analysis examines certificate subject, issuer, validity, SANs, key size, signature algorithm, and supported protocols/ciphers. This test identifies expired or self-signed certificates, weak signature algorithms or ciphers, missing SANs, and incomplete certificate chains that could compromise secure communications.',
-    //   category: 'Infrastructure',
-    //   estimatedTime: 45,
-    //   severity: 'high',
-    //   criticality: 'Weak SSL/TLS configurations can lead to man-in-the-middle attacks, data interception, and compliance violations.',
-    //   fixRecommendations: [
-    //     'Use strong cipher suites (AES-256, ChaCha20)',
-    //     'Disable weak protocols (SSL 2.0/3.0, TLS 1.0/1.1)',
-    //     'Implement certificate transparency monitoring',
-    //     'Configure HSTS headers',
-    //     'Regular certificate renewal and monitoring'
-    //   ]
-    // },
-    // {
-    //   id: 'security-headers',
-    //   name: 'Security Headers Analysis',
-    //   description: 'Check for missing security headers like CSP, HSTS, X-Frame-Options',
-    //   detailedDescription: 'Security headers analysis examines full HTTP headers including CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, and cookie security settings. This test identifies missing CSP or HSTS headers, insecure cookies, and absent clickjacking/XFO headers that could expose applications to client-side attacks.',
-    //   category: 'Web Security',
-    //   estimatedTime: 20,
-    //   severity: 'medium',
-    //   criticality: 'Missing security headers leave applications vulnerable to XSS, clickjacking, MIME sniffing, and other client-side attacks.',
-    //   fixRecommendations: [
-    //     'Implement Content Security Policy (CSP)',
-    //     'Add X-Frame-Options header',
-    //     'Configure X-Content-Type-Options',
-    //     'Set Referrer-Policy header',
-    //     'Enable HSTS for HTTPS sites'
-    //   ]
-    // },
-    // {
-    //   id: 'cms-detection',
-    //   name: 'CMS & Framework Detection',
-    //   description: 'Identify content management system and detect version information',
-    //   detailedDescription: 'CMS and framework detection examines web server information, CMS/framework name and version, and detected plugins/themes. This test identifies outdated CMS versions, known vulnerable versions, and public admin panels that could provide attackers with specific vulnerability targets and exploit paths.',
-    //   category: 'Reconnaissance',
-    //   estimatedTime: 60,
-    //   severity: 'info',
-    //   criticality: 'Outdated CMS versions and exposed version information provide attackers with specific vulnerability targets and exploit paths.',
-    //   fixRecommendations: [
-    //     'Keep CMS and plugins updated',
-    //     'Hide version information',
-    //     'Remove default admin paths',
-    //     'Implement security plugins',
-    //     'Regular security audits'
-    //   ]
-    // },
-    // {
-    //   id: 'subdomain-enumeration',
-    //   name: 'Subdomain Enumeration',
-    //   description: 'Discover subdomains and check for subdomain takeover vulnerabilities',
-    //   detailedDescription: 'Subdomain enumeration uses multiple techniques including DNS brute-forcing, certificate transparency logs, and search engine queries to discover subdomains. This test identifies exposed administrative interfaces, development environments, and subdomain takeover vulnerabilities that could provide attackers with additional attack surface.',
-    //   category: 'Reconnaissance',
-    //   estimatedTime: 90,
-    //   severity: 'medium',
-    //   criticality: 'Exposed subdomains can reveal additional attack surface, administrative interfaces, and potential subdomain takeover vulnerabilities.',
-    //   fixRecommendations: [
-    //     'Monitor subdomain registrations',
-    //     'Secure administrative subdomains',
-    //     'Remove unused DNS entries',
-    //     'Implement subdomain takeover protection',
-    //     'Regular subdomain audits'
-    //   ]
-    // },
-    // {
-    //   id: 'port-scanning',
-    //   name: 'Port Scanning & Service Detection',
-    //   description: 'Identify open ports, services, and potential vulnerabilities',
-    //   detailedDescription: 'Port scanning and service detection identifies open network ports, running services, and their versions. This test reveals exposed services, outdated software versions, and potential entry points that attackers could exploit to gain unauthorized access to systems.',
-    //   category: 'Infrastructure',
-    //   estimatedTime: 120,
-    //   severity: 'high',
-    //   criticality: 'Open ports and exposed services provide direct attack vectors for unauthorized access, data breaches, and system compromise.',
-    //   fixRecommendations: [
-    //     'Close unnecessary ports',
-    //     'Update outdated services',
-    //     'Implement network segmentation',
-    //     'Use firewall rules',
-    //     'Regular port audits'
-    //   ]
-    // }
   ]
 
   // Auto-scroll logs to bottom
@@ -408,6 +442,986 @@ const ComprehensiveSecurityScanner = () => {
       minute: '2-digit',
       second: '2-digit'
     }).format(date)
+  }
+
+  // Parse wafw00f output to JSON
+  const parseWafw00f = (stdout = '') => {
+    const stripAnsi = (s = '') => (s || '').replace(/\x1b\[[0-9;]*m/g, '')
+    const clean = stripAnsi(stdout)
+    const result = {
+      tool: 'wafw00f',
+      detected: false,
+      wafType: null,
+      wafVendor: null,
+      wafInfo: null,
+      reason: null,
+      responseCode: null,
+      numberOfRequests: null,
+      raw: clean
+    }
+
+    // Pattern 1: Specific WAF detected (e.g., "is behind Cloudflare (Cloudflare Inc.) WAF")
+    const wafDetectedPattern = /is behind (.+?)(?:\s*\(([^)]+)\))?\s*WAF/i
+    const detectedMatch = clean.match(wafDetectedPattern)
+    
+    if (detectedMatch) {
+      result.detected = true
+      result.wafType = stripAnsi(detectedMatch[1]?.trim() || '') || null
+      result.wafVendor = stripAnsi(detectedMatch[2]?.trim() || detectedMatch[1]?.trim() || '') || null
+      result.wafInfo = `The site is behind ${result.wafType}${result.wafVendor && result.wafVendor !== result.wafType ? ` (${result.wafVendor})` : ''} WAF`
+    }
+    
+    // Pattern 2: Generic detection
+    const genericPattern = /seems to be behind (?:a )?WAF|behind (?:a )?WAF or|Generic Detection results/i
+    if (!result.detected && genericPattern.test(clean)) {
+      result.detected = true
+      result.wafType = 'Generic/Unknown'
+      result.wafInfo = 'The site seems to be behind a WAF or some sort of security solution'
+    }
+    
+    // Extract reason for generic detection
+    const reasonMatch = clean.match(/Reason:\s*(.+?)(?:\n|$)/i)
+    if (reasonMatch) {
+      result.reason = stripAnsi(reasonMatch[1]?.trim() || '') || null
+      
+      // Try to extract response codes from reason
+      const responseCodeMatch = result.reason.match(/response code (?:is|to) "?(\d+)"?/i)
+      if (responseCodeMatch) {
+        result.responseCode = responseCodeMatch[1]
+      }
+    }
+    
+    // Extract number of requests
+    const requestsMatch = clean.match(/Number of requests:\s*(\d+)/i)
+    if (requestsMatch) {
+      result.numberOfRequests = parseInt(requestsMatch[1], 10)
+    }
+    
+    // Extract target URL if present
+    const targetMatch = clean.match(/Checking (.+)/i)
+    if (targetMatch) {
+      result.target = stripAnsi(targetMatch[1]?.trim() || '') || null
+    }
+    
+    return result
+  }
+
+  // Run WAF Detection scan
+  const runWAFDetection = async () => {
+    try {
+      setCurrentTest({ id: 'waf-detection', name: 'WAF (Firewall) Detection' })
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 10 }))
+      
+      // Check if wafw00f is installed
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: '🔍 Checking for wafw00f tool...',
+        testId: 'waf-detection',
+        type: 'info'
+      }])
+      
+      const checkCmd = 'command -v wafw00f >/dev/null 2>&1 && echo OK || echo MISSING'
+      let checkRes = null
+      
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        checkRes = await window.cyberGuard.runAsRoot({ command: checkCmd, requireConfirm: false })
+      }
+      
+      const isInstalled = checkRes?.stdout?.includes('OK')
+      
+      if (!isInstalled) {
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: '📦 wafw00f not found, installing...',
+          testId: 'waf-detection',
+          type: 'info'
+        }])
+        
+        setTestProgress(prev => ({ ...prev, 'waf-detection': 20 }))
+        
+        // Install wafw00f via pip
+        const pipCmd = 'export DEBIAN_FRONTEND=noninteractive; pip3 install wafw00f 2>&1 || pip install wafw00f 2>&1'
+        if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+          await window.cyberGuard.runAsRoot({ command: pipCmd, requireConfirm: false })
+        }
+        
+        setTestProgress(prev => ({ ...prev, 'waf-detection': 40 }))
+      }
+      
+      // Run wafw00f
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `🔍 Running wafw00f on ${targetUrl}...`,
+        testId: 'waf-detection',
+        type: 'info'
+      }])
+      
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 50 }))
+      
+      const wafCmd = `wafw00f ${targetUrl}`
+      let wafResult = null
+      
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        wafResult = await window.cyberGuard.runAsRoot({ command: wafCmd, requireConfirm: false })
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 80 }))
+      
+      // Parse results
+      const parsedResults = parseWafw00f(wafResult?.stdout || '')
+      
+      const wafReport = {
+        testId: 'waf-detection',
+        testName: 'WAF (Firewall) Detection',
+        category: 'Web Security',
+        severity: 'high',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: parsedResults.detected ? [
+          {
+            type: 'info',
+            message: `WAF Detected: ${parsedResults.wafType || 'Generic/Unknown'}`,
+            details: parsedResults.wafInfo || 'WAF detected but type could not be identified'
+          }
+        ] : [
+          {
+            type: 'info',
+            message: 'No WAF Detected',
+            details: 'No Web Application Firewall detected. The target appears to be unprotected or using an undetected WAF solution.'
+          }
+        ],
+        recommendations: parsedResults.detected ? [
+          'Verify WAF configuration is appropriate for your security needs',
+          'Ensure WAF rules are properly tuned',
+          'Monitor WAF logs for false positives'
+        ] : [
+          'Consider implementing a Web Application Firewall for additional protection',
+          'Review your current security posture',
+          'Implement security headers and other protection mechanisms'
+        ],
+        report: {
+          scanType: 'WAF (Firewall) Detection',
+          target: targetUrl,
+          summary: {
+            wafDetected: parsedResults.detected,
+            wafType: parsedResults.wafType,
+            wafVendor: parsedResults.wafVendor,
+            numberOfRequests: parsedResults.numberOfRequests,
+            responseCode: parsedResults.responseCode
+          },
+          details: parsedResults,
+          rawOutput: parsedResults.raw || wafResult?.stdout || ''
+        }
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 100 }))
+      setScanResults(prev => ({ ...prev, 'waf-detection': wafReport }))
+      setNewScanResults(prev => ({ ...prev, 'waf-detection': wafReport }))
+      setCompletedTests(prev => new Set([...prev, 'waf-detection']))
+      
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `✅ WAF Detection completed - ${parsedResults.detected ? `WAF Detected: ${parsedResults.wafType || 'Generic/Unknown'}` : 'No WAF Detected'}`,
+        testId: 'waf-detection',
+        type: 'success'
+      }])
+      
+    } catch (error) {
+      console.error('WAF Detection error:', error)
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `❌ WAF Detection failed: ${error.message}`,
+        testId: 'waf-detection',
+        type: 'error'
+      }])
+      
+      setScanResults(prev => ({
+        ...prev,
+        'waf-detection': {
+          testId: 'waf-detection',
+          testName: 'WAF (Firewall) Detection',
+          category: 'Web Security',
+          severity: 'high',
+          status: 'failed',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          findings: [],
+          recommendations: [],
+          report: { summary: {}, details: {}, rawOutput: '' }
+        }
+      }))
+      setCompletedTests(prev => new Set([...prev, 'waf-detection']))
+    } finally {
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 100 }))
+    }
+  }
+
+  // Parse the concatenated raw outputs from file upload test into structured JSON per schema
+  const parseFileUploadRawToJson = (raw = '', target = '') => {
+    const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+    const result = {
+      meta: {
+        parser_version: '1.0',
+        generated_at_utc: nowIso,
+        target: target || null,
+        tester_host: null,
+        tester_ip: null
+      },
+      commands: [],
+      aggregate_findings: {
+        upload_allowed: null,
+        evidence: [],
+        severity: 'unknown',
+        confidence: 'low',
+        rationale: 'Insufficient data'
+      },
+      recommendations: [
+        'Validate file content-type and magic bytes server-side',
+        'Store uploads outside webroot and serve via controlled handler',
+        'Block executable extensions and enforce allowlist',
+        'Set X-Content-Type-Options: nosniff and Content-Disposition: attachment',
+        'Restrict direct access to upload paths; require auth where needed'
+      ],
+      raw_outputs_attached: true
+    }
+
+    if (!raw || typeof raw !== 'string') return result
+
+    // Split by our emitted markers ===FILE:filename===
+    const parts = raw.split(/\n===FILE:(.+?)===\n/)
+    // parts structure: [prefix, filename1, content1, filename2, content2, ...]
+    for (let i = 1; i < parts.length; i += 2) {
+      const label = (parts[i] || '').trim()
+      const content = (parts[i + 1] || '')
+      const id = `cmd-${(i + 1) / 2}`
+
+      // Extract command if present (look for curl commands)
+      const cmdMatch = content.match(/(curl\s+[^\n]+)/i) || content.match(/POST\s+([^\s]+)/i)
+      let command = cmdMatch ? cmdMatch[1] : null
+      // Also try to extract from the output itself
+      if (!command && label) {
+        if (label.includes('upload')) command = 'curl -v -F file upload'
+        if (label.includes('head')) command = 'curl -I retrieval check'
+        if (label.includes('get')) command = 'curl retrieval check'
+        if (label.includes('etcpasswd')) command = 'curl -F file=/etc/passwd upload'
+      }
+      
+      // Extract HTTP status code - handle both < HTTP/2 200 and HTTP/2 200 formats
+      const statusMatch = content.match(/<\s*HTTP\/[0-9.]+\s+(\d{3})/m) || 
+                         content.match(/^HTTP\/[0-9.]+\s+(\d{3})/m) ||
+                         content.match(/HTTP\/2\s+(\d{3})/m)
+      const status_code = statusMatch ? parseInt(statusMatch[1], 10) : null
+
+      // Parse response headers from curl verbose blocks
+      // Handle both < header: value and header: value formats
+      const headers = {}
+      const headerLines = content.match(/^<\s*([^:]+):\s*(.+)$/mg) || 
+                         content.match(/^([a-zA-Z0-9\-]+):\s*(.+)$/gm)
+      if (headerLines) {
+        headerLines.forEach(l => {
+          const cleanLine = l.replace(/^<\s*/, '')
+          const m = cleanLine.match(/^([^:]+):\s*(.*)$/)
+          if (m) {
+            const key = m[1].trim().split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join('-')
+            headers[key] = m[2].trim()
+          }
+        })
+      }
+      const response_headers = Object.keys(headers).length > 0 ? headers : null
+
+      // TLS cert block parsing (subject/issuer/dates)
+      let tls_cert = null
+      if (/^subject=/m.test(content) || /^issuer=/m.test(content)) {
+        const subject = (content.match(/^subject=\s*(.+)$/m) || [])[1] || null
+        const issuer = (content.match(/^issuer=\s*(.+)$/m) || [])[1] || null
+        const not_before = (content.match(/^notBefore=\s*(.+)$/m) || [])[1] || null
+        const not_after = (content.match(/^notAfter=\s*(.+)$/m) || [])[1] || null
+        tls_cert = { subject, issuer, not_before, not_after }
+      }
+
+      // Tester IP if present
+      if (!result.meta.tester_ip) {
+        const ip = (content.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/) || [])[1]
+        if (ip) result.meta.tester_ip = ip
+      }
+
+      // Observations
+      const observations = []
+      if (/\* Connected to /i.test(content)) observations.push('connection established')
+      if (/\bHTTP\/[0-9.]+\s+2\d\d\b/.test(content)) {
+        observations.push(`HTTP ${status_code} response`)
+        if (status_code === 200) observations.push('upload succeeded or file accessible')
+      }
+      if (/\bHTTP\/[0-9.]+\s+403\b/.test(content)) observations.push('upload blocked with 403 Forbidden')
+      if (/\bHTTP\/[0-9.]+\s+404\b/.test(content)) observations.push('path returned 404 Not Found')
+      if (/\bHTTP\/[0-9.]+\s+500\b/.test(content)) observations.push('server error (500)')
+      if (/SSL certificate verify ok/i.test(content)) observations.push('TLS certificate verified')
+      if (/cloudflare/i.test(content)) observations.push('Cloudflare detected')
+      if (/server:\s*cloudflare/i.test(content)) observations.push('server behind Cloudflare')
+      if (/content-type:\s*text\/html/i.test(content)) observations.push('response is HTML')
+      if (/curl:\s*\(\d+\)/.test(content)) observations.push('curl reported an error')
+      if (!observations.length && status_code) {
+        observations.push(`HTTP status code: ${status_code}`)
+      }
+
+      result.commands.push({
+        id,
+        raw_label: label || null,
+        command: command || null,
+        start_time: null,
+        end_time: null,
+        stdout_stderr: content,
+        status_code: status_code || null,
+        response_headers,
+        tls_cert,
+        errors: (content.match(/^curl:\s*\(\d+\)\s*.*$/mg) || []).map(s => s.trim()),
+        observations
+      })
+    }
+
+    // Aggregate logic
+    const findCmd = (pred) => result.commands.find(pred)
+    const findUploadCmds = () => result.commands.filter(c => 
+      (c.command && /curl\s+-v?\s+-F/.test(c.command)) || 
+      (c.raw_label && /upload/.test(c.raw_label))
+    )
+    const findGetCmds = () => result.commands.filter(c =>
+      (c.command && /curl\s+(?:-I\s+)?https?:\/\//.test(c.command) && !/curl\s+-F/.test(c.command)) ||
+      (c.raw_label && (/head|get/.test(c.raw_label)))
+    )
+    
+    const uploadCmds = findUploadCmds()
+    const getCmds = findGetCmds()
+    
+    const any2xxUpload = uploadCmds.some(c => c.status_code && c.status_code >= 200 && c.status_code < 300)
+    const anyGet200 = getCmds.some(c => c.status_code === 200)
+    
+    let upload_allowed = null
+    if (any2xxUpload && anyGet200) {
+      upload_allowed = true
+    } else if (any2xxUpload && !anyGet200) {
+      upload_allowed = true // Upload succeeded but retrieval may have failed - still counts as allowed
+    } else if (result.commands.length && uploadCmds.length > 0 && 
+               uploadCmds.every(c => c.status_code && c.status_code >= 400)) {
+      upload_allowed = false
+    } else if (result.commands.length === 0) {
+      upload_allowed = null
+    }
+    
+    result.aggregate_findings.upload_allowed = upload_allowed
+
+    // Evidence and severity/confidence
+    result.commands.forEach(c => {
+      if (c.status_code) {
+        const statusLine = c.stdout_stderr.match(/<\s*HTTP\/[0-9.]+\s+\d{3}.*/) || 
+                          c.stdout_stderr.match(/HTTP\/[0-9.]+\s+\d{3}.*/) || 
+                          [`HTTP/${c.status_code}`]
+        result.aggregate_findings.evidence.push(`${c.id}: '${statusLine[0].trim()}'`)
+      }
+    })
+    
+    if (upload_allowed === true) {
+      result.aggregate_findings.severity = 'high'
+      result.aggregate_findings.confidence = anyGet200 ? 'high' : 'medium'
+      result.aggregate_findings.rationale = anyGet200 
+        ? 'Upload attempt returned 2xx and a subsequent GET returned 200 for a candidate path, indicating files can be uploaded and retrieved.'
+        : 'Upload attempt returned 2xx status, indicating file upload was accepted. However, file retrieval test did not return 200.'
+    } else if (upload_allowed === false) {
+      result.aggregate_findings.severity = 'none'
+      result.aggregate_findings.confidence = 'high'
+      result.aggregate_findings.rationale = 'All observed upload requests returned 4xx/5xx status codes, indicating uploads are blocked or denied.'
+    } else {
+      result.aggregate_findings.severity = 'unknown'
+      result.aggregate_findings.confidence = 'low'
+      result.aggregate_findings.rationale = 'Outputs did not provide sufficient evidence to conclude whether uploads were accepted. May need manual review.'
+    }
+    return result
+  }
+
+  // Run File Upload Vulnerability Check
+  const runFileUploadCheck = async () => {
+    try {
+      setCurrentTest({ id: 'file-upload-check', name: 'File Upload Vulnerability Check' })
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 5 }))
+
+      console.log('🚀 [FILE-UPLOAD] Starting File Upload Vulnerability Check')
+      console.log('🎯 [FILE-UPLOAD] Target URL:', targetUrl)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '🚀 Starting File Upload Vulnerability Check...', testId: 'file-upload-check', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🎯 Target URL: ${targetUrl}`, testId: 'file-upload-check', type: 'info' }])
+
+      // Construct upload URL - if target includes /admin, use ${target}/upload, otherwise append /admin/upload
+      let uploadUrl = targetUrl.trim().replace(/\/$/, '') // Remove trailing slash
+      if (uploadUrl.includes('/admin')) {
+        uploadUrl = uploadUrl + '/upload'
+      } else {
+        uploadUrl = uploadUrl + '/admin/upload'
+      }
+      
+      // Construct uploads path for retrieval test
+      let uploadsUrl = targetUrl.trim().replace(/\/$/, '') // Remove trailing slash
+      if (uploadsUrl.includes('/admin')) {
+        uploadsUrl = uploadsUrl + '/uploads/harmless.php.txt'
+      } else {
+        uploadsUrl = uploadsUrl + '/admin/uploads/harmless.php.txt'
+      }
+
+      console.log('🔗 [FILE-UPLOAD] Upload URL:', uploadUrl)
+      console.log('🔗 [FILE-UPLOAD] Uploads URL:', uploadsUrl)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🔗 Upload URL: ${uploadUrl}`, testId: 'file-upload-check', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🔗 Uploads path: ${uploadsUrl}`, testId: 'file-upload-check', type: 'info' }])
+
+      // Define commands to execute sequentially (one by one)
+      const commandSets = [
+        { label: 'curl_upload_test.txt', cmd: `curl -v -F "file=@test.txt" "${uploadUrl}" 2>&1` },
+        { label: 'curl_upload_harmless.txt', cmd: `echo "TEST" > harmless.php.txt && curl -v -F "file=@harmless.php.txt" "${uploadUrl}" 2>&1` },
+        { label: 'curl_head_candidate.txt', cmd: `curl -I "${uploadsUrl}" 2>&1` },
+        { label: 'curl_upload_etcpasswd.txt', cmd: `curl -v -F "file=@/etc/passwd" "${uploadUrl}" 2>&1` }
+      ]
+
+      // Log each command
+      console.log('📋 [FILE-UPLOAD] Commands to execute:')
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '📋 Commands to execute:', testId: 'file-upload-check', type: 'info' }])
+      
+      commandSets.forEach((cmdSet, idx) => {
+        console.log(`  ${idx + 1}. ${cmdSet.cmd}`)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `  ${idx + 1}. ${cmdSet.cmd}`, testId: 'file-upload-check', type: 'info' }])
+      })
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '🔍 Executing commands sequentially in Kali Linux...', testId: 'file-upload-check', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 15 }))
+      console.log('🔍 [FILE-UPLOAD] Executing commands sequentially in Kali Linux...')
+
+      // Prepare test.txt file first
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify('echo "SIMPLE" > test.txt'), requireConfirm: false })
+      }
+
+      // Execute each command sequentially and collect results
+      let raw = ''
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        console.log('⚙️ [FILE-UPLOAD] Running commands sequentially via WSL...')
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: '⚙️ Running commands sequentially via WSL...', testId: 'file-upload-check', type: 'info' }])
+        
+        for (let i = 0; i < commandSets.length; i++) {
+          const cmdSet = commandSets[i]
+          console.log(`▶️ [FILE-UPLOAD] Executing set ${i + 1}/${commandSets.length}: ${cmdSet.cmd}`)
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `▶️ Executing set ${i + 1}/${commandSets.length}: ${cmdSet.cmd}`, testId: 'file-upload-check', type: 'info' }])
+          
+          const execRes = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(cmdSet.cmd), requireConfirm: false })
+          const output = (execRes?.stdout || '') + (execRes?.stderr || '')
+          
+          raw += `===FILE:${cmdSet.label}===\n${output}\n`
+          
+          console.log(`✅ [FILE-UPLOAD] Set ${i + 1} completed - ${output.length} bytes`)
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `✅ Set ${i + 1} completed - Raw output:\n${output.substring(0, 1000)}${output.length > 1000 ? '...' : ''}`, testId: 'file-upload-check', type: 'success' }])
+          
+          setTestProgress(prev => ({ ...prev, 'file-upload-check': 15 + (i + 1) * 15 }))
+        }
+      } else {
+        console.error('❌ [FILE-UPLOAD] cyberGuard.runAsRoot not available')
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: '❌ Error: WSL command execution not available', testId: 'file-upload-check', type: 'error' }])
+      }
+
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 60 }))
+      
+      // Log raw results
+      const rawError = ''
+      
+      console.log('📥 [FILE-UPLOAD] Raw stdout length:', raw.length)
+      console.log('📥 [FILE-UPLOAD] Raw stderr length:', rawError.length)
+      
+      if (raw) {
+        console.log('📥 [FILE-UPLOAD] Raw stdout (full):', raw)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `📥 Received ${raw.length} bytes of output from Kali`, testId: 'file-upload-check', type: 'info' }])
+        
+        // Log the full raw output in chunks if it's too long
+        if (raw.length <= 5000) {
+          // If output is small enough, show it all
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `📄 Raw output from Kali:\n${raw}`, testId: 'file-upload-check', type: 'info' }])
+        } else {
+          // If output is large, show first chunk, then log message about full output
+          const preview = raw.substring(0, 2000)
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `📄 Raw output preview (first 2000 chars):\n${preview}\n\n... (showing ${raw.length - 2000} more bytes - full output saved in report)`, testId: 'file-upload-check', type: 'info' }])
+        }
+      } else {
+        console.warn('⚠️ [FILE-UPLOAD] No stdout received')
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: '⚠️ Warning: No output received from Kali', testId: 'file-upload-check', type: 'warning' }])
+      }
+      
+      if (rawError) {
+        console.log('📥 [FILE-UPLOAD] Raw stderr:', rawError)
+        if (rawError.length <= 500) {
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `⚠️ Stderr:\n${rawError}`, testId: 'file-upload-check', type: 'warning' }])
+        } else {
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `⚠️ Stderr (first 500 chars):\n${rawError.substring(0, 500)}...`, testId: 'file-upload-check', type: 'warning' }])
+        }
+      }
+
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 70 }))
+      console.log('🔍 [FILE-UPLOAD] Parsing raw output...')
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '🔍 Parsing raw output to JSON...', testId: 'file-upload-check', type: 'info' }])
+      
+      const parsed = parseFileUploadRawToJson(raw, uploadUrl)
+      
+      console.log('✅ [FILE-UPLOAD] Parsed JSON:', JSON.stringify(parsed, null, 2))
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `✅ Parsed ${parsed.commands?.length || 0} commands`, testId: 'file-upload-check', type: 'success' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `📊 Upload Allowed: ${parsed.aggregate_findings?.upload_allowed === true ? 'Yes' : parsed.aggregate_findings?.upload_allowed === false ? 'No' : 'Unknown'}`, testId: 'file-upload-check', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `📊 Severity: ${parsed.aggregate_findings?.severity || 'unknown'}`, testId: 'file-upload-check', type: 'info' }])
+
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 80 }))
+      console.log('📝 [FILE-UPLOAD] Creating report...')
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '📝 Creating scan report...', testId: 'file-upload-check', type: 'info' }])
+
+      const report = {
+        testId: 'file-upload-check',
+        testName: 'File Upload Vulnerability Check',
+        category: 'Web Security',
+        severity: 'high',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: [
+          {
+            type: parsed.aggregate_findings.severity === 'critical' ? 'critical' : parsed.aggregate_findings.severity === 'high' ? 'high' : parsed.aggregate_findings.severity,
+            message: parsed.aggregate_findings.upload_allowed === true ? 'Upload appears allowed and retrievable' : parsed.aggregate_findings.upload_allowed === false ? 'Uploads blocked or not retrievable' : 'Unable to determine upload behavior',
+            details: parsed.aggregate_findings.rationale
+          }
+        ],
+        recommendations: parsed.recommendations || [],
+        report: {
+          scanType: 'File Upload Vulnerability Check',
+          target: targetUrl,
+          json: parsed // keep the structured JSON (not shown as raw in UI)
+        }
+      }
+
+      console.log('✅ [FILE-UPLOAD] Report created successfully')
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 90 }))
+      
+      setScanResults(prev => ({ ...prev, 'file-upload-check': report }))
+      setNewScanResults(prev => ({ ...prev, 'file-upload-check': report }))
+      setCompletedTests(prev => new Set([...(prev || new Set()), 'file-upload-check']))
+      
+      console.log('✅ [FILE-UPLOAD] File Upload Vulnerability Check completed successfully!')
+      console.log('📊 [FILE-UPLOAD] Summary:', {
+        upload_allowed: parsed.aggregate_findings?.upload_allowed,
+        severity: parsed.aggregate_findings?.severity,
+        commands_executed: parsed.commands?.length || 0
+      })
+      
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 100 }))
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '✅ File Upload Vulnerability Check completed successfully!', testId: 'file-upload-check', type: 'success' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `📊 Final Summary - Upload Allowed: ${parsed.aggregate_findings?.upload_allowed === true ? 'Yes' : parsed.aggregate_findings?.upload_allowed === false ? 'No' : 'Unknown'}, Severity: ${parsed.aggregate_findings?.severity || 'unknown'}, Commands: ${parsed.commands?.length || 0}`, testId: 'file-upload-check', type: 'success' }])
+    } catch (e) {
+      console.error('❌ [FILE-UPLOAD] Error during File Upload Vulnerability Check:', e)
+      console.error('❌ [FILE-UPLOAD] Error message:', e.message)
+      console.error('❌ [FILE-UPLOAD] Error stack:', e.stack)
+      
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `❌ Error: ${e.message}`, testId: 'file-upload-check', type: 'error' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `❌ File Upload Vulnerability Check failed`, testId: 'file-upload-check', type: 'error' }])
+      
+      setScanResults(prev => ({
+        ...prev,
+        'file-upload-check': {
+          testId: 'file-upload-check',
+          testName: 'File Upload Vulnerability Check',
+          category: 'Web Security',
+          severity: 'high',
+          status: 'failed',
+          timestamp: new Date().toISOString(),
+          error: e.message,
+          findings: [],
+          recommendations: [],
+          report: { scanType: 'File Upload Vulnerability Check', target: targetUrl }
+        }
+      }))
+      setCompletedTests(prev => new Set([...(prev || new Set()), 'file-upload-check']))
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 100 }))
+    }
+  }
+
+  // Helper: run a single WSL command and return stdout+stderr
+  const runWSL = async (label, cmd) => {
+    setLogs(prev => [...prev, { timestamp: Date.now(), message: `▶️ ${label}: ${cmd}`, testId: label, type: 'info' }])
+    const res = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(cmd), requireConfirm: false })
+    const output = (res?.stdout || '') + (res?.stderr ? `\n${res.stderr}` : '')
+    setLogs(prev => [...prev, { timestamp: Date.now(), message: `✅ ${label} completed (${output.length} bytes)`, testId: label, type: 'success' }])
+    return output
+  }
+
+  // Helper: run command and return stdout/stderr separately (useful for JSON parsing)
+  const runWSLSeparated = async (label, cmd) => {
+    setLogs(prev => [...prev, { timestamp: Date.now(), message: `▶️ ${label}: ${cmd}`, testId: label, type: 'info' }])
+    const res = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(cmd), requireConfirm: false })
+    const stdout = res?.stdout || ''
+    const stderr = res?.stderr || ''
+    setLogs(prev => [...prev, { timestamp: Date.now(), message: `✅ ${label} completed (stdout: ${stdout.length} bytes, stderr: ${stderr.length} bytes)`, testId: label, type: 'success' }])
+    return { stdout, stderr }
+  }
+
+  // Parse helper per requested JSON format
+  const buildSimpleJson = ({ test_name, severity, status, evidence, recommendation }) => ({ test_name, severity, status, evidence, recommendation })
+
+  const runOpenRedirectCheck = async (targetBase) => {
+    const url = `${targetBase.replace(/\/$/, '')}/?redirect=http://evil.com`
+    const out = await runWSL('open-redirect-check', `curl -I ${JSON.stringify(url)}`)
+    const vulnerable = /\bLocation:\s*http:\/\/evil\.com/i.test(out)
+    return buildSimpleJson({
+      test_name: 'Open Redirect Check',
+      severity: 'High',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: vulnerable ? (out.match(/Location:[^\n]*/i)?.[0] || 'Location: http://evil.com') : 'No unvalidated Location header observed',
+      recommendation: 'Restrict allowed redirect URLs to internal whitelisted domains.'
+    })
+  }
+
+  const runCorsPolicyValidation = async (targetBase) => {
+    const url = targetBase
+    const out = await runWSL('cors-policy-validation', `curl -I -H "Origin: http://evil.com" ${JSON.stringify(url)} | grep -i "access-control-allow-origin" || true`)
+    const vulnerable = /access-control-allow-origin:\s*\*/i.test(out)
+    return buildSimpleJson({
+      test_name: 'CORS Policy Validation',
+      severity: 'Critical',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: out.trim() || 'No ACAO header returned',
+      recommendation: 'Restrict CORS to trusted domains only and avoid use of wildcard *.'
+    })
+  }
+
+  const runHostHeaderInjection = async (targetBase) => {
+    const out = await runWSL('host-header-injection', `curl -I -H "Host: attacker.com" ${JSON.stringify(targetBase)}`)
+    const vulnerable = /attacker\.com/i.test(out)
+    return buildSimpleJson({
+      test_name: 'Host Trust Verification',
+      severity: 'High',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: vulnerable ? 'attacker.com appeared in response' : 'Host header not reflected/used',
+      recommendation: 'Enforce host header validation at server or reverse proxy layer.'
+    })
+  }
+
+  const runHttpMethodsCheck = async (targetBase) => {
+    const out = await runWSL('http-methods-check', `curl -X OPTIONS -I ${JSON.stringify(targetBase)}`)
+    const vulnerable = /Allow:\s*.*(PUT|DELETE|TRACE)/i.test(out)
+    return buildSimpleJson({
+      test_name: 'HTTP Allowed Methods Check',
+      severity: 'Critical',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: (out.match(/Allow:[^\n]*/i)?.[0] || '').trim(),
+      recommendation: 'Disable unsafe methods at server and web application firewall level.'
+    })
+  }
+
+  const runCTLogSubdomainDiscovery = async (targetBase) => {
+    try {
+      // Extract domain from URL
+      let domain = targetBase
+      try {
+        const urlObj = new URL(targetBase.startsWith('http') ? targetBase : `https://${targetBase}`)
+        domain = urlObj.hostname.replace(/^www\./, '')
+      } catch {
+        domain = targetBase.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+      }
+
+      console.log(`🔍 [CT-LOG] Querying crt.sh for domain: ${domain}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🔍 Querying Certificate Transparency logs for: ${domain}`, testId: 'ct-log-subdomain-discovery', type: 'info' }])
+
+      // Use exact command format with single quotes to avoid bash quote issues
+      // curl -s "https://crt.sh/?q=%25.{domain}&output=json" | jq .
+      const cmd = `curl -s 'https://crt.sh/?q=%25.${domain}&output=json' | jq .`
+      const { stdout, stderr } = await runWSLSeparated('ct-log-subdomain-discovery', cmd)
+
+      console.log(`📥 [CT-LOG] stdout length: ${stdout.length}, stderr length: ${stderr.length}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `📥 Received ${stdout.length} bytes from crt.sh (via jq)`, testId: 'ct-log-subdomain-discovery', type: 'info' }])
+      if (stderr) {
+        console.log(`⚠️ [CT-LOG] stderr from jq/curl:`, stderr)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `⚠️ stderr: ${stderr.substring(0, 500)}${stderr.length > 500 ? '...' : ''}`, testId: 'ct-log-subdomain-discovery', type: 'warning' }])
+      }
+
+      let certs = []
+      try {
+        // Parse JSON array
+        const trimmed = stdout.trim()
+        if (/^</.test(trimmed)) {
+          throw new Error('Received HTML instead of JSON (possible rate limit)')
+        }
+        if (trimmed) {
+          certs = JSON.parse(trimmed)
+          if (!Array.isArray(certs)) {
+            certs = [certs]
+          }
+        }
+      } catch (parseErr) {
+        console.error(`❌ [CT-LOG] JSON parse error:`, parseErr)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `⚠️ Failed to parse JSON: ${parseErr.message}`, testId: 'ct-log-subdomain-discovery', type: 'warning' }])
+        return {
+          test_name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+          severity: 'Medium',
+          status: 'Completed',
+          evidence: `Failed to parse certificate data from crt.sh${stderr ? ` (stderr: ${stderr.substring(0,120)})` : ''}`,
+          recommendation: 'Verify domain name and crt.sh API availability',
+          certificates: [],
+          unique_subdomains: []
+        }
+      }
+
+      console.log(`✅ [CT-LOG] Parsed ${certs.length} certificates`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `✅ Parsed ${certs.length} certificates`, testId: 'ct-log-subdomain-discovery', type: 'success' }])
+
+      // Extract unique subdomains from name_value (can contain multiple separated by \n)
+      // Also deduplicate certificates to avoid showing the same certificate multiple times
+      const uniqueSubdomains = new Set()
+      const seenCertificates = new Set()
+      const processedCerts = []
+      
+      for (const cert of certs) {
+        const nameValue = cert.name_value || ''
+        const serialNumber = cert.serial_number || ''
+        
+        // Create a unique key for this certificate (serial_number + first name_value entry)
+        const firstSubdomain = nameValue.split('\n').find(s => s.trim()) || ''
+        const certKey = `${serialNumber}:${firstSubdomain.trim()}`
+        
+        // Skip if we've already processed this certificate
+        if (seenCertificates.has(certKey)) {
+          continue
+        }
+        seenCertificates.add(certKey)
+        
+        // Extract all subdomains from name_value
+        const subdomains = nameValue.split('\n').filter(s => s.trim())
+        subdomains.forEach(sub => uniqueSubdomains.add(sub.trim()))
+        
+        processedCerts.push({
+          name_value: nameValue,
+          serial_number: serialNumber || 'N/A',
+          entry_timestamp: cert.entry_timestamp || 'N/A',
+          not_before: cert.not_before || 'N/A',
+          not_after: cert.not_after || 'N/A'
+        })
+      }
+
+      console.log(`📊 [CT-LOG] Found ${uniqueSubdomains.size} unique subdomains`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `📊 Found ${uniqueSubdomains.size} unique subdomains across ${processedCerts.length} certificates`, testId: 'ct-log-subdomain-discovery', type: 'success' }])
+
+      return {
+        test_name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+        severity: 'Medium',
+        status: 'Completed',
+        evidence: `Discovered ${uniqueSubdomains.size} unique subdomains from ${processedCerts.length} certificates`,
+        recommendation: 'Audit all discovered subdomains and ensure they are properly secured',
+        certificates: processedCerts,
+        unique_subdomains: Array.from(uniqueSubdomains).sort()
+      }
+    } catch (error) {
+      console.error(`❌ [CT-LOG] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `❌ Error: ${error.message}`, testId: 'ct-log-subdomain-discovery', type: 'error' }])
+      return {
+        test_name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+        severity: 'Medium',
+        status: 'Failed',
+        evidence: `Error: ${error.message}`,
+        recommendation: 'Verify network connectivity and crt.sh API availability',
+        certificates: [],
+        unique_subdomains: []
+      }
+    }
+  }
+
+  // Helper function to strip ANSI escape codes
+  const stripAnsiCodes = (text) => {
+    if (!text || typeof text !== 'string') return text
+    // Remove ANSI escape codes: \x1b[...m, [1m, [33m, [0m, etc.
+    return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[[0-9;]*m/g, '').replace(/\[\d+[m[]?/g, '').trim()
+  }
+
+  const runQuickFingerprint = async (targetBase) => {
+    try {
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      const now = new Date().toISOString()
+      
+      console.log(`🔍 [QUICK-FINGERPRINT] Starting whatweb fingerprint for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🔍 Starting Quick Fingerprint scan for: ${targetUrl}`, testId: 'quick-fingerprint', type: 'info' }])
+
+      let result = {
+        test_name: 'whatweb-fingerprint',
+        target_url: targetUrl,
+        timestamp: now,
+        status_code: null,
+        title: null,
+        ip: null,
+        country: null,
+        summary: null,
+        plugins: [],
+        http_headers: {},
+        raw_output: null,
+        severity_hint: 'Informational',
+        recommendation: '',
+        notes: ''
+      }
+
+      // Use whatweb -v command as specified
+      console.log(`📝 [QUICK-FINGERPRINT] Running whatweb -v...`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `📝 Running whatweb -v for fingerprint scan...`, testId: 'quick-fingerprint', type: 'info' }])
+      
+      const cmd = `whatweb -v ${targetUrl}`
+      const { stdout: out, stderr: err } = await runWSLSeparated('quick-fingerprint', cmd)
+      const verboseOutput = out + (err ? `\n${err}` : '')
+        
+      if (verboseOutput) {
+        // Parse verbose output
+        const lines = verboseOutput.split('\n')
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim()
+          
+          // Status
+          const statusMatch = line.match(/^Status\s*:\s*(.+)$/i)
+          if (statusMatch) {
+            const statusText = stripAnsiCodes(statusMatch[1])
+            const statusNum = parseInt(statusText.match(/\d+/)?.[0] || '0', 10)
+            result.status_code = statusNum || null
+          }
+          
+          // Title
+          const titleMatch = line.match(/^Title\s*:\s*(.+)$/i)
+          if (titleMatch) result.title = stripAnsiCodes(titleMatch[1])
+          
+          // IP
+          const ipMatch = line.match(/^IP\s*:\s*(.+)$/i)
+          if (ipMatch) result.ip = stripAnsiCodes(ipMatch[1])
+          
+          // Country
+          const countryMatch = line.match(/^Country\s*:\s*(.+)$/i)
+          if (countryMatch) result.country = stripAnsiCodes(countryMatch[1])
+          
+          // Summary
+          const summaryMatch = line.match(/^Summary\s*:\s*(.+)$/i)
+          if (summaryMatch) result.summary = stripAnsiCodes(summaryMatch[1])
+          
+          // Detected Plugins section
+          if (line.match(/^Detected Plugins:/i)) {
+            let pluginName = null
+            let pluginDesc = []
+            i++
+            
+            while (i < lines.length) {
+              const pluginLine = lines[i].trim()
+              if (!pluginLine) {
+                if (pluginName) {
+                  result.plugins.push({
+                    name: stripAnsiCodes(pluginName),
+                    description: stripAnsiCodes(pluginDesc.join(' ').trim()) || `Detected ${stripAnsiCodes(pluginName)}`
+                  })
+                  pluginName = null
+                  pluginDesc = []
+                }
+                i++
+                continue
+              }
+              
+              const pluginNameMatch = pluginLine.match(/^\[\s*(.+?)\s*\]/)
+              if (pluginNameMatch) {
+                if (pluginName) {
+                  result.plugins.push({
+                    name: stripAnsiCodes(pluginName),
+                    description: stripAnsiCodes(pluginDesc.join(' ').trim()) || `Detected ${stripAnsiCodes(pluginName)}`
+                  })
+                }
+                pluginName = stripAnsiCodes(pluginNameMatch[1])
+                pluginDesc = []
+              } else if (pluginName) {
+                pluginDesc.push(stripAnsiCodes(pluginLine))
+              }
+              
+                // Check if we hit HTTP Headers section
+              if (pluginLine.match(/^HTTP Headers:/i)) {
+                if (pluginName) {
+                  result.plugins.push({
+                    name: stripAnsiCodes(pluginName),
+                    description: stripAnsiCodes(pluginDesc.join(' ').trim()) || `Detected ${stripAnsiCodes(pluginName)}`
+                  })
+                }
+                break
+              }
+              
+              i++
+            }
+            
+            // Process HTTP Headers
+            if (i < lines.length && lines[i].trim().match(/^HTTP Headers:/i)) {
+              i++
+              while (i < lines.length) {
+                const headerLine = lines[i].trim()
+                if (!headerLine) break
+                
+                const headerMatch = headerLine.match(/^([^:]+):\s*(.+)$/)
+                if (headerMatch) {
+                  const headerName = stripAnsiCodes(headerMatch[1].trim())
+                  const headerValue = stripAnsiCodes(headerMatch[2].trim())
+                  result.http_headers[headerName] = headerValue
+                }
+                i++
+              }
+            }
+            break
+          }
+        }
+        
+        result.raw_output = verboseOutput
+      } else {
+        result.raw_output = `Command failed. stdout: ${out || 'empty'}, stderr: ${err || 'empty'}`
+      }
+
+      // Compute severity_hint and recommendations
+      const recommendations = []
+      
+      if (!result.http_headers['Strict-Transport-Security'] && !result.http_headers['strict-transport-security']) {
+        recommendations.push('Enable HSTS')
+        if (result.severity_hint === 'Informational') result.severity_hint = 'Medium'
+      }
+      
+      if (!result.http_headers['Content-Security-Policy'] && !result.http_headers['content-security-policy']) {
+        recommendations.push('Add a strict Content-Security-Policy')
+        if (result.severity_hint === 'Informational') result.severity_hint = 'Medium'
+      }
+      
+      // Check for outdated CMS (simplified check)
+      const cmsPlugins = result.plugins.filter(p => 
+        /wordpress|joomla|drupal|magento/i.test(p.name)
+      )
+      if (cmsPlugins.length > 0) {
+        // Note: In a real implementation, you'd check versions. For now, just note it.
+        recommendations.push('Ensure CMS and plugins are updated to latest versions')
+        if (result.severity_hint === 'Informational') result.severity_hint = 'High'
+      }
+      
+      result.recommendation = recommendations.join('. ') || 'Review detected technologies and ensure security headers are properly configured.'
+      
+      console.log(`✅ [QUICK-FINGERPRINT] Completed fingerprint scan`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `✅ Quick Fingerprint completed: ${result.plugins.length} plugins detected`, testId: 'quick-fingerprint', type: 'success' }])
+      
+      return result
+    } catch (error) {
+      console.error(`❌ [QUICK-FINGERPRINT] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `❌ Error: ${error.message}`, testId: 'quick-fingerprint', type: 'error' }])
+      
+      return {
+        test_name: 'whatweb-fingerprint',
+        target_url: targetBase,
+        timestamp: new Date().toISOString(),
+        status_code: null,
+        title: null,
+        ip: null,
+        country: null,
+        summary: null,
+        plugins: [],
+        http_headers: {},
+        raw_output: `Error: ${error.message}`,
+        severity_hint: 'Informational',
+        recommendation: 'Verify whatweb is installed and target URL is accessible',
+        notes: error.message
+      }
+    }
   }
 
   // Execute the 5 additional security scans using Electron IPC
@@ -765,13 +1779,97 @@ const ComprehensiveSecurityScanner = () => {
       
       doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      yPosition = addText('1. DNS Resolution & Analysis', 20, yPosition)
-      yPosition = addText('2. SSL/TLS Analysis', 20, yPosition)
-      yPosition = addText('3. Security Headers Analysis', 20, yPosition)
-      yPosition = addText('4. CMS Detection', 20, yPosition)
-      yPosition = addText('5. Subdomain Enumeration', 20, yPosition)
-      yPosition = addText('6. Port Scanning', 20, yPosition)
+      yPosition = addText('1. WAF (Firewall) Detection', 20, yPosition)
+      yPosition = addText('2. DNS Resolution & Analysis', 20, yPosition)
+      yPosition = addText('3. SSL/TLS Analysis', 20, yPosition)
+      yPosition = addText('4. Security Headers Analysis', 20, yPosition)
+      yPosition = addText('5. CMS Detection', 20, yPosition)
+      yPosition = addText('6. Subdomain Enumeration', 20, yPosition)
+      yPosition = addText('7. Port Scanning', 20, yPosition)
       yPosition += 15
+      
+      // WAF Detection Section
+      const wafResult = scanResults['waf-detection'] || newScanResults['waf-detection']
+      if (wafResult?.report) {
+        checkNewPage(50)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('1. WAF (Firewall) Detection', 20, yPosition)
+        yPosition += 10
+        
+        doc.setFontSize(12)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Detection Summary', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        const wafDetected = wafResult.report.summary?.wafDetected || false
+        yPosition = addText(`WAF Detected: ${wafDetected ? 'Yes' : 'No'}`, 20, yPosition)
+        
+        if (wafDetected) {
+          if (wafResult.report.summary?.wafType) {
+            yPosition = addText(`WAF Type: ${wafResult.report.summary.wafType}`, 20, yPosition)
+          }
+          if (wafResult.report.summary?.wafVendor) {
+            yPosition = addText(`Vendor: ${wafResult.report.summary.wafVendor}`, 20, yPosition)
+          }
+          if (wafResult.report.summary?.numberOfRequests) {
+            yPosition = addText(`Number of Requests: ${wafResult.report.summary.numberOfRequests}`, 20, yPosition)
+          }
+          
+          if (wafResult.report.details?.wafInfo) {
+            yPosition += 5
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Detection Information:', 20, yPosition)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(wafResult.report.details.wafInfo, 25, yPosition)
+          }
+          
+          if (wafResult.report.details?.reason) {
+            yPosition += 5
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Detection Reason:', 20, yPosition)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(wafResult.report.details.reason, 25, yPosition)
+          }
+        } else {
+          yPosition = addText('No Web Application Firewall detected. The target appears to be unprotected or using an undetected WAF solution.', 20, yPosition)
+        }
+        
+        // Full JSON Report
+        if (wafResult.report.details) {
+          checkNewPage(40)
+          yPosition += 10
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Full JSON Report', 20, yPosition)
+          yPosition += 5
+          
+          doc.setFontSize(8)
+          doc.setFont('courier', 'normal')
+          const jsonText = JSON.stringify(wafResult.report.details, null, 2)
+          yPosition = addText(jsonText, 20, yPosition)
+        }
+        
+        // Raw Output
+        if (wafResult.report.rawOutput) {
+          checkNewPage(40)
+          yPosition += 15
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Raw wafw00f Output', 20, yPosition)
+          yPosition += 5
+          
+          doc.setFontSize(8)
+          doc.setFont('courier', 'normal')
+          yPosition = addText(wafResult.report.rawOutput, 20, yPosition)
+        }
+        
+        yPosition += 15
+      }
       
       const dnsResult = scanResults['dns-resolution']
       const structuredData = dnsResult?.report?.structuredData
@@ -1324,18 +2422,50 @@ const ComprehensiveSecurityScanner = () => {
       }
     }, 120000) // 2 minutes timeout
 
-    console.log('✅ Scan state initialized, beginning SQL injection test...')
-    // Add initial SQL injection test log
-    setLogs(prev => [...prev, {
-      timestamp: Date.now(),
-      message: '🚀 Starting SQL Injection Test...',
-      testId: 'sql-injection-test'
-    }])
+    // Run Quick Fingerprint as the first scan and stop after it completes
+    const targetBase = targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`
+    
+    setCurrentTest({ id: 'quick-fingerprint', name: 'Quick Fingerprint' })
+    setTestProgress(prev => ({ ...prev, 'quick-fingerprint': 10 }))
+    
+    const json = await runQuickFingerprint(targetBase)
+    
+    const report = {
+      testId: 'quick-fingerprint',
+      testName: 'Quick Fingerprint',
+      category: 'Reconnaissance',
+      severity: (json.severity_hint || 'informational').toLowerCase(),
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+      findings: [ 
+        { 
+          type: json.severity_hint === 'High' ? 'high' : json.severity_hint === 'Medium' ? 'medium' : 'info', 
+          message: `Quick Fingerprint completed: ${json.plugins?.length || 0} plugins detected`, 
+          details: json.summary || 'Fingerprint scan completed successfully' 
+        } 
+      ],
+      recommendations: json.recommendation ? [ json.recommendation ] : [],
+      report: { scanType: 'Quick Fingerprint', target: targetBase, summary: json }
+    }
+    
+    setScanResults(prev => ({ ...prev, 'quick-fingerprint': report }))
+    setNewScanResults(prev => ({ ...prev, 'quick-fingerprint': report }))
+    setCompletedTests(prev => new Set([...(prev || new Set()), 'quick-fingerprint']))
+    setTestProgress(prev => ({ ...prev, 'quick-fingerprint': 100 }))
 
+    setCurrentTest(null)
+    setScanTiming(prev => ({ ...prev, endTime: Date.now() }))
+    setIsScanning(false)
+    setBackgroundScanning(false)
+    showSuccess('Quick Fingerprint scan completed!')
+    return
+  }
+  
+  // Old scan code (disabled - only File Upload check runs now)
+  /*
+  const startScanOld = async () => {
     try {
-      // Use Electron's IPC to communicate with the main process for scanning
-      if (window.cyberGuard && window.cyberGuard.startKaliScan) {
-        // Set up progress tracking via IPC with enhanced SQL injection test logging
+      // Set up progress tracking via IPC with enhanced SQL injection test logging
         const progressHandler = (progress) => {
           console.log('📊 [SQL-INJECTION-PROGRESS] Received progress:', progress)
           
@@ -1413,8 +2543,8 @@ const ComprehensiveSecurityScanner = () => {
             const testKeys = Object.keys(results.tests)
             if (testKeys.length > 0 && !results.tests['sql-injection-test']) {
               console.log('🔍 [FRONTEND] Non-SQL tests received, updating UI with available tests:', testKeys)
-              setScanResults(results.tests)
-              setNewScanResults(results.tests)
+              setScanResults(prev => ({ ...prev, ...results.tests }))
+              setNewScanResults(prev => ({ ...prev, ...results.tests }))
               setCompletedTests(new Set(testKeys))
               setCurrentTest(null)
               setScanTiming(prev => ({ ...prev, endTime: Date.now() }))
@@ -1461,8 +2591,9 @@ const ComprehensiveSecurityScanner = () => {
                 type: 'error'
               }])
               
-              // Set failed scan results with actual error details
-              setScanResults({
+              // Set failed scan results with actual error details (merge with existing)
+              setScanResults(prev => ({
+                ...prev,
                 'sql-injection-test': {
                   testId: 'sql-injection-test',
                   testName: 'SQL Injection Test',
@@ -1496,7 +2627,7 @@ const ComprehensiveSecurityScanner = () => {
                     rawOutput: sqlResult.report?.rawOutput || 'SQL injection test failed - no results obtained'
                   }
                 }
-              })
+              }))
               
               setCompletedTests(new Set(['sql-injection-test']))
               setCurrentTest(null)
@@ -1517,10 +2648,10 @@ const ComprehensiveSecurityScanner = () => {
             }])
             
             console.log('🔍 [FRONTEND] Processing successful SQL injection test results...')
-            setScanResults(results.tests)
+            setScanResults(prev => ({ ...prev, ...results.tests }))
             // Ensure results are also mirrored into newScanResults for uniform access
-            setNewScanResults(results.tests)
-            setCompletedTests(new Set(Object.keys(results.tests)))
+            setNewScanResults(prev => ({ ...prev, ...results.tests }))
+            setCompletedTests(new Set([ ...Array.from(completedTests), ...Object.keys(results.tests) ]))
             
             const criticalFindings = Object.values(results.tests).reduce((total, test) => {
               return total + (test.findings?.filter(f => f.type === 'critical').length || 0)
@@ -1554,8 +2685,9 @@ const ComprehensiveSecurityScanner = () => {
               type: 'error'
             }])
             
-            // Set failed scan results
-            setScanResults({
+            // Set failed scan results (merge with existing)
+            setScanResults(prev => ({
+              ...prev,
               'sql-injection-test': {
                 testId: 'sql-injection-test',
                 testName: 'SQL Injection Test',
@@ -1589,7 +2721,7 @@ const ComprehensiveSecurityScanner = () => {
                   rawOutput: 'SQL injection test failed - no valid results received from Kali'
                 }
               }
-            })
+            }))
             
             setCompletedTests(new Set(['sql-injection-test']))
             setCurrentTest(null)
@@ -1829,7 +2961,7 @@ const ComprehensiveSecurityScanner = () => {
             }
           }
           
-          setScanResults(demoResults)
+        setScanResults(prev => ({ ...prev, ...demoResults }))
           setCompletedTests(new Set(Object.keys(demoResults)))
           setCurrentTest(null)
           setScanTiming(prev => ({ ...prev, endTime: Date.now() }))
@@ -1862,6 +2994,7 @@ const ComprehensiveSecurityScanner = () => {
       showError(`Scan failed: ${error.message}`)
     }
   }
+  */
 
   // Stop scan
   const stopScan = () => {
@@ -1919,8 +3052,8 @@ const ComprehensiveSecurityScanner = () => {
         <div className="relative z-10">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-amber-600 rounded-full flex items-center justify-center shadow-lg">
+                <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
               </div>
@@ -1928,61 +3061,23 @@ const ComprehensiveSecurityScanner = () => {
                 <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
                   Comprehensive Security Scanner
                 </h1>
-                <p className="text-lg text-gray-600 dark:text-gray-400 mt-1">
-                  Complete security analysis including DNS, SSL/TLS, headers, CMS detection, subdomains, and port scanning
+                <p className="text-base text-gray-600 dark:text-gray-400 mt-1">
+                  The Comprehensive Security Scanner thoroughly analyzes your website or web application for vulnerabilities and security weaknesses. It checks everything from DNS and SSL/TLS configurations to XSS, SQL injection, and misconfigured headers. Stay safe online by identifying risks before attackers do.
                 </p>
               </div>
             </div>
-          </div>
-        </div>
-        
-        {/* Enhanced Why 20 Defensive Attacks Section - Orange Theme */}
-        <div className="bg-gradient-to-br from-orange-50 via-amber-50 to-yellow-50 dark:from-orange-900/20 dark:via-amber-900/20 dark:to-yellow-900/20 border border-orange-200 dark:border-orange-800 rounded-2xl p-8 mb-8 relative overflow-hidden">
-          {/* Background Pattern */}
-          <div className="absolute inset-0 opacity-5">
-            <div className="absolute top-0 left-0 w-20 h-20 bg-orange-500 rounded-full -translate-y-10 -translate-x-10"></div>
-            <div className="absolute bottom-0 right-0 w-16 h-16 bg-amber-500 rounded-full translate-y-8 translate-x-8"></div>
-          </div>
-          
-          <div className="relative z-10">
-            <h2 className="text-2xl font-bold text-orange-900 dark:text-orange-100 mb-4 flex items-center">
-              <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            <button
+              onClick={() => setShowHelpDialog(true)}
+              className="w-10 h-10 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-md hover:shadow-lg"
+              title="View detailed scan information"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Comprehensive Security Analysis
-            </h2>
-            <p className="text-orange-800 dark:text-orange-200 mb-6">
-              Our comprehensive security scanner provides complete analysis across multiple attack vectors including DNS vulnerabilities, SSL/TLS configurations, security headers, CMS detection, subdomain enumeration, and port scanning. This multi-layered approach delivers deep, actionable insights using advanced Kali Linux tools.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">🔍 DNS Record Analysis</h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">Comprehensive A, AAAA, MX, TXT, NS, SOA record examination</p>
-              </div>
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">🔐 SSL/TLS Analysis</h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">Certificate validation, cipher strength, and protocol analysis</p>
-              </div>
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">🛡️ Security Headers</h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">HTTP security headers analysis and missing header detection</p>
-              </div>
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">🔍 CMS Detection</h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">Content management system and framework identification</p>
-              </div>
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">🌐 Subdomain Discovery</h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">Advanced subdomain enumeration and takeover detection</p>
-              </div>
-              <div className="bg-white/60 dark:bg-slate-800/60 backdrop-blur-sm rounded-xl p-4 border border-orange-200 dark:border-orange-700">
-                <h3 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">🔌 Port Scanning</h3>
-                <p className="text-sm text-orange-700 dark:text-orange-300">Open port detection and service identification</p>
-              </div>
-            </div>
+            </button>
           </div>
         </div>
+      </div>
         
         {/* Enhanced URL Input */}
         <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-2xl p-6 border border-orange-200 dark:border-slate-600 shadow-lg">
@@ -2037,7 +3132,6 @@ const ComprehensiveSecurityScanner = () => {
             </p>
           </div>
         </div>
-      </div>
 
       {/* Tool Status Display */}
       {toolStatus && (
@@ -3542,7 +4636,7 @@ const ComprehensiveSecurityScanner = () => {
       )}
 
       {/* Scan Detail Dialog */}
-      {showScanDetailDialog && selectedScanResult && (
+      {(showScanDetailDialog && selectedScanResult) && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden">
             <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
@@ -3887,7 +4981,425 @@ const ComprehensiveSecurityScanner = () => {
                     </div>
                   )}
 
-                  {/* CSRF Scan Results */}
+                  {/* File Upload Vulnerability Check Results */}
+                  {selectedScanResult.testId === 'file-upload-check' && selectedScanResult.result?.report?.json && (
+                    <div className="space-y-6 pr-2">
+                      <div className={`rounded-lg p-6 border ${
+                        selectedScanResult.result.report.json.aggregate_findings?.upload_allowed
+                          ? 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800'
+                          : selectedScanResult.result.report.json.aggregate_findings?.upload_allowed === false
+                          ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
+                          : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
+                      }`}>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Aggregate Findings</h3>
+                          <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                            {selectedScanResult.result.report.json.aggregate_findings?.severity?.toUpperCase() || 'UNKNOWN'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-300">Upload Allowed:</span>
+                            <span className="ml-2">{
+                              selectedScanResult.result.report.json.aggregate_findings?.upload_allowed === true ? 'Yes' :
+                              selectedScanResult.result.report.json.aggregate_findings?.upload_allowed === false ? 'No' : 'Unknown'
+                            }</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-300">Confidence:</span>
+                            <span className="ml-2">{selectedScanResult.result.report.json.aggregate_findings?.confidence || 'low'}</span>
+                          </div>
+                          <div>
+                            <span className="font-medium text-gray-700 dark:text-gray-300">Evidence Count:</span>
+                            <span className="ml-2">{selectedScanResult.result.report.json.aggregate_findings?.evidence?.length || 0}</span>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-sm text-gray-700 dark:text-gray-300">{selectedScanResult.result.report.json.aggregate_findings?.rationale}</p>
+                      </div>
+
+                      {/* Professional Client-Facing Summary */}
+                      <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Report</h3>
+                        {(() => {
+                          const j = selectedScanResult.result.report.json
+                          const cmds = j.commands || []
+                          const byLabel = (label) => cmds.find(c => (c.raw_label || '').includes(label) || (c.raw_label === label) || (c.id === label))
+                          const upTest = byLabel('curl_upload_test') || byLabel('curl_upload_test.txt')
+                          const upHarmless = byLabel('curl_upload_harmless') || byLabel('curl_upload_harmless.txt')
+                          const head = byLabel('curl_head_candidate') || byLabel('curl_head_candidate.txt')
+                          const etcp = byLabel('curl_upload_etcpasswd') || byLabel('curl_upload_etcpasswd.txt')
+                          const status = (c) => c?.status_code ?? null
+                          const ok = (c) => !!(status(c) && status(c) >= 200 && status(c) < 300)
+                          const target = selectedScanResult.result.report.target || j.meta?.target
+                          const uploadsUrl = target?.includes('/admin/upload') ? target.replace(/\/upload$/, '/uploads/harmless.php.txt') : (j.public_accessibility?.access_test_url || '')
+                          const ts = j.meta?.generated_at_utc || new Date().toISOString()
+                          const uploadAllowed = ok(upTest) || ok(upHarmless)
+                          const publicAccess = ok(head)
+                          const risk = j.aggregate_findings?.severity || 'unknown'
+                          return (
+                            <div className="space-y-4 text-sm text-gray-800 dark:text-gray-200">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div><span className="font-medium">Timestamp:</span> {ts}</div>
+                                <div className="break-words"><span className="font-medium">Target:</span> {target || 'N/A'}</div>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Test Objective</div>
+                                <div>Assess whether the upload endpoint correctly validates and stores files, and whether uploaded content is publicly accessible.</div>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Scope of Testing</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  <li className="break-words">Upload endpoint: {target || 'N/A'}</li>
+                                  {uploadsUrl && (<li className="break-words">Candidate access URL: {uploadsUrl}</li>)}
+                                </ul>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Commands Executed (summary)</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  <li>Basic upload with test.txt {ok(upTest) ? '(200 OK)' : ''}</li>
+                                  <li>Disguised script upload harmless.php.txt {ok(upHarmless) ? '(200 OK)' : ''}</li>
+                                  <li>Checked public accessibility of uploaded file (HEAD) {ok(head) ? '(200 OK)' : ''}</li>
+                                  <li>Sensitive file upload attempt (/etc/passwd) {ok(etcp) ? '(200 OK)' : ''}</li>
+                                </ul>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Results</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  <li>Upload (test.txt): {status(upTest) ?? 'N/A'}</li>
+                                  <li>Upload (harmless.php.txt): {status(upHarmless) ?? 'N/A'}</li>
+                                  <li>Public access (HEAD): {status(head) ?? 'N/A'}</li>
+                                  <li>Upload (/etc/passwd): {status(etcp) ?? 'N/A'}</li>
+                                </ul>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Proof of Evidence</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  {ok(upHarmless) && uploadsUrl && (<li className="break-words">Uploaded filename: harmless.php.txt → {uploadsUrl}</li>)}
+                                  {status(upTest) && (<li>HTTP status (test.txt): {status(upTest)}</li>)}
+                                  {status(upHarmless) && (<li>HTTP status (harmless.php.txt): {status(upHarmless)}</li>)}
+                                  {status(head) && (<li>HTTP status (HEAD): {status(head)}</li>)}
+                                </ul>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Vulnerability Status</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  <li>File upload allowed: {uploadAllowed ? 'Yes' : 'No/Unknown'}</li>
+                                  <li>Malicious file upload possible: {ok(upHarmless) ? 'Yes (disguised script accepted)' : 'Unclear'}</li>
+                                  <li>Public file access allowed: {publicAccess ? 'Yes' : 'No/Unknown'}</li>
+                                </ul>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Risk Level</div>
+                                <div className="capitalize">{risk}</div>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Compliance Impact (indicative)</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  <li>OWASP A05:2021 – Security Misconfiguration</li>
+                                  <li>OWASP A08:2021 – Software and Data Integrity Failures</li>
+                                </ul>
+                              </div>
+                              <div>
+                                <div className="font-medium mb-1">Recommendations</div>
+                                <ul className="list-disc ml-5 space-y-0.5">
+                                  <li>Restrict allowed file types; block executable/script formats</li>
+                                  <li>Validate MIME type and file signatures server-side</li>
+                                  <li>Store uploads outside webroot; disable direct access</li>
+                                  <li>Randomize filenames and enforce access control</li>
+                                </ul>
+                              </div>
+                            </div>
+                          )
+                        })()}
+                      </div>
+
+                      {/* Commands intentionally hidden per request */}
+
+                      {/* External recommendations block removed to avoid duplication */}
+
+                      {/* Full JSON intentionally hidden per request */}
+                    </div>
+                  )}
+
+                      {/* CT Log Subdomain Discovery Results */}
+                      {/* Quick Fingerprint Results */}
+                      {selectedScanResult.testId === 'quick-fingerprint' && selectedScanResult.result?.report?.summary && (
+                        <div className="space-y-6 pr-2">
+                          <div className="rounded-lg p-6 border bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                            <div className="flex items-center justify-between mb-4">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Quick Fingerprint Summary</h3>
+                              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                selectedScanResult.result.report.summary.severity_hint === 'High' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
+                                selectedScanResult.result.report.summary.severity_hint === 'Medium' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
+                                'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                              }`}>
+                                {selectedScanResult.result.report.summary.severity_hint || 'Informational'}
+                              </span>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm mb-4">
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Target URL:</span>
+                                <div className="mt-1 text-gray-900 dark:text-gray-100 break-all">
+                                  {selectedScanResult.result.report.summary.target_url || 'N/A'}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Status Code:</span>
+                                <span className="ml-2 text-gray-900 dark:text-gray-100 font-semibold">
+                                  {selectedScanResult.result.report.summary.status_code || 'N/A'}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Title:</span>
+                                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                                  {selectedScanResult.result.report.summary.title || 'N/A'}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">IP Address:</span>
+                                <div className="mt-1 text-gray-900 dark:text-gray-100">
+                                  {selectedScanResult.result.report.summary.ip || 'N/A'}
+                                </div>
+                              </div>
+                              {selectedScanResult.result.report.summary.country && (
+                                <div>
+                                  <span className="font-medium text-gray-700 dark:text-gray-300">Country:</span>
+                                  <div className="mt-1 text-gray-900 dark:text-gray-100">
+                                    {selectedScanResult.result.report.summary.country}
+                                  </div>
+                                </div>
+                              )}
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Plugins Detected:</span>
+                                <span className="ml-2 text-gray-900 dark:text-gray-100 font-semibold">
+                                  {selectedScanResult.result.report.summary.plugins?.length || 0}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {selectedScanResult.result.report.summary.summary && (
+                              <div className="mt-4">
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Summary:</span>
+                                <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">{selectedScanResult.result.report.summary.summary}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {selectedScanResult.result.report.summary.plugins && selectedScanResult.result.report.summary.plugins.length > 0 && (
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Detected Plugins</h3>
+                              <div className="space-y-3">
+                                {selectedScanResult.result.report.summary.plugins.map((plugin, idx) => (
+                                  <div key={idx} className="border border-gray-200 dark:border-slate-600 rounded-lg p-4 bg-gray-50 dark:bg-slate-700">
+                                    <div className="font-semibold text-gray-900 dark:text-gray-100 mb-1">{plugin.name || 'Unknown'}</div>
+                                    {plugin.description && (
+                                      <p className="text-sm text-gray-600 dark:text-gray-400">{plugin.description}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedScanResult.result.report.summary.http_headers && Object.keys(selectedScanResult.result.report.summary.http_headers).length > 0 && (
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">HTTP Headers</h3>
+                              <div className="space-y-2">
+                                {Object.entries(selectedScanResult.result.report.summary.http_headers).map(([header, value], idx) => (
+                                  <div key={idx} className="border-b border-gray-200 dark:border-slate-600 pb-2">
+                                    <div className="font-mono text-sm font-medium text-gray-700 dark:text-gray-300">{header}</div>
+                                    <div className="text-sm text-gray-600 dark:text-gray-400 break-all mt-1">{value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {selectedScanResult.result.report.summary.recommendation && (
+                            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-6 border border-yellow-200 dark:border-yellow-800">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Recommendations</h3>
+                              <p className="text-sm text-gray-700 dark:text-gray-300">{selectedScanResult.result.report.summary.recommendation}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {selectedScanResult.testId === 'ct-log-subdomain-discovery' && selectedScanResult.result?.report?.summary && (
+                        <div className="space-y-6 pr-2">
+                          <div className="rounded-lg p-6 border bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                            <div className="flex items-center justify-between mb-4">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Certificate Transparency Log Summary</h3>
+                              <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                                {selectedScanResult.result.report.summary.status || 'Completed'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mb-4">
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Total Certificates:</span>
+                                <span className="ml-2 text-gray-900 dark:text-gray-100 font-semibold">
+                                  {selectedScanResult.result.report.summary.certificates?.length || 0}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Unique Subdomains:</span>
+                                <span className="ml-2 text-gray-900 dark:text-gray-100 font-semibold">
+                                  {selectedScanResult.result.report.summary.unique_subdomains?.length || 0}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700 dark:text-gray-300">Status:</span>
+                                <span className="ml-2 text-gray-900 dark:text-gray-100">
+                                  {selectedScanResult.result.report.summary.status || 'Completed'}
+                                </span>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-700 dark:text-gray-300">{selectedScanResult.result.report.summary.evidence}</p>
+                          </div>
+
+                          {selectedScanResult.result.report.summary.unique_subdomains && selectedScanResult.result.report.summary.unique_subdomains.length > 0 && (
+                            <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
+                              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Unique Subdomains</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {selectedScanResult.result.report.summary.unique_subdomains.map((subdomain, idx) => (
+                                  <div key={idx} className="bg-gray-50 dark:bg-slate-700 rounded px-3 py-2 text-sm font-mono text-gray-900 dark:text-gray-100 break-all">
+                                    {subdomain}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Discovered Certificates</h3>
+                            {selectedScanResult.result.report.summary.certificates && selectedScanResult.result.report.summary.certificates.length > 0 ? (
+                              <div className="space-y-4">
+                                {selectedScanResult.result.report.summary.certificates.map((cert, idx) => (
+                                  <div key={idx} className="border border-gray-200 dark:border-slate-600 rounded-lg p-4 bg-gray-50 dark:bg-slate-700">
+                                    <div className="space-y-2 text-sm">
+                                      <div>
+                                        <span className="font-medium text-gray-700 dark:text-gray-300">Name Value:</span>
+                                        <div className="mt-1 text-gray-900 dark:text-gray-100 break-words font-mono text-xs bg-white dark:bg-slate-800 p-2 rounded">
+                                          {cert.name_value || 'N/A'}
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                          <span className="font-medium text-gray-700 dark:text-gray-300">Serial Number:</span>
+                                          <div className="mt-1 text-gray-900 dark:text-gray-100 break-all font-mono text-xs">
+                                            {cert.serial_number || 'N/A'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <span className="font-medium text-gray-700 dark:text-gray-300">Entry Timestamp:</span>
+                                          <div className="mt-1 text-gray-900 dark:text-gray-100">
+                                            {cert.entry_timestamp || 'N/A'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <span className="font-medium text-gray-700 dark:text-gray-300">Not Before:</span>
+                                          <div className="mt-1 text-gray-900 dark:text-gray-100">
+                                            {cert.not_before || 'N/A'}
+                                          </div>
+                                        </div>
+                                        <div>
+                                          <span className="font-medium text-gray-700 dark:text-gray-300">Not After:</span>
+                                          <div className="mt-1 text-gray-900 dark:text-gray-100">
+                                            {cert.not_after || 'N/A'}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-sm text-gray-600 dark:text-gray-400">No certificates found.</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* CSRF Scan Results */}
+                      {/* WAF Detection Results */}
+                      {selectedScanResult.testId === 'waf-detection' && selectedScanResult.result?.report && (
+                    <div className="space-y-6">
+                      {/* WAF Detection Summary */}
+                      <div className={`rounded-lg p-6 border ${
+                        selectedScanResult.result.report.summary?.wafDetected
+                          ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800'
+                          : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700'
+                      }`}>
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">WAF Detection Summary</h3>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            selectedScanResult.result.report.summary?.wafDetected
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                          }`}>
+                            {selectedScanResult.result.report.summary?.wafDetected ? 'WAF Detected' : 'No WAF Detected'}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                          {selectedScanResult.result.report.summary?.wafType && (
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">WAF Type</label>
+                              <p className="text-sm text-gray-900 dark:text-gray-100 font-semibold">
+                                {selectedScanResult.result.report.summary.wafType}
+                              </p>
+                            </div>
+                          )}
+                          {selectedScanResult.result.report.summary?.wafVendor && (
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Vendor</label>
+                              <p className="text-sm text-gray-900 dark:text-gray-100">
+                                {selectedScanResult.result.report.summary.wafVendor}
+                              </p>
+                            </div>
+                          )}
+                          {selectedScanResult.result.report.summary?.numberOfRequests && (
+                            <div>
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Requests Made</label>
+                              <p className="text-sm text-gray-900 dark:text-gray-100">
+                                {selectedScanResult.result.report.summary.numberOfRequests}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {selectedScanResult.result.report.details?.wafInfo && (
+                          <div className="bg-white dark:bg-slate-700 rounded p-4 mt-4">
+                            <p className="text-sm text-gray-700 dark:text-gray-300">
+                              {selectedScanResult.result.report.details.wafInfo}
+                            </p>
+                          </div>
+                        )}
+
+                        {selectedScanResult.result.report.details?.reason && (
+                          <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded p-4 mt-4 border-l-4 border-yellow-500">
+                            <p className="text-xs font-medium text-yellow-900 dark:text-yellow-200 mb-1">Detection Reason</p>
+                            <p className="text-sm text-yellow-800 dark:text-yellow-300">
+                              {selectedScanResult.result.report.details.reason}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Raw Output */}
+                      {selectedScanResult.result.report.rawOutput && (
+                        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
+                          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Raw wafw00f Output</h3>
+                          <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                            <pre className="text-xs text-gray-100 font-mono whitespace-pre-wrap">
+                              {selectedScanResult.result.report.rawOutput}
+                            </pre>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {(selectedScanResult.result.report.scanType === 'Cross-Site Request Forgery (CSRF) Testing' || selectedScanResult.result.report.scanType === 'CSRF Test') && (
                     <div className="space-y-6">
                       {/* CSRF Summary */}
@@ -4283,8 +5795,6 @@ const ComprehensiveSecurityScanner = () => {
                       )}
                     </div>
                   )}
-                </div>
-              )}
 
               {/* Findings & Recommendations */}
               {selectedScanResult.result?.findings && selectedScanResult.result.findings.length > 0 && (
@@ -4297,13 +5807,13 @@ const ComprehensiveSecurityScanner = () => {
                       const findingMessage = finding.message || 'No message available';
                       
                       return (
-                      <div key={idx} className={`p-4 rounded-lg border-l-4 ${
-                        findingType === 'critical' ? 'bg-red-50 border-red-400 dark:bg-red-900/10' :
-                        findingType === 'high' ? 'bg-orange-50 border-orange-400 dark:bg-orange-900/10' :
-                        findingType === 'medium' ? 'bg-yellow-50 border-yellow-400 dark:bg-yellow-900/10' :
-                        findingType === 'low' ? 'bg-blue-50 border-blue-400 dark:bg-blue-900/10' :
-                        'bg-green-50 border-green-400 dark:bg-green-900/10'
-                      }`}>
+                        <div key={idx} className={`p-4 rounded-lg border-l-4 ${
+                          findingType === 'critical' ? 'bg-red-50 border-red-400 dark:bg-red-900/10' :
+                          findingType === 'high' ? 'bg-orange-50 border-orange-400 dark:bg-orange-900/10' :
+                          findingType === 'medium' ? 'bg-yellow-50 border-yellow-400 dark:bg-yellow-900/10' :
+                          findingType === 'low' ? 'bg-blue-50 border-blue-400 dark:bg-blue-900/10' :
+                          'bg-green-50 border-green-400 dark:bg-green-900/10'
+                        }`}>
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
                             <div className="flex items-center space-x-2 mb-2">
@@ -4406,11 +5916,278 @@ const ComprehensiveSecurityScanner = () => {
                 </div>
               )}
             </div>
+            </div>
+        </div>
+      )}
+
+      {/* Help Dialog */}
+      {showHelpDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-center p-6 border-b border-gray-200 dark:border-slate-700">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    Detailed Description of All Scans
+                  </h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    Learn about each security scan and why it matters
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* DNS Resolution & Analysis */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-blue-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">1</span>
+                  DNS Resolution & Analysis
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks your domain name system (DNS) setup and resolves IP addresses correctly.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Misconfigured DNS can make your site unreachable or vulnerable to DNS attacks.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> DNS is like the phonebook of the internet—if the phonebook is wrong, no one can reach you.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Ensures your website is reliably accessible and protected from DNS hijacking.</p>
+                </div>
+              </div>
+
+              {/* SSL/TLS Analysis */}
+              <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-orange-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">2</span>
+                  SSL/TLS Analysis
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Verifies your website's encryption and secure protocols.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Weak SSL/TLS allows attackers to intercept sensitive data.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> SSL/TLS is the invisible shield protecting online banking, email, and login credentials.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Keeps user data safe during transmission, enhancing trust.</p>
+                </div>
+              </div>
+
+              {/* Security Headers */}
+              <div className="bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-teal-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">3</span>
+                  Security Headers
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks HTTP headers like Content-Security-Policy and X-Frame-Options.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Headers prevent attacks like clickjacking, XSS, and code injection.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Missing headers can let hackers "trick" browsers into executing malicious scripts.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Adds an extra layer of defense for visitors' browsers.</p>
+                </div>
+              </div>
+
+              {/* CMS Detection */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-blue-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">4</span>
+                  CMS Detection
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Identifies if your site is running WordPress, Joomla, Drupal, etc.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Knowing the CMS helps spot known vulnerabilities quickly.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Hackers often target outdated CMS versions—they are low-hanging fruit.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Helps keep your site updated and secure.</p>
+                </div>
+              </div>
+
+              {/* Subdomain Enumeration */}
+              <div className="bg-gradient-to-br from-orange-50 to-amber-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-orange-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">5</span>
+                  Subdomain Enumeration
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Finds all subdomains associated with your domain.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Hidden subdomains can expose sensitive areas to attackers.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Many breaches occur via forgotten subdomains.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Gives you a complete picture of your online footprint.</p>
+                </div>
+              </div>
+
+              {/* Port Scanning */}
+              <div className="bg-gradient-to-br from-teal-50 to-cyan-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-teal-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-teal-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">6</span>
+                  Port Scanning
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks open network ports on your server.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Open ports can be exploited to gain unauthorized access.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Hackers often scan ports before launching attacks.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Helps secure your server from unnecessary exposure.</p>
+                </div>
+              </div>
+
+              {/* SQL Injection Test */}
+              <div className="bg-gradient-to-br from-red-50 to-pink-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-red-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">7</span>
+                  SQL Injection Test
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Detects vulnerabilities where attackers can inject malicious SQL commands.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> SQL injections can leak or delete sensitive data.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> SQL injection has caused some of the biggest data breaches in history.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Protects your database and user information.</p>
+                </div>
+              </div>
+
+              {/* Cross-Site Scripting (XSS) Testing */}
+              <div className="bg-gradient-to-br from-red-50 to-orange-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-red-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">8</span>
+                  Cross-Site Scripting (XSS) Testing
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Identifies if attackers can inject malicious scripts into your site.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> XSS can steal cookies, session tokens, or even redirect users.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Many phishing attacks rely on XSS vulnerabilities.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Keeps your site safe from malicious scripts affecting users.</p>
+                </div>
+              </div>
+
+              {/* Cross-Site Request Forgery (CSRF) Testing */}
+              <div className="bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-yellow-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">9</span>
+                  Cross-Site Request Forgery (CSRF) Testing
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks if attackers can trick users into performing unwanted actions.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> CSRF can let hackers transfer money, change passwords, or delete data.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> CSRF attacks exploit trust between a user's browser and the website.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Protects user actions and sensitive transactions.</p>
+                </div>
+              </div>
+
+              {/* WAF (Firewall) Detection */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-blue-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">10</span>
+                  WAF (Firewall) Detection
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Detects if a Web Application Firewall is active.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> WAFs block malicious traffic and attacks.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Not all WAFs are equal—some let advanced attacks slip through.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Ensures your firewall is in place and functioning correctly.</p>
+                </div>
+              </div>
+
+              {/* File Upload Vulnerability Check */}
+              <div className="bg-gradient-to-br from-red-50 to-pink-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-red-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">11</span>
+                  File Upload Vulnerability Check
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Tests if uploaded files can execute malicious code.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Vulnerable upload features can allow malware or ransomware.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Even an image file can hide malicious scripts.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Keeps users and servers safe from harmful uploads.</p>
+                </div>
+              </div>
+
+              {/* Certificate Transparency (CT) Log Subdomain Discovery */}
+              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-purple-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">12</span>
+                  Certificate Transparency (CT) Log Subdomain Discovery
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks CT logs to find subdomains and SSL certificates.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Helps detect rogue certificates or shadow subdomains.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> CT logs are a public record of SSL certificates issued for your domain.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Helps prevent impersonation or phishing attacks.</p>
+                </div>
+              </div>
+
+              {/* HTTP Allowed Methods Check */}
+              <div className="bg-gradient-to-br from-red-50 to-orange-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-red-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">13</span>
+                  HTTP Allowed Methods Check
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks which HTTP methods (GET, POST, PUT, DELETE) your server allows.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Unsafe methods can let attackers modify data or access sensitive endpoints.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Many servers leave dangerous methods enabled by default.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Minimizes server attack surface.</p>
+                </div>
+              </div>
+
+              {/* Host Trust Verification */}
+              <div className="bg-gradient-to-br from-blue-50 to-teal-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-blue-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">14</span>
+                  Host Trust Verification
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Ensures the server is legitimate and not maliciously impersonated.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Helps prevent man-in-the-middle attacks.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> A fake host can intercept all communications with your website.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Protects users from fake or phishing websites.</p>
+                </div>
+              </div>
+
+              {/* CORS Policy Validation */}
+              <div className="bg-gradient-to-br from-red-50 to-pink-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-red-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">15</span>
+                  CORS Policy Validation
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Checks Cross-Origin Resource Sharing (CORS) settings.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Poor CORS settings can let malicious sites access sensitive data.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Misconfigured CORS is a common vulnerability in modern web apps.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Ensures data is shared safely across trusted domains.</p>
+                </div>
+              </div>
+
+              {/* Open Redirect Check */}
+              <div className="bg-gradient-to-br from-orange-50 to-red-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-orange-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">16</span>
+                  Open Redirect Check
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Detects if your site redirects users to malicious URLs.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Open redirects are often used in phishing scams.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> A single open redirect can make users fall for scams even on trusted domains.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Keeps users from being tricked or redirected to unsafe sites.</p>
+                </div>
+              </div>
+
+              {/* Quick Fingerprint */}
+              <div className="bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-slate-700 dark:to-slate-600 rounded-xl p-6 border-2 border-blue-200 dark:border-slate-600 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+                  <span className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center mr-3 text-white font-bold">17</span>
+                  Quick Fingerprint
+                </h3>
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300 pl-11">
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">What it does:</span> Identifies the technologies, frameworks, and server software your site uses.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Why it matters:</span> Helps you understand your attack surface and potential vulnerabilities.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Interesting fact:</span> Attackers often start by fingerprinting a site to find weak points.</p>
+                  <p className="leading-relaxed"><span className="font-bold text-gray-900 dark:text-gray-100">Day-to-day benefit:</span> Helps admins make informed decisions about updates and security measures.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
     </div>
   )
+  
 }
+
 
 export default ComprehensiveSecurityScanner

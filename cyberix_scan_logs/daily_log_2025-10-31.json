@@ -1,0 +1,26 @@
+[
+  {
+    "id": "log_1761903495815_z4w3mis7l",
+    "timestamp": "2025-10-31T09:38:15.815Z",
+    "scanType": "security-analyzer",
+    "scanName": "Security Analysis",
+    "target": "https://admin.whisperingbrain.com/admin",
+    "status": "started",
+    "startTime": "2025-10-31T09:38:15.814Z",
+    "endTime": null,
+    "duration": null,
+    "result": "Scan initiated"
+  },
+  {
+    "id": "log_1761903495894_h97eww52q",
+    "timestamp": "2025-10-31T09:38:15.894Z",
+    "scanType": "security-analyzer",
+    "scanName": "Security Analysis",
+    "target": "https://admin.whisperingbrain.com/admin",
+    "status": "failed",
+    "startTime": "2025-10-31T09:38:15.894Z",
+    "endTime": "2025-10-31T09:38:15.894Z",
+    "duration": 0,
+    "result": "Failed to start: Error invoking remote method 'securityAnalysis:start': Error: No handler registered for 'securityAnalysis:start'"
+  }
+]

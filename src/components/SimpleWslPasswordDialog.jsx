@@ -4,6 +4,7 @@ import { storeSecurePassword } from '../utils/securePasswordStorage';
 
 const SimpleWslPasswordDialog = ({ isOpen, onClose, onSuccess }) => {
   const { showError } = useToast();
+  const [adminName, setAdminName] = useState('root');
   const [password, setPassword] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -90,6 +91,20 @@ const SimpleWslPasswordDialog = ({ isOpen, onClose, onSuccess }) => {
             <p className="text-sm text-blue-700 dark:text-blue-300">
               We need your WSL root access credentials to install security tools and run privileged commands. Your password will be stored securely and used only for system operations.
             </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Admin Username
+            </label>
+            <input
+              type="text"
+              value={adminName}
+              onChange={(e) => setAdminName(e.target.value)}
+              placeholder="Enter admin username"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-gray-100 border-gray-300 dark:border-slate-600 mb-4"
+              disabled={isTesting}
+            />
           </div>
 
           <div>
