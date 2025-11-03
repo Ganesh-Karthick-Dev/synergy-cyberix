@@ -108,7 +108,9 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   // Install single tool
   installSingleTool: (toolName, password) => ipcRenderer.invoke('tools:installSingle', toolName, password),
   // Check required tools only (without installing)
-  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password)
+  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password),
+  // Phishing detection with dnstwist
+  runDnstwist: (domain, password) => ipcRenderer.invoke('phishing:runDnstwist', domain, password)
 });
 
 

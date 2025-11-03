@@ -12,7 +12,7 @@ function SettingsPanel() {
   const [repos, setRepos] = useState([])
   const [reposChecking, setReposChecking] = useState(true)
 
-  const REQUIRED_TOOLS = ['jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','ffuf','nuclei','dalfox','go']
+  const REQUIRED_TOOLS = ['jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','ffuf','nuclei','dalfox','go','dnstwist']
 
   useEffect(() => {
     refresh()

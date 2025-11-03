@@ -608,6 +608,66 @@ async function createMainWindow() {
   app.whenReady().then(async () => {
   const win = await createMainWindow();
 
+  // Auto-check and install Kali Linux if missing on Windows
+  if (process.platform === 'win32') {
+    setTimeout(async () => {
+      try {
+        console.log('🔍 [STARTUP] Checking for Kali Linux...');
+        const hasWsl = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
+        
+        if (hasWsl) {
+          const hasKali = checkKaliInstalled();
+          if (!hasKali) {
+            console.log('⚠️ [STARTUP] Kali Linux not detected. Starting auto-installation...');
+            
+            // Show notification to user
+            const { dialog } = require('electron');
+            const installKali = await dialog.showMessageBox(win, {
+              type: 'question',
+              title: 'Kali Linux Auto-Install',
+              message: 'Kali Linux is not installed in WSL.',
+              detail: 'Kali Linux provides the best security tools for penetration testing. Would you like to install it now? This will download and install Kali Linux in WSL automatically.',
+              buttons: ['Install Kali Now', 'Install Later'],
+              defaultId: 0,
+              cancelId: 1
+            });
+            
+            if (installKali.response === 0) {
+              console.log('🚀 [STARTUP] User chose to install Kali Linux now');
+              const result = await installKaliLinux();
+              if (result) {
+                console.log('✅ [STARTUP] Kali Linux installed successfully');
+                // Show success message
+                dialog.showMessageBox(win, {
+                  type: 'info',
+                  title: 'Installation Complete',
+                  message: 'Kali Linux has been installed successfully!',
+                  detail: 'You may need to restart WSL or the application for changes to take effect.'
+                });
+              } else {
+                console.log('❌ [STARTUP] Kali Linux installation failed');
+                dialog.showMessageBox(win, {
+                  type: 'error',
+                  title: 'Installation Failed',
+                  message: 'Kali Linux installation failed.',
+                  detail: 'Please try installing manually using: wsl --install -d kali-linux'
+                });
+              }
+            } else {
+              console.log('ℹ️ [STARTUP] User chose to install Kali Linux later');
+            }
+          } else {
+            console.log('✅ [STARTUP] Kali Linux is already installed');
+          }
+        } else {
+          console.log('⚠️ [STARTUP] WSL is not available');
+        }
+      } catch (error) {
+        console.error('❌ [STARTUP] Error checking/installing Kali:', error);
+      }
+    }, 2000); // Wait 2 seconds after app ready for better UX
+  }
+
   // Setup IPC handlers (moved here to access win variable)
   ipcMain.handle('setup:selectDirectory', async () => {
     try {
@@ -970,7 +1030,7 @@ async function createMainWindow() {
     const requiredTools = [
       'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
       'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
-      'curl', 'wget'
+      'curl', 'wget', 'dnstwist'
     ];
 
     const goTools = [
@@ -1251,11 +1311,11 @@ async function createMainWindow() {
       });
       
       if (installKali.response === 0) {
-        const kaliInstalled = await installKaliInWsl(event);
+        const kaliInstalled = await installKaliLinux();
         if (kaliInstalled) {
-          pre.hasKali = true;
+          pre.hasKali = checkKaliInstalled(); // Re-check to confirm
           // Re-check nmap after Kali installation
-          const nmapCheck = require('child_process').spawnSync('wsl', ['sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
+          const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
           if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
             pre.wslNmap = true;
             event.sender.send('scan:progress', { stage: 'installing', message: 'nmap found in Kali Linux!' });
@@ -2179,6 +2239,294 @@ async function createMainWindow() {
         error: error.message,
         stdout: error.stdout || '',
         stderr: error.stderr || ''
+      };
+    }
+  });
+
+  // DNSTwist phishing detection handler - using child process like other Kali scans
+  ipcMain.handle('phishing:runDnstwist', async (event, domain, password) => {
+    console.log('🔍 [DNSTWIST] ===== STARTING PHISHING DETECTION =====');
+    console.log('🔍 [DNSTWIST] Target domain:', domain);
+    console.log('🔍 [DNSTWIST] Timestamp:', new Date().toISOString());
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Extract domain from URL if needed
+      let targetDomain = domain;
+      try {
+        const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+        targetDomain = url.hostname.replace('www.', '');
+      } catch (e) {
+        // If URL parsing fails, use domain as-is
+        targetDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+      }
+      
+      console.log('🔍 [DNSTWIST] Processed domain:', targetDomain);
+      
+      // Send progress update to frontend
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'initializing', 
+          message: 'Initializing dnstwist phishing detection...',
+          progress: 5
+        });
+      }
+      
+      // Check if Kali Linux is available, otherwise use default WSL
+      // Use the same pattern as other scanners
+      let wslCommand = 'wsl bash';
+      try {
+        const kaliCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'echo', 'kali'], { 
+          encoding: 'utf8', 
+          timeout: 3000 
+        });
+        if (kaliCheck.status === 0 && kaliCheck.stdout.includes('kali')) {
+          wslCommand = 'wsl -d kali-linux bash';
+          console.log('✅ [DNSTWIST] Using Kali Linux distribution');
+        } else {
+          console.log('ℹ️ [DNSTWIST] Kali Linux not found, using default WSL');
+        }
+      } catch (e) {
+        console.log('ℹ️ [DNSTWIST] Using default WSL (Kali check failed)');
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'checking', 
+          message: 'Checking dnstwist installation...',
+          progress: 15
+        });
+      }
+      
+      // Check if dnstwist is installed first
+      // Use the same pattern as other scanners: wsl bash -c "command"
+      const checkCommand = `${wslCommand} -c "command -v dnstwist"`;
+      console.log('🔍 [DNSTWIST] Checking installation:', checkCommand);
+      
+      let checkResult;
+      try {
+        checkResult = await execAsync(checkCommand, { maxBuffer: 1024 * 1024, timeout: 10000 });
+      } catch (error) {
+        checkResult = { stdout: '', stderr: error.stderr || 'not found' };
+      }
+      
+      if (!checkResult.stdout || !checkResult.stdout.trim()) {
+        console.log('❌ [DNSTWIST] dnstwist is not installed');
+        console.log('🔍 [DNSTWIST] Attempting to install dnstwist...');
+        
+        // Try to install dnstwist if password is provided
+        if (password) {
+          // Send progress update
+          if (event && event.sender) {
+            event.sender.send('phishing:progress', { 
+              stage: 'installing', 
+              message: 'Installing dnstwist...',
+              progress: 20
+            });
+          }
+          
+          const installCommand = `echo "${password}" | ${wslCommand} -c "sudo -S apt update && sudo -S apt install -y dnstwist"`;
+          console.log('🔍 [DNSTWIST] Installing dnstwist...');
+          
+          try {
+            await execAsync(installCommand, { maxBuffer: 1024 * 1024 * 10, timeout: 120000 });
+            console.log('✅ [DNSTWIST] dnstwist installation completed');
+            
+            // Wait a moment for installation to complete
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Re-check installation
+            try {
+              const recheckResult = await execAsync(checkCommand, { maxBuffer: 1024 * 1024, timeout: 10000 });
+              if (!recheckResult.stdout || !recheckResult.stdout.trim()) {
+                throw new Error('dnstwist installation verification failed');
+              }
+              console.log('✅ [DNSTWIST] dnstwist verified after installation');
+            } catch (recheckError) {
+              console.log('⚠️ [DNSTWIST] Installation verification failed, proceeding anyway');
+            }
+          } catch (installError) {
+            console.log('❌ [DNSTWIST] Installation failed:', installError.message);
+            return { 
+              success: false, 
+              error: 'dnstwist is not installed and installation failed. Please install manually via: sudo apt install dnstwist',
+              installed: false,
+              details: installError.stderr || installError.message
+            };
+          }
+        } else {
+          return { 
+            success: false, 
+            error: 'dnstwist is not installed. Please install it via: sudo apt install dnstwist',
+            installed: false
+          };
+        }
+      } else {
+        console.log('✅ [DNSTWIST] dnstwist found at:', checkResult.stdout.trim());
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'scanning', 
+          message: 'Running dnstwist domain fuzzing analysis...',
+          progress: 30
+        });
+      }
+      
+      // Run dnstwist with JSON output
+      // Use the same pattern as other scanners
+      const dnstwistCommand = `${wslCommand} -c "dnstwist -j ${targetDomain}"`;
+      console.log('🔍 [DNSTWIST] Running command:', dnstwistCommand);
+      
+      // Set timeout to 2 minutes for dnstwist (same as other tools)
+      const { stdout, stderr } = await Promise.race([
+        execAsync(dnstwistCommand, { maxBuffer: 1024 * 1024 * 10, timeout: 120000 }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('dnstwist timeout after 2 minutes')), 120000)
+        )
+      ]);
+      
+      console.log('✅ [DNSTWIST] Command completed');
+      console.log('📤 [DNSTWIST] STDOUT length:', stdout ? stdout.length : 0);
+      if (stderr) console.log('⚠️ [DNSTWIST] STDERR:', stderr.substring(0, 500));
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'parsing', 
+          message: 'Parsing dnstwist results...',
+          progress: 70
+        });
+      }
+      
+      // Parse JSON output from dnstwist
+      let results = [];
+      try {
+        // dnstwist -j outputs one JSON object per line
+        const lines = stdout.trim().split('\n').filter(line => line.trim());
+        results = lines.map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (e) {
+            // If line is not valid JSON, skip it
+            return null;
+          }
+        }).filter(Boolean);
+        
+        console.log(`✅ [DNSTWIST] Parsed ${results.length} domain variations`);
+      } catch (parseError) {
+        console.log('⚠️ [DNSTWIST] Failed to parse JSON output:', parseError.message);
+        // Try to extract domain information from raw output
+        const lines = stdout.trim().split('\n').filter(line => line.trim());
+        results = lines.map((line, index) => ({
+          domain_name: line.trim(),
+          index: index
+        }));
+      }
+      
+      // Calculate threat score based on findings
+      // More suspicious domains = higher threat score
+      const suspiciousDomains = results.filter(r => {
+        const domain = r.domain_name || r.domain || '';
+        // Check for common phishing indicators
+        return domain.length > 0 && (
+          domain.includes('typo') || 
+          r.dns_a?.length > 0 || // Has DNS records
+          r.dns_mx?.length > 0 ||
+          r.dns_ns?.length > 0
+        );
+      });
+      
+      const threatScore = Math.min(100, Math.max(15, 
+        Math.floor((suspiciousDomains.length / Math.max(results.length, 1)) * 60) + 
+        (suspiciousDomains.length > 5 ? 20 : 0) +
+        (suspiciousDomains.length > 10 ? 25 : 0)
+      ));
+      
+      // Build findings array
+      const findings = [];
+      
+      // Typosquatting detection
+      if (results.length > 0) {
+        findings.push({
+          type: 'Domain Typosquatting Detection',
+          severity: results.length > 5 ? 'High' : results.length > 2 ? 'Medium' : 'Low',
+          evidence: `Found ${results.length} potential typosquatting variations for ${targetDomain}. ${suspiciousDomains.length} variations have active DNS records.`,
+          count: results.length,
+          active_count: suspiciousDomains.length
+        });
+      }
+      
+      // Phishing threat intelligence
+      if (suspiciousDomains.length > 0) {
+        findings.push({
+          type: 'Phishing Threat Intelligence',
+          severity: suspiciousDomains.length > 5 ? 'High' : 'Medium',
+          evidence: `${suspiciousDomains.length} suspicious domain variations detected with active DNS records. These domains could be used for phishing attacks.`,
+          suspicious_domains: suspiciousDomains.slice(0, 10).map(r => r.domain_name || r.domain).filter(Boolean)
+        });
+      }
+      
+      // Build comprehensive results object
+      const scanResults = {
+        target_url: domain,
+        target_domain: targetDomain,
+        timestamp: new Date().toISOString(),
+        threat_score: threatScore,
+        findings: findings,
+        domain_variations: results.map(r => ({
+          domain: r.domain_name || r.domain || '',
+          dns_a: r.dns_a || [],
+          dns_mx: r.dns_mx || [],
+          dns_ns: r.dns_ns || [],
+          fuzzer: r.fuzzer || 'unknown',
+          active: (r.dns_a?.length > 0 || r.dns_mx?.length > 0 || r.dns_ns?.length > 0)
+        })),
+        statistics: {
+          total_variations: results.length,
+          active_domains: suspiciousDomains.length,
+          inactive_domains: results.length - suspiciousDomains.length
+        },
+        recommendations: [
+          'Monitor these domain variations for suspicious activity',
+          'Register common typosquatting variations defensively',
+          'Implement email security measures to detect phishing attempts',
+          'Educate users about typosquatting and phishing threats',
+          'Set up domain monitoring alerts for variations',
+          'Consider implementing DMARC, SPF, and DKIM email authentication',
+          'Report malicious variations to security organizations'
+        ],
+        evidence: {
+          scan_tool: 'dnstwist',
+          scan_method: 'Typosquatting domain generation and DNS analysis',
+          raw_output: stdout.substring(0, 5000) // Limit raw output size
+        }
+      };
+      
+      console.log('✅ [DNSTWIST] Scan completed successfully');
+      console.log(`📊 [DNSTWIST] Found ${results.length} domain variations`);
+      console.log(`⚠️ [DNSTWIST] Threat score: ${threatScore}/100`);
+      
+      return {
+        success: true,
+        results: scanResults,
+        installed: true
+      };
+      
+    } catch (error) {
+      console.log('❌ [DNSTWIST] Scan failed:', error.message);
+      console.log('❌ [DNSTWIST] Error details:', error);
+      
+      return {
+        success: false,
+        error: error.message,
+        installed: true,
+        details: error.stdout || error.stderr || ''
       };
     }
   });

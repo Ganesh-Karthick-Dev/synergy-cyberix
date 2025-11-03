@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getSecurePassword } from '../utils/securePasswordStorage';
 
 function PhishingDetection() {
   // State management
@@ -31,7 +32,7 @@ function PhishingDetection() {
     }
   };
 
-  // Validate URL and start phishing scan
+  // Validate URL and start phishing scan with real dnstwist
   const handleStartScan = async () => {
     if (!url.trim()) {
       alert('Please enter a URL');
@@ -46,181 +47,139 @@ function PhishingDetection() {
       return;
     }
 
-    // Check if website is accessible
-    setIsScanning(true);
-    setProgress(5);
-    setProgressMessage('Validating URL and checking website accessibility...');
-
-    try {
-      const response = await fetch(url, { 
-        method: 'HEAD', 
-        mode: 'no-cors',
-        cache: 'no-cache'
-      });
-      
-      // If we get here, the URL is accessible
-      setProgress(10);
-      setProgressMessage('URL validation successful. Starting phishing analysis...');
-      
-      setScanResults(null);
-      await startMockPhishingScan();
-    } catch (error) {
-      // URL is not accessible
-      setIsScanning(false);
-      setProgress(0);
-      setProgressMessage('');
-      alert('❌ Website not accessible. Please check the URL and try again.');
+    // Get password for WSL commands
+    const password = getSecurePassword();
+    if (!password) {
+      alert('❌ WSL password not found. Please configure your WSL password in settings.');
       return;
     }
+
+    // Start real phishing scan with dnstwist
+    setIsScanning(true);
+    setProgress(0);
+    setProgressMessage('Initializing dnstwist phishing detection engine...');
+    setScanResults(null);
+
+    await startRealPhishingScan(url, password);
   };
 
-  // Consistent phishing scan implementation
-  const startMockPhishingScan = async () => {
+  // Real phishing scan implementation using dnstwist
+  const startRealPhishingScan = async (targetUrl, password) => {
     try {
+      // Progress steps for real dnstwist scan
       const steps = [
-        { progress: 5, message: 'Initializing Advanced Phishing Detection Engine...' },
-        { progress: 10, message: 'Validating target URL and accessibility...' },
-        { progress: 20, message: 'Capturing high-resolution screenshots for visual analysis...' },
-        { progress: 30, message: 'Deep SSL certificate analysis and trust validation...' },
-        { progress: 40, message: 'Performing comprehensive domain reputation analysis...' },
-        { progress: 50, message: 'Advanced typosquatting detection and domain similarity...' },
-        { progress: 60, message: 'AI-powered content analysis for phishing patterns...' },
-        { progress: 70, message: 'JavaScript behavior analysis and redirect detection...' },
-        { progress: 80, message: 'Form field analysis and credential harvesting detection...' },
-        { progress: 90, message: 'Cross-referencing with global phishing databases...' },
-        { progress: 95, message: 'Generating specialized phishing threat report...' },
-        { progress: 100, message: 'Advanced phishing analysis complete!' }
+        { progress: 5, message: 'Initializing dnstwist phishing detection engine...' },
+        { progress: 10, message: 'Extracting domain from target URL...' },
+        { progress: 20, message: 'Checking dnstwist installation...' },
+        { progress: 30, message: 'Running dnstwist domain fuzzing analysis...' },
+        { progress: 50, message: 'Generating typosquatting variations...' },
+        { progress: 70, message: 'Checking DNS records for suspicious domains...' },
+        { progress: 85, message: 'Analyzing active phishing threats...' },
+        { progress: 95, message: 'Generating comprehensive phishing threat report...' }
       ];
 
-      // Simulate progress updates
-      setIsScanning(true);
-      for (const step of steps) {
+      // Update progress
+      for (const step of steps.slice(0, 3)) {
         setProgress(step.progress);
         setProgressMessage(step.message);
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
 
-      // NOTE: This is a demonstration interface
-      // Real phishing detection would require:
-      // 1. Screenshot capture and visual similarity analysis
-      // 2. SSL certificate validation and trust chain analysis
-      // 3. Domain reputation checking and typosquatting detection
-      // 4. Content analysis for phishing patterns
-      // 5. JavaScript behavior analysis
-      // 6. Cross-referencing with phishing databases
-      
-      // For now, we generate consistent results based on URL hash
-      const urlHash = url.split('').reduce((a, b) => {
-        a = ((a << 5) - a) + b.charCodeAt(0);
-        return a & a;
-      }, 0);
-      
-      // Use URL hash to generate consistent results
-      const threatScore = Math.abs(urlHash) % 60 + 15; // 15-75 range, consistent for same URL
-      const findings = [
-        {
-          type: 'Phishing Visual Similarity Analysis',
-          severity: threatScore > 45 ? 'High' : 'Low',
-          evidence: threatScore > 45 ? 
-            'High visual similarity (92%) to legitimate banking interface detected - potential phishing site' : 
-            'No significant visual similarity to known phishing targets'
-        },
-        {
-          type: 'Domain Typosquatting Detection',
-          severity: threatScore > 55 ? 'High' : threatScore > 35 ? 'Medium' : 'Low',
-          evidence: threatScore > 55 ? 
-            'Domain closely resembles popular banking domain (typosquatting attack detected)' : 
-            threatScore > 35 ? 
-            'Minor domain similarity detected - requires manual verification' : 
-            'Domain appears unique with no typosquatting indicators'
-        },
-        {
-          type: 'Phishing Content Pattern Analysis',
-          severity: threatScore > 40 ? 'Medium' : 'Low',
-          evidence: threatScore > 40 ? 
-            'Suspicious phishing patterns: urgent language, fake security warnings, credential harvesting detected' : 
-            'No obvious phishing content patterns detected'
-        },
-        {
-          type: 'Credential Harvesting Detection',
-          severity: threatScore > 50 ? 'High' : 'Low',
-          evidence: threatScore > 50 ? 
-            'Suspicious form fields requesting banking credentials, SSN, or payment information detected' : 
-            'Standard form fields with no credential harvesting indicators'
-        },
-        {
-          type: 'Phishing JavaScript Analysis',
-          severity: threatScore > 60 ? 'High' : 'Low',
-          evidence: threatScore > 60 ? 
-            'Malicious JavaScript redirects, keyloggers, and credential theft scripts detected' : 
-            'No malicious JavaScript or credential theft patterns found'
-        },
-        {
-          type: 'Phishing URL Analysis',
-          severity: threatScore > 45 ? 'Medium' : 'Low',
-          evidence: threatScore > 45 ? 
-            'Suspicious URL structure, short domain age, and potential phishing indicators detected' : 
-            'URL structure appears legitimate with no obvious phishing indicators'
-        },
-        {
-          type: 'Phishing Threat Intelligence',
-          severity: threatScore > 65 ? 'High' : 'Low',
-          evidence: threatScore > 65 ? 
-            'Domain flagged in multiple phishing databases and threat intelligence feeds' : 
-            'No matches found in known phishing threat intelligence databases'
+      // Check if dnstwist API is available
+      if (!window.cyberGuard || !window.cyberGuard.runDnstwist) {
+        throw new Error('dnstwist API not available. Please ensure the application is running properly.');
+      }
+
+      setProgress(30);
+      setProgressMessage('Running dnstwist domain fuzzing analysis...');
+
+      // Call real dnstwist API
+      const result = await window.cyberGuard.runDnstwist(targetUrl, password);
+
+      setProgress(70);
+      setProgressMessage('Analyzing results and generating threat assessment...');
+
+      // Wait a moment for progress update
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      if (!result.success) {
+        if (!result.installed) {
+          throw new Error('dnstwist is not installed. Please install it via: sudo apt install dnstwist');
         }
-      ];
+        throw new Error(result.error || 'dnstwist scan failed');
+      }
 
-      const recommendations = [
-        'Never enter banking credentials on suspicious websites',
-        'Always verify the official website URL before logging in',
-        'Be cautious of urgent requests for personal or financial information',
-        'Use two-factor authentication for all banking and financial accounts',
-        'Report phishing websites to your bank and anti-phishing organizations',
-        'Enable browser phishing protection and security warnings',
-        'Educate employees about phishing attack indicators and prevention'
-      ];
+      setProgress(95);
+      setProgressMessage('Generating comprehensive phishing threat report...');
 
-      const mockResults = {
-        target_url: url,
-        timestamp: new Date().toISOString(),
-        threat_score: threatScore,
-        findings: findings,
-        recommendations: recommendations,
+      // Use real results from dnstwist
+      const scanResults = result.results;
+
+      // Add additional findings based on domain variations
+      const additionalFindings = [];
+
+      // Add visual similarity finding if many active domains
+      if (scanResults.statistics.active_domains > 0) {
+        additionalFindings.push({
+          type: 'Phishing Threat Intelligence',
+          severity: scanResults.statistics.active_domains > 5 ? 'High' : 'Medium',
+          evidence: `Found ${scanResults.statistics.active_domains} active domain variations with DNS records. These could be used for phishing attacks targeting ${scanResults.target_domain}.`,
+          suspicious_domains: scanResults.domain_variations
+            .filter(v => v.active)
+            .slice(0, 5)
+            .map(v => v.domain)
+        });
+      }
+
+      // Add typosquatting finding
+      if (scanResults.statistics.total_variations > 0) {
+        additionalFindings.push({
+          type: 'Domain Typosquatting Detection',
+          severity: scanResults.statistics.total_variations > 10 ? 'High' : scanResults.statistics.total_variations > 5 ? 'Medium' : 'Low',
+          evidence: `Generated ${scanResults.statistics.total_variations} potential typosquatting variations. ${scanResults.statistics.active_domains} variations have active DNS records.`,
+          count: scanResults.statistics.total_variations,
+          active_count: scanResults.statistics.active_domains
+        });
+      }
+
+      // Merge additional findings with existing findings
+      const allFindings = [...scanResults.findings, ...additionalFindings];
+
+      // Build final results object
+      const finalResults = {
+        target_url: scanResults.target_url,
+        target_domain: scanResults.target_domain,
+        timestamp: scanResults.timestamp,
+        threat_score: scanResults.threat_score,
+        findings: allFindings,
+        domain_variations: scanResults.domain_variations,
+        statistics: scanResults.statistics,
+        recommendations: scanResults.recommendations,
         evidence: {
-          screenshot: 'screenshot_analysis.png',
-          certificate: {
-            status: threatScore > 50 ? 'Suspicious' : 'Valid',
-            issuer: threatScore > 50 ? 'Unknown' : 'DigiCert Inc',
-            expiry: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-          },
-          domain_info: {
-            registration_date: '2023-01-15',
-            registrar: 'GoDaddy',
-            country: 'US'
-          }
+          scan_tool: 'dnstwist',
+          scan_method: 'Typosquatting domain generation and DNS analysis',
+          raw_data: scanResults
         }
       };
 
-      // Simulate progress updates
-      setIsScanning(true);
-      for (const step of steps) {
-        setProgress(step.progress);
-        setProgressMessage(step.message);
-        await new Promise(resolve => setTimeout(resolve, 800));
-      }
+      setProgress(100);
+      setProgressMessage('Phishing detection analysis complete!');
+
+      // Wait a moment before showing results
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       // Complete the scan
       setIsScanning(false);
       setProgress(0);
       setProgressMessage('');
-      setScanResults(mockResults);
+      setScanResults(finalResults);
 
     } catch (error) {
-      console.error('Mock scan error:', error);
+      console.error('Phishing scan error:', error);
       setIsScanning(false);
       setProgress(0);
       setProgressMessage('');
+      alert(`❌ Phishing scan failed: ${error.message}`);
     }
   };
 
@@ -778,23 +737,23 @@ function PhishingDetection() {
         </div>
       </div>
 
-      {/* Disclaimer */}
-      <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4">
+      {/* Info */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
         <div className="flex items-start space-x-3">
           <div className="flex-shrink-0">
-            <svg className="w-6 h-6 text-yellow-600 dark:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.081 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-100 mb-2">⚠️ Demonstration Interface</h3>
-            <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-2">
-              This is a <strong>demonstration interface</strong> that shows what a real phishing detection system would look like. 
-              The results are generated consistently based on the URL you enter, but this is <strong>not real scanning</strong>.
+            <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">ℹ️ Real Phishing Detection</h3>
+            <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
+              This interface uses <strong>dnstwist</strong> for real-time phishing detection via typosquatting analysis. 
+              The tool generates domain variations and checks DNS records to identify potential phishing threats.
             </p>
-            <p className="text-sm text-yellow-700 dark:text-yellow-300">
-              <strong>Real phishing detection would require:</strong> Screenshot analysis, SSL certificate validation, 
-              domain reputation checking, content analysis, and threat intelligence correlation.
+            <p className="text-sm text-blue-700 dark:text-blue-300">
+              <strong>Detection includes:</strong> Domain typosquatting detection, DNS record analysis, 
+              active phishing threat identification, and comprehensive threat scoring.
             </p>
           </div>
         </div>
