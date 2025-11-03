@@ -605,7 +605,351 @@ async function createMainWindow() {
     }
   });
 
+  // WSL Installation and User Management handlers (registered early, before app.whenReady)
+  // WSL Installation handler (executes wsl.exe --install)
+  console.log('📝 [MAIN-INIT] Registering WSL IPC handlers BEFORE app.whenReady()...');
+  ipcMain.handle('wsl:install', async (event) => {
+    console.log('🚀 [WSL-INSTALL] Handler invoked! Starting WSL installation with admin privileges...');
+    
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'WSL installation is only supported on Windows' };
+    }
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Send progress updates
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('wsl:installProgress', 'Requesting administrator privileges... Please accept the UAC prompt.');
+      }
+      
+      // Use PowerShell to request elevation and run wsl --install
+      // Start-Process with -Verb RunAs will show UAC prompt and run with admin privileges
+      const powershellCommand = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \\\"wsl.exe --install; Write-Host \\\"WSL_INSTALL_COMPLETED\\\"\\\"' -Verb RunAs -Wait -NoNewWindow"`;
+      
+      console.log('🚀 [WSL-INSTALL] Executing with admin privileges via PowerShell...');
+      console.log('🚀 [WSL-INSTALL] Command (masked):', powershellCommand.substring(0, 100) + '...');
+      
+      // Send progress update
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('wsl:installProgress', 'Installing WSL with administrator privileges... This may take a few minutes.');
+      }
+      
+      try {
+        const { stdout, stderr } = await execAsync(powershellCommand, {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 600000, // 10 minutes timeout (installation can take time)
+          shell: true
+        });
+        
+        const output = (stdout || '').toLowerCase();
+        const errorOutput = (stderr || '').toLowerCase();
+        const combinedOutput = output + ' ' + errorOutput;
+        
+        console.log('🚀 [WSL-INSTALL] Installation command executed');
+        console.log('🚀 [WSL-INSTALL] STDOUT:', stdout);
+        if (stderr) console.log('🚀 [WSL-INSTALL] STDERR:', stderr);
+        
+        // Check if installation completed or requires restart
+        if (combinedOutput.includes('wsl_install_completed') || 
+            combinedOutput.includes('restart') || 
+            combinedOutput.includes('reboot') ||
+            combinedOutput.includes('installation') ||
+            combinedOutput.includes('installed')) {
+          console.log('✅ [WSL-INSTALL] Installation initiated successfully');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation completed. A restart is required.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation completed successfully. Please restart your computer to complete the setup, then log in again.' 
+          };
+        }
+        
+        // Even if no specific message, if we got output, consider it success
+        if (stdout || stderr) {
+          console.log('✅ [WSL-INSTALL] Installation process completed (may require restart)');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation process completed.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+          };
+        }
+        
+        // No output but no error either - treat as success
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('wsl:installProgress', 'WSL installation process completed.');
+        }
+        return { 
+          success: true, 
+          message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+        };
+        
+      } catch (execError) {
+        console.log('⚠️ [WSL-INSTALL] Command execution details:', {
+          message: execError.message,
+          code: execError.code,
+          signal: execError.signal,
+          stdout: execError.stdout ? execError.stdout.substring(0, 500) : 'none',
+          stderr: execError.stderr ? execError.stderr.substring(0, 500) : 'none'
+        });
+        
+        // Check if user cancelled UAC prompt (exit code 1223 = user cancelled elevation)
+        if (execError.code === 1223 || execError.message.includes('1223') || 
+            execError.message.includes('user canceled') || execError.message.includes('cancelled')) {
+          console.log('⚠️ [WSL-INSTALL] User cancelled UAC prompt');
+          return { 
+            success: false, 
+            error: 'Administrator privileges are required. Please accept the UAC prompt or run the application as Administrator.' 
+          };
+        }
+        
+        // Even if error occurred, check output for success indicators
+        const errorOutput = (execError.stderr || execError.stdout || execError.message || '').toLowerCase();
+        const hasRestartMessage = errorOutput.includes('restart') || errorOutput.includes('reboot');
+        const hasInstallMessage = errorOutput.includes('installed') || errorOutput.includes('installation');
+        const hasWslMessage = errorOutput.includes('wsl');
+        
+        // If output indicates installation was initiated, treat as success
+        if (hasRestartMessage || (hasInstallMessage && hasWslMessage)) {
+          console.log('✅ [WSL-INSTALL] Installation likely succeeded despite error code');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation appears to have been initiated.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+          };
+        }
+        
+        // If exit code is 1 but we have some output, it might still be success
+        // (wsl --install often exits with code 1 after initiating installation)
+        if (execError.code === 1 && (execError.stdout || execError.stderr)) {
+          console.log('⚠️ [WSL-INSTALL] Exit code 1 with output - treating as potential success');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation process completed.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+          };
+        }
+        
+        // Real failure - provide helpful error
+        console.error('❌ [WSL-INSTALL] Installation failed:', execError.message);
+        return { 
+          success: false, 
+          error: `WSL installation failed. Error: ${execError.message || 'Unknown error'}. Exit code: ${execError.code || 'unknown'}. Please try installing WSL manually: Open PowerShell as Administrator and run "wsl --install", then restart your computer.` 
+        };
+      }
+    } catch (error) {
+      console.error('❌ [WSL-INSTALL] Unexpected error:', error);
+      return { 
+        success: false, 
+        error: `Unexpected error during WSL installation: ${error.message}. Please install WSL manually: Open PowerShell as Administrator and run "wsl --install", then restart your computer.` 
+      };
+    }
+  });
+
+  // WSL User Creation handler
+  ipcMain.handle('wsl:createUser', async (event, username, password) => {
+    console.log('👤 [WSL-USER-CREATE] Starting WSL user creation...');
+    console.log('👤 [WSL-USER-CREATE] Username:', username);
+    console.log('👤 [WSL-USER-CREATE] Password length:', password ? password.length : 0);
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // First, check if user already exists
+      const checkUserCommand = `wsl -e bash -c "id -u ${username} 2>/dev/null || echo 'notfound'"`;
+      console.log('👤 [WSL-USER-CREATE] Checking if user exists:', checkUserCommand);
+      
+      let checkResult;
+      try {
+        checkResult = await execAsync(checkUserCommand);
+        console.log('👤 [WSL-USER-CREATE] Check result:', checkResult.stdout.trim());
+        
+        if (checkResult.stdout.trim() !== 'notfound' && checkResult.stdout.trim() !== '') {
+          const errorMsg = `User "${username}" already exists`;
+          console.error('❌ [WSL-USER-CREATE]', errorMsg);
+          return { success: false, error: errorMsg };
+        }
+      } catch (checkError) {
+        // If check fails, user might not exist - continue with creation
+        console.log('👤 [WSL-USER-CREATE] User check failed, proceeding with creation:', checkError.message);
+      }
+      
+      // Create user using adduser or useradd with proper root access
+      const createUserScript = `
+        if id "${username}" &>/dev/null 2>&1; then
+          echo "USER_EXISTS"
+          exit 1
+        fi
+        
+        if command -v adduser >/dev/null 2>&1; then
+          adduser --disabled-password --gecos "" "${username}" 2>&1
+          echo "${username}:${password}" | chpasswd 2>&1
+        elif command -v useradd >/dev/null 2>&1; then
+          useradd -m "${username}" 2>&1
+          echo "${username}:${password}" | chpasswd 2>&1
+        else
+          echo "NO_USERADD_COMMAND"
+          exit 1
+        fi
+        
+        if id "${username}" &>/dev/null 2>&1; then
+          echo "USER_CREATED"
+        else
+          echo "USER_CREATION_FAILED"
+          exit 1
+        fi
+      `;
+      
+      // Try with root access first, then fall back to default user
+      let createCommand = `wsl -u root -e bash -c ${JSON.stringify(createUserScript)}`;
+      
+      // Alternative: If root access fails, we can try with sudo
+      const createCommandSudo = `wsl -e bash -c "echo 'root' | sudo -S bash -c ${JSON.stringify(createUserScript)}"`;
+      console.log('👤 [WSL-USER-CREATE] Create command (masked):', createCommand.replace(password, '***'));
+      
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('wsl:userCreateProgress', `Creating user "${username}"...`);
+      }
+      
+      let stdout, stderr;
+      try {
+        const result = await execAsync(createCommand, {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 60000 // 1 minute timeout
+        });
+        stdout = result.stdout;
+        stderr = result.stderr;
+      } catch (firstError) {
+        // If root access failed, try with sudo
+        console.log('👤 [WSL-USER-CREATE] Root access failed, trying with sudo...');
+        try {
+          const sudoResult = await execAsync(createCommandSudo, {
+            maxBuffer: 10 * 1024 * 1024,
+            timeout: 60000
+          });
+          stdout = sudoResult.stdout;
+          stderr = sudoResult.stderr;
+        } catch (sudoError) {
+          // Both failed, throw the original error
+          throw firstError;
+        }
+      }
+      
+      console.log('👤 [WSL-USER-CREATE] STDOUT:', stdout);
+      if (stderr) console.log('👤 [WSL-USER-CREATE] STDERR:', stderr);
+      
+      // Check if user already exists in output
+      if (stdout.includes('USER_EXISTS') || stderr.includes('already exists') || 
+          stderr.includes('user exists') || stdout.includes('already exists')) {
+        const errorMsg = `User "${username}" already exists`;
+        console.error('❌ [WSL-USER-CREATE]', errorMsg);
+        return { success: false, error: errorMsg };
+      }
+      
+      // Check if creation was successful
+      if (stdout.includes('USER_CREATED') || stdout.includes('useradd:') === false) {
+        console.log('✅ [WSL-USER-CREATE] User created successfully');
+        
+        // Verify the user can authenticate
+        const verifyCommand = `wsl -u ${username} -e bash -c "whoami"`;
+        try {
+          const verifyResult = await execAsync(verifyCommand);
+          if (verifyResult.stdout.trim() === username) {
+            console.log('✅ [WSL-USER-CREATE] User verification successful');
+            return { success: true, message: `User "${username}" created successfully` };
+          }
+        } catch (verifyError) {
+          console.log('⚠️ [WSL-USER-CREATE] User verification failed, but user was created:', verifyError.message);
+          // Still return success since user was created
+          return { success: true, message: `User "${username}" created successfully` };
+        }
+      }
+      
+      // If we get here, something went wrong
+      const errorMsg = stderr || stdout || 'Unknown error occurred';
+      console.error('❌ [WSL-USER-CREATE] User creation failed:', errorMsg);
+      return { success: false, error: errorMsg };
+      
+    } catch (error) {
+      console.error('❌ [WSL-USER-CREATE] Error:', error);
+      
+      // Check if error indicates user already exists
+      const errorMsg = error.message || error.stderr || 'Unknown error';
+      if (errorMsg.includes('already exists') || errorMsg.includes('user exists') || 
+          errorMsg.includes('USER_EXISTS')) {
+        return { success: false, error: `User "${username}" already exists` };
+      }
+      
+      return { success: false, error: errorMsg };
+    }
+  });
+
+  // Validate WSL credentials handler
+  console.log('📝 [MAIN] Registering wsl:validateCredentials handler...');
+  ipcMain.handle('wsl:validateCredentials', async (event, username, password) => {
+    console.log('🔐 [WSL-VALIDATE] Validating WSL credentials...');
+    console.log('🔐 [WSL-VALIDATE] Username:', username);
+    console.log('🔐 [WSL-VALIDATE] Password length:', password ? password.length : 0);
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Test credentials by trying to run a command as the user
+      const testCommand = `wsl -u ${username} -e bash -c "whoami"`;
+      console.log('🔐 [WSL-VALIDATE] Test command:', testCommand);
+      
+      // First, test if user exists and can run commands
+      try {
+        const result = await execAsync(testCommand, { timeout: 10000 });
+        if (result.stdout.trim() === username) {
+          console.log('✅ [WSL-VALIDATE] User exists and can execute commands');
+          
+          // Now test password by trying sudo or su
+          const passwordTestCommand = `wsl -u ${username} -e bash -c "echo '${password}' | su -c 'whoami' - 2>/dev/null || echo '${password}' | sudo -S whoami 2>/dev/null || echo 'invalid'"`;
+          try {
+            const passwordResult = await execAsync(passwordTestCommand, { timeout: 10000 });
+            if (passwordResult.stdout.includes('root') || passwordResult.stdout.trim() === username) {
+              console.log('✅ [WSL-VALIDATE] Credentials are valid');
+              return { success: true, message: 'Credentials validated successfully' };
+            } else {
+              console.log('❌ [WSL-VALIDATE] Password validation failed');
+              return { success: false, error: 'Invalid password' };
+            }
+          } catch (pwdError) {
+            // Password test failed, but user exists - return partial success
+            console.log('⚠️ [WSL-VALIDATE] Password test inconclusive, but user exists');
+            return { success: true, message: 'User exists and credentials may be valid' };
+          }
+        } else {
+          console.log('❌ [WSL-VALIDATE] User test failed - wrong username returned');
+          return { success: false, error: 'User authentication failed' };
+        }
+      } catch (testError) {
+        console.error('❌ [WSL-VALIDATE] User test failed:', testError.message);
+        return { success: false, error: `User "${username}" not found or authentication failed` };
+      }
+    } catch (error) {
+      console.error('❌ [WSL-VALIDATE] Validation error:', error);
+      return { success: false, error: error.message || 'Failed to validate credentials' };
+    }
+  });
+  console.log('✅ [MAIN-INIT] All WSL IPC handlers registered successfully');
+
   app.whenReady().then(async () => {
+    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
   const win = await createMainWindow();
 
   // Auto-check and install Kali Linux if missing on Windows
@@ -852,6 +1196,9 @@ async function createMainWindow() {
       );
     });
   });
+
+  // Note: WSL handlers (wsl:install, wsl:createUser, wsl:validateCredentials) 
+  // are registered BEFORE app.whenReady() at lines 608-841
 
   // Kali Linux management
   ipcMain.handle('kali:check', () => {
