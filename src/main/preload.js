@@ -6,6 +6,12 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   installWsl: () => ipcRenderer.invoke('os:installWsl'),
   onWslInstallLog: (listener) => ipcRenderer.on('os:wslInstallLog', (_e, data) => listener(data)),
   onWslInstallDone: (listener) => ipcRenderer.once('os:wslInstallDone', (_e, ok) => listener(ok)),
+  // WSL Installation and User Management
+  installWslDirect: () => ipcRenderer.invoke('wsl:install'),
+  createWslUser: (username, password) => ipcRenderer.invoke('wsl:createUser', username, password),
+  validateWslCredentials: (username, password) => ipcRenderer.invoke('wsl:validateCredentials', username, password),
+  onWslInstallProgress: (listener) => ipcRenderer.on('wsl:installProgress', (_e, message) => listener(message)),
+  onWslUserCreateProgress: (listener) => ipcRenderer.on('wsl:userCreateProgress', (_e, message) => listener(message)),
   startScan: (target) => ipcRenderer.invoke('scan:start', target),
   onScanProgress: (listener) => ipcRenderer.on('scan:progress', (_e, upd) => listener(upd)),
   onScanDone: (listener) => ipcRenderer.on('scan:done', (_e, data) => listener(data)),
