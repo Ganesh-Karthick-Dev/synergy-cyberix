@@ -116,7 +116,20 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   // Check required tools only (without installing)
   checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password),
   // Phishing detection with dnstwist
-  runDnstwist: (domain, password) => ipcRenderer.invoke('phishing:runDnstwist', domain, password)
+  runDnstwist: (domain, password) => ipcRenderer.invoke('phishing:runDnstwist', domain, password),
+  onPhishingLog: (listener) => {
+    const handler = (_e, line) => listener(line);
+    ipcRenderer.on('phishing:log', handler);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('phishing:log', handler);
+    };
+  },
+  // Setup/installer (rootless with -u root inside WSL)
+  checkWSLRootless: () => ipcRenderer.invoke('check-wsl'),
+  checkAllToolsRootless: () => ipcRenderer.invoke('check-tools'),
+  installAllToolsRootless: () => ipcRenderer.invoke('install-tools'),
+  onInstallProgress: (listener) => ipcRenderer.on('install-progress', (_e, progress) => listener(progress))
 });
 
 

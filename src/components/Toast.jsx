@@ -7,7 +7,9 @@ const Toast = ({
   variant = 'secondary', 
   duration = 5000, 
   onRemove,
-  loading = false 
+  loading = false,
+  percentage = null,
+  stage = null
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -89,11 +91,33 @@ const Toast = ({
       role="alert"
       aria-live="polite"
     >
-      <div className="flex items-center flex-1 min-w-0">
-        {getIcon()}
-        <p className="font-medium text-sm leading-5 break-words">
-          {message}
-        </p>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center">
+          {getIcon()}
+          <p className="font-medium text-sm leading-5 break-words">
+            {message}
+          </p>
+        </div>
+        
+        {/* Progress Bar - Show when percentage is provided */}
+        {percentage !== null && percentage !== undefined && (
+          <div className="mt-3">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-medium text-white/90">
+                {stage ? `${stage.charAt(0).toUpperCase() + stage.slice(1)}` : 'Progress'}
+              </span>
+              <span className="text-xs font-bold text-white">
+                {Math.round(percentage)}%
+              </span>
+            </div>
+            <div className="w-full bg-white/20 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-white h-2 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
       
       {!loading && (

@@ -3,7 +3,7 @@ import { useToast } from '../context/ToastContext'
 import { getSecurePassword } from '../utils/securePasswordStorage'
 
 function SettingsPanel() {
-  const { showError } = useToast()
+  const { showError, showSuccess, showLoading, dismissToast } = useToast()
   const [statuses, setStatuses] = useState({
     pip: { installed: false, checking: true },
     tools: {}
@@ -11,6 +11,9 @@ function SettingsPanel() {
   const [isChecking, setIsChecking] = useState(true)
   const [repos, setRepos] = useState([])
   const [reposChecking, setReposChecking] = useState(true)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [isInstalling, setIsInstalling] = useState(false)
+  const [installProgress, setInstallProgress] = useState({ current: 0, total: 0, message: '' })
 
   const REQUIRED_TOOLS = ['jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','ffuf','nuclei','dalfox','go','dnstwist']
 
@@ -76,13 +79,118 @@ function SettingsPanel() {
     </span>
   )
 
+  const handleInstallAll = () => {
+    setShowPasswordModal(true)
+  }
+
+  const handleInstallWithPassword = async (password) => {
+    if (!password) {
+      showError('Password is required')
+      return
+    }
+
+    setShowPasswordModal(false)
+    setIsInstalling(true)
+    setInstallProgress({ current: 0, total: REQUIRED_TOOLS.length, message: 'Starting installation...' })
+
+    try {
+      // Store password for session
+      await window.cyberGuard?.storeRootPassword?.(password)
+
+      // Check which tools are missing
+      const missingTools = REQUIRED_TOOLS.filter(t => !statuses.tools[t]?.installed)
+      
+      if (missingTools.length === 0) {
+        showSuccess('All tools are already installed!')
+        setIsInstalling(false)
+        return
+      }
+
+      const loadingToast = showLoading(`Installing ${missingTools.length} tools...`)
+
+      // Set up progress listener
+      window.cyberGuard?.onInstallProgress?.((progress) => {
+        if (progress.tool) {
+          const toolIndex = missingTools.indexOf(progress.tool)
+          setInstallProgress({
+            current: toolIndex + 1,
+            total: missingTools.length,
+            message: progress.message || `Installing ${progress.tool}...`
+          })
+        } else if (progress.phase === 'installing') {
+          setInstallProgress({
+            current: progress.current || 0,
+            total: progress.total || missingTools.length,
+            message: progress.message || 'Installing tools...'
+          })
+        }
+      })
+
+      // Start installation using rootless installer
+      await window.cyberGuard?.installAllToolsRootless?.()
+
+      dismissToast(loadingToast)
+      showSuccess(`Successfully installed ${missingTools.length} tools!`)
+      
+      // Refresh tool status
+      await refresh()
+    } catch (error) {
+      console.error('Installation error:', error)
+      showError(`Installation failed: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setIsInstalling(false)
+      setInstallProgress({ current: 0, total: 0, message: '' })
+    }
+  }
+
+  const getMissingToolsCount = () => {
+    return REQUIRED_TOOLS.filter(t => !statuses.tools[t]?.installed).length
+  }
+
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Tool Requirements</h2>
-          <button onClick={refresh} className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-900 text-white rounded">Recheck</button>
+          <div className="flex gap-2">
+            {getMissingToolsCount() > 0 && (
+              <button 
+                onClick={handleInstallAll} 
+                disabled={isInstalling || isChecking}
+                className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isInstalling ? 'Installing...' : `Install All (${getMissingToolsCount()})`}
+              </button>
+            )}
+            <button 
+              onClick={refresh} 
+              disabled={isInstalling}
+              className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-900 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Recheck
+            </button>
+          </div>
         </div>
+
+        {isInstalling && (
+          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Installing Tools...</span>
+              <span className="text-sm text-blue-700 dark:text-blue-300">
+                {installProgress.current} / {installProgress.total}
+              </span>
+            </div>
+            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(installProgress.current / Math.max(installProgress.total, 1)) * 100}%` }}
+              ></div>
+            </div>
+            {installProgress.message && (
+              <p className="text-xs text-blue-700 dark:text-blue-300">{installProgress.message}</p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-4">
           <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded">
@@ -136,6 +244,76 @@ function SettingsPanel() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Password Modal */}
+      {showPasswordModal && (
+        <PasswordModal
+          onCancel={() => setShowPasswordModal(false)}
+          onSubmit={handleInstallWithPassword}
+        />
+      )}
+    </div>
+  )
+}
+
+function PasswordModal({ onCancel, onSubmit }) {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+
+  const handleSubmit = () => {
+    if (!password.trim()) {
+      setError('Password is required')
+      return
+    }
+    setError('')
+    onSubmit(password)
+    setPassword('')
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+          Root Password Required
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+          Enter your WSL root password to install missing security tools. This password will be used for this installation session only.
+        </p>
+        
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value)
+            setError('')
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSubmit()
+          }}
+          placeholder="Enter WSL root password"
+          className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          autoFocus
+        />
+        
+        {error && (
+          <p className="mt-2 text-sm text-red-600">{error}</p>
+        )}
+        
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-slate-700 hover:bg-gray-200 dark:hover:bg-slate-600 rounded-md transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
+          >
+            Install All Tools
+          </button>
         </div>
       </div>
     </div>

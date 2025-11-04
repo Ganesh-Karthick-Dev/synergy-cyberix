@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import "./index.css"
 import Dashboard from './Dashboard'
+import SetupScreen from './setup/SetupScreen'
 import Setup from './components/Setup'
 import NetworkStatus from './components/NetworkStatus'
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
@@ -14,7 +15,7 @@ import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
-  const { showError, showSuccess, showLoading, dismissToast } = useToast()
+  const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -26,6 +27,8 @@ const AppContent = () => {
   const [setupComplete, setSetupComplete] = useState(false)
   const [checkingSetup, setCheckingSetup] = useState(true)
   const [installPath, setInstallPath] = useState(null)
+  const [envReady, setEnvReady] = useState(false)
+  const [checkingEnv, setCheckingEnv] = useState(true)
   
   // New states for WSL credential flow
   const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
@@ -51,6 +54,34 @@ const AppContent = () => {
     }
 
     checkSetupStatus()
+  }, [])
+
+  // Hard gate: verify WSL + tools before allowing dashboard/login
+  useEffect(() => {
+    (async () => {
+      try {
+        const markReady = () => { setEnvReady(true); setCheckingEnv(false); };
+        // If a previous installation flagged ready, trust it but verify quickly
+        const flag = localStorage.getItem('cybrix.toolsReady') === 'true'
+        const wsl = await window.cyberGuard?.checkWsl?.()
+        if (!wsl) { setEnvReady(false); setCheckingEnv(false); return }
+        // Quick verify required tools (non-sudo)
+        const result = await window.cyberGuard?.checkRequiredToolsOnly?.(null)
+        if (result && Array.isArray(result.missingTools) && result.missingTools.length > 0) {
+          setEnvReady(false)
+        } else if (flag) {
+          markReady()
+          return
+        } else {
+          markReady()
+          return
+        }
+      } catch (e) {
+        setEnvReady(false)
+      } finally {
+        setCheckingEnv(false)
+      }
+    })()
   }, [])
 
   const handleSetupComplete = async (path) => {
@@ -215,7 +246,93 @@ const AppContent = () => {
         setWslInstallationStatus('installed')
       }
       
-      // Step 3: Check if we have stored WSL credentials
+      // Step 3: Check and install Kali Linux if missing
+      console.log('🔍 [APP] Checking if Kali Linux is installed...')
+      let kaliInstalled = false
+      if (window.cyberGuard && window.cyberGuard.checkKali) {
+        try {
+          kaliInstalled = await window.cyberGuard.checkKali()
+          console.log('🔍 [APP] Kali Linux installation check result:', kaliInstalled)
+        } catch (error) {
+          console.error('❌ [APP] Error checking Kali Linux:', error)
+        }
+      }
+      
+      // If Kali Linux is not installed, install it automatically
+      if (!kaliInstalled && wslInstalled) {
+        console.log('❌ [APP] Kali Linux is not installed. Starting automatic installation...')
+        
+        const kaliInstallToast = showLoading('Installing Kali Linux... This may take several minutes as it downloads ~1-2GB.')
+        
+        if (window.cyberGuard && window.cyberGuard.installKali) {
+          try {
+            // Listen for installation progress with percentage
+            if (window.cyberGuard.onKaliInstallProgress) {
+              window.cyberGuard.onKaliInstallProgress((progressData) => {
+                console.log('📢 [APP] Kali install progress:', progressData)
+                
+                // progressData can be either a string (old format) or object (new format)
+                if (typeof progressData === 'string') {
+                  updateToast(kaliInstallToast, { message: progressData || 'Installing Kali Linux...' })
+                } else if (progressData && typeof progressData === 'object') {
+                  // New format with percentage, message, stage, elapsed
+                  const percentage = progressData.percentage || 0
+                  const message = progressData.message || 'Installing Kali Linux...'
+                  const stage = progressData.stage || 'installing'
+                  const elapsed = progressData.elapsed || 0
+                  
+                  const formattedMessage = `${message} (${percentage}%)`
+                  const fullMessage = elapsed > 0 
+                    ? `${formattedMessage} - ${Math.floor(elapsed / 60)}m ${elapsed % 60}s elapsed`
+                    : formattedMessage
+                  
+                  updateToast(kaliInstallToast, { 
+                    message: fullMessage,
+                    percentage: percentage,
+                    stage: stage
+                  })
+                }
+              })
+            }
+            
+            const kaliInstallResult = await window.cyberGuard.installKali()
+            dismissToast(kaliInstallToast)
+            
+            console.log('📋 [APP] Kali Linux installation result:', kaliInstallResult)
+            
+            if (kaliInstallResult) {
+              console.log('✅ [APP] Kali Linux installation initiated')
+              showSuccess('Kali Linux installation started. This may take several minutes. You can continue using the application.')
+              
+              // Wait a bit and check again
+              await new Promise(resolve => setTimeout(resolve, 5000))
+              kaliInstalled = await window.cyberGuard.checkKali()
+              
+              if (kaliInstalled) {
+                console.log('✅ [APP] Kali Linux is now installed')
+              } else {
+                console.log('ℹ️ [APP] Kali Linux installation in progress (may take several minutes)')
+              }
+            } else {
+              console.log('⚠️ [APP] Kali Linux installation may have failed, but continuing...')
+            }
+          } catch (error) {
+            dismissToast(kaliInstallToast)
+            console.error('❌ [APP] Kali Linux installation error:', error)
+            // Don't block the flow if Kali installation fails - user can install manually later
+            showError('Kali Linux installation failed. You can install it manually later using: wsl --install -d kali-linux')
+          }
+        } else {
+          dismissToast(kaliInstallToast)
+          console.error('❌ [APP] Kali Linux installation API not available')
+        }
+      } else if (kaliInstalled) {
+        console.log('✅ [APP] Kali Linux is installed')
+      } else if (!wslInstalled) {
+        console.log('⚠️ [APP] WSL is not installed, skipping Kali Linux installation')
+      }
+      
+      // Step 4: Check if we have stored WSL credentials
       const storedCredentials = getWslCredentials()
       const hasStoredPassword = hasSecurePassword()
       
@@ -547,11 +664,30 @@ const AppContent = () => {
     )
   }
 
-  // Show setup screen if setup is not complete
-  if (!setupComplete) {
+  // Block entire app with SetupScreen until env is ready
+  if (checkingEnv) {
     return (
       <NetworkStatus>
-        <Setup onSetupComplete={handleSetupComplete} />
+        <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Preparing environment…</h2>
+            <p className="text-gray-600 dark:text-gray-300">Checking WSL and tools</p>
+          </div>
+        </div>
+      </NetworkStatus>
+    )
+  }
+
+  if (!envReady) {
+    return (
+      <NetworkStatus>
+        <SetupScreen onReady={() => setEnvReady(true)} />
       </NetworkStatus>
     )
   }
