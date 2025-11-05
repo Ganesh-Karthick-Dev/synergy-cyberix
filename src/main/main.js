@@ -492,6 +492,15 @@ async function createMainWindow() {
     mainWindow.show()
   })
 
+  // Suppress harmless DevTools console warnings (Autofill API errors)
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // Filter out harmless DevTools Autofill warnings
+    if (message.includes('Autofill.enable') || message.includes('Autofill.setAddresses')) {
+      return; // Suppress these warnings
+    }
+    // Allow other console messages to pass through
+  });
+
   // In development, load from Vite dev server
   if (isDev) {
     // Try multiple ports that Vite might use
@@ -1160,6 +1169,112 @@ async function createMainWindow() {
       return { success: false, error: error.message || 'Failed to validate credentials' };
     }
   });
+
+  // API Scanner - Real scanning with WSL/Kali tools
+  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 30) => {
+    try {
+      console.log('\n\n');
+      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
+      console.log('🔍 [API-SCANNER] Starting Wireshark-based API scan for:', targetUrl);
+      console.log('🔍 [API-SCANNER] Duration:', duration, 'seconds');
+      console.log('🔍 [API-SCANNER] Timestamp:', new Date().toISOString());
+      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
+      console.log('\n');
+      
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      const outDir = path.join(process.cwd(), 'temp-api-scans', `api-scan-${Date.now()}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      
+      const scanner = new APIScanner(targetUrl, outDir);
+      
+      // Set up progress callback
+      scanner.setProgressCallback((update) => {
+        // Log to console with command if present
+        if (update.command) {
+          console.log(`\n[API-SCANNER-UI] ${update.message || ''}`);
+          console.log(`[API-SCANNER-UI] Command: ${update.command}\n`);
+        }
+        
+        if (event && event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('apiscan:progress', {
+            progress: update.progress || 0,
+            message: update.message || '',
+            command: update.command || null,
+            type: update.type || 'info'
+          });
+        }
+      });
+      
+      // Perform the scan
+      const results = await scanner.performScan();
+      
+      // Generate PDF report
+      if (results.capture_data) {
+        const pdfPath = path.join(outDir, 'api-scan-report.pdf');
+        await scanner.generatePDFReport(results.capture_data, pdfPath);
+        results.pdfReport = pdfPath;
+      }
+      
+      // Send completion
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('apiscan:complete', {
+          success: true,
+          results: results
+        });
+      }
+      
+      return { success: true, results: results };
+    } catch (error) {
+      console.error('❌ [API-SCANNER] Scan error:', error);
+      
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('apiscan:progress', {
+          progress: 0,
+          message: `Error: ${error.message || 'Unknown error'}`,
+          type: 'error'
+        });
+        event.sender.send('apiscan:complete', {
+          success: false,
+          error: error.message || 'Unknown error'
+        });
+      }
+      
+      return { success: false, error: error.message || 'Unknown error' };
+    }
+  });
+
+  // IPC handler for exporting PDF report
+  ipcMain.handle('apiscan:export-pdf', async (event, captureData) => {
+    try {
+      const { dialog } = require('electron');
+      const timestamp = Date.now();
+      const defaultPath = path.join(app.getPath('documents'), `api-scan-report-${timestamp}.pdf`);
+      
+      const result = await dialog.showSaveDialog({
+        title: 'Save PDF Report',
+        defaultPath: defaultPath,
+        filters: [
+          { name: 'PDF Files', extensions: ['pdf'] }
+        ]
+      });
+      
+      if (result.canceled) {
+        return { success: false, canceled: true };
+      }
+      
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      const outDir = path.dirname(result.filePath);
+      const scanner = new APIScanner('', outDir);
+      
+      const pdfPath = await scanner.generatePDFReport(captureData, result.filePath);
+      
+      return { success: true, pdfPath };
+    } catch (error) {
+      console.error('❌ [API-SCANNER] PDF export error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ [MAIN-INIT] All WSL IPC handlers registered successfully');
 
   app.whenReady().then(async () => {

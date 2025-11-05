@@ -765,7 +765,7 @@ function APIScanner() {
                       <div className="mt-2">
                         <div className="text-gray-500 dark:text-gray-400">Business Impact: {endpoint.business_impact}</div>
                       </div>
-                      {endpoint.security_issues.length > 0 && (
+                      {endpoint.security_issues && endpoint.security_issues.length > 0 && (
                         <div className="mt-2">
                           <span className="text-red-600 dark:text-red-400 font-medium">Security Issues: </span>
                           <span className="text-red-600 dark:text-red-400">{endpoint.security_issues.join(', ')}</span>
@@ -776,7 +776,7 @@ function APIScanner() {
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Security Findings */}
           {scanResults.findings && scanResults.findings.length > 0 && (

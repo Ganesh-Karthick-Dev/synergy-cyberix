@@ -6,7 +6,8 @@ function SettingsPanel() {
   const { showError, showSuccess, showLoading, dismissToast } = useToast()
   const [statuses, setStatuses] = useState({
     pip: { installed: false, checking: true },
-    tools: {}
+    tools: {},
+    toolVersions: {}
   })
   const [isChecking, setIsChecking] = useState(true)
   const [repos, setRepos] = useState([])
@@ -15,7 +16,10 @@ function SettingsPanel() {
   const [isInstalling, setIsInstalling] = useState(false)
   const [installProgress, setInstallProgress] = useState({ current: 0, total: 0, message: '' })
 
-  const REQUIRED_TOOLS = ['jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','ffuf','nuclei','dalfox','go','dnstwist']
+  const REQUIRED_TOOLS = ['jq','unzip','nmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','ffuf','nuclei','dalfox','go','dnstwist','zaproxy','wfuzz','tshark']
+  
+  // API Scanning tools subset (Wireshark-based)
+  const API_SCANNING_TOOLS = ['tshark']
 
   useEffect(() => {
     refresh()
@@ -48,6 +52,22 @@ function SettingsPanel() {
           let output = `${res?.stdout||''}\n${res?.stderr||''}`
           let notFound = /command not found|not found/i.test(output)
           let ok = (!!res?.success) || (!notFound && output.trim().length > 0)
+          let version = null
+          
+          if (ok && res?.stdout) {
+            // Extract version from output
+            const versionMatch = res.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
+            if (versionMatch) {
+              version = versionMatch[1]
+            } else {
+              // Try to get first line
+              const firstLine = res.stdout.split('\n')[0].trim()
+              if (firstLine && firstLine.length < 50) {
+                version = firstLine
+              }
+            }
+          }
+          
           if (!ok) {
             const cmd2 = `bash -lc \"${t} -v\"`
             console.log(`[ToolCheck] ${t}: running -v ->`, cmd2)
@@ -56,16 +76,30 @@ function SettingsPanel() {
             output = `${res?.stdout||''}\n${res?.stderr||''}`
             notFound = /command not found|not found/i.test(output)
             ok = (!!res?.success) || (!notFound && output.trim().length > 0)
+            
+            if (ok && res?.stdout && !version) {
+              const versionMatch = res.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
+              if (versionMatch) {
+                version = versionMatch[1]
+              } else {
+                const firstLine = res.stdout.split('\n')[0].trim()
+                if (firstLine && firstLine.length < 50) {
+                  version = firstLine
+                }
+              }
+            }
           }
-          console.log(`[ToolCheck] ${t}: available=${ok}`)
-          return [t, { installed: ok, checking: false }]
+          
+          console.log(`[ToolCheck] ${t}: available=${ok}, version=${version || 'N/A'}`)
+          return [t, { installed: ok, checking: false, version: version || null }]
         } catch (_e) {
           console.log(`[ToolCheck] ${t}: error during check`, _e?.message)
-          return [t, { installed: false, checking: false }]
+          return [t, { installed: false, checking: false, version: null }]
         }
       }))
       const toolMap = Object.fromEntries(toolEntries)
-      setStatuses(prev => ({ ...prev, tools: toolMap }))
+      const versionMap = Object.fromEntries(toolEntries.map(([t, data]) => [t, data.version]))
+      setStatuses(prev => ({ ...prev, tools: toolMap, toolVersions: versionMap }))
     } catch (e) {
       showError('Failed to check tools')
       setStatuses(prev => ({ ...prev, pip: { installed: false, checking: false } }))
@@ -224,25 +258,86 @@ function SettingsPanel() {
             )}
         </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {REQUIRED_TOOLS.map((t) => (
-              <div key={t} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded">
-                <span className="text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                  {isChecking ? (
-                    <svg className="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : null}
-                  {t}
-                </span>
-                {isChecking ? (
-                  <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
-                ) : (
-                  renderBadge(!!statuses.tools[t]?.installed)
-                )}
-              </div>
-            ))}
+          {/* API Scanning Tools Section */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">API Scanning Tools</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {API_SCANNING_TOOLS.map((t) => {
+                const toolStatus = statuses.tools[t]
+                const isInstalled = !!toolStatus?.installed
+                const version = statuses.toolVersions[t] || toolStatus?.version || null
+                
+                return (
+                  <div key={t} className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                        {isChecking ? (
+                          <svg className="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : null}
+                        {t}
+                      </span>
+                      {isChecking ? (
+                        <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
+                      ) : (
+                        <span className={`text-xs font-semibold ${isInstalled ? 'text-green-600' : 'text-red-600'}`}>
+                          {isInstalled ? '✓ Installed' : '✗ Missing'}
+                        </span>
+                      )}
+                    </div>
+                    {version && (
+                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                        Version: {version}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* All Tools Section */}
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">All Security Tools</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {REQUIRED_TOOLS.map((t) => {
+                const toolStatus = statuses.tools[t]
+                const isInstalled = !!toolStatus?.installed
+                const version = statuses.toolVersions[t] || toolStatus?.version || null
+                const isAPITool = API_SCANNING_TOOLS.includes(t)
+                
+                return (
+                  <div key={t} className={`flex flex-col p-3 bg-gray-50 dark:bg-slate-700 rounded ${isAPITool ? 'border-2 border-blue-300 dark:border-blue-600' : ''}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                        {isChecking ? (
+                          <svg className="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : null}
+                        {t}
+                        {isAPITool && <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1 rounded">API</span>}
+                      </span>
+                      {isChecking ? (
+                        <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
+                      ) : (
+                        <span className={`text-xs font-semibold ${isInstalled ? 'text-green-600' : 'text-red-600'}`}>
+                          {isInstalled ? '✓' : '✗'}
+                        </span>
+                      )}
+                    </div>
+                    {version && (
+                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                        v{version}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>

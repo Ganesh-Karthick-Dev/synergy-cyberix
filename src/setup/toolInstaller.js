@@ -8,8 +8,6 @@ const REQUIRED_TOOLS = [
   { name: 'pip3', package: 'python3-pip' },
   { name: 'jq', package: 'jq' },
   { name: 'nmap', package: 'nmap' },
-  { name: 'nikto', package: 'nikto' },
-  { name: 'sqlmap', package: 'sqlmap' },
   { name: 'hydra', package: 'hydra' },
   { name: 'gobuster', package: 'gobuster' },
   { name: 'dirb', package: 'dirb' },
@@ -23,7 +21,16 @@ const REQUIRED_TOOLS = [
   { name: 'nuclei', package: 'nuclei' },
   { name: 'dalfox', package: 'dalfox' },
   { name: 'go', package: 'golang-go' },
-  { name: 'dnstwist', package: 'dnstwist' }
+  { name: 'dnstwist', package: 'dnstwist' },
+  // API Scanning tools (Wireshark-based)
+  { name: 'tshark', package: 'tshark' },
+  { name: 'zaproxy', package: 'zaproxy' },
+  { name: 'wfuzz', package: 'wfuzz' }
+];
+
+// API-specific tools list (Wireshark-based approach)
+const API_SCANNING_TOOLS = [
+  'tshark'
 ];
 
 async function checkAllTools(progress) {
@@ -79,6 +86,12 @@ async function installAllTools(progress) {
   return { success: results.every(r => r.success), results };
 }
 
-module.exports = { REQUIRED_TOOLS, checkAllTools, installTool, installAllTools };
+module.exports = { 
+  REQUIRED_TOOLS, 
+  API_SCANNING_TOOLS,
+  checkAllTools, 
+  installTool, 
+  installAllTools 
+};
 
 

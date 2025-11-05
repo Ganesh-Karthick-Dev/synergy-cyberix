@@ -129,7 +129,20 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   checkWSLRootless: () => ipcRenderer.invoke('check-wsl'),
   checkAllToolsRootless: () => ipcRenderer.invoke('check-tools'),
   installAllToolsRootless: () => ipcRenderer.invoke('install-tools'),
-  onInstallProgress: (listener) => ipcRenderer.on('install-progress', (_e, progress) => listener(progress))
+  onInstallProgress: (listener) => ipcRenderer.on('install-progress', (_e, progress) => listener(progress)),
+  // API Scanner (Wireshark-based)
+  startAPIScan: (targetUrl, duration = 30) => ipcRenderer.invoke('apiscan:start', targetUrl, duration),
+  onAPIScanProgress: (listener) => {
+    const handler = (_e, progress) => listener(progress);
+    ipcRenderer.on('apiscan:progress', handler);
+    return () => ipcRenderer.removeListener('apiscan:progress', handler);
+  },
+  onAPIScanComplete: (listener) => {
+    const handler = (_e, results) => listener(results);
+    ipcRenderer.on('apiscan:complete', handler);
+    return () => ipcRenderer.removeListener('apiscan:complete', handler);
+  },
+  exportAPIPDF: (captureData) => ipcRenderer.invoke('apiscan:export-pdf', captureData)
 });
 
 
