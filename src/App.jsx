@@ -1,18 +1,21 @@
 import { useState, useEffect } from 'react'
 import "./index.css"
 import Dashboard from './Dashboard'
+import SetupScreen from './setup/SetupScreen'
 import Setup from './components/Setup'
 import NetworkStatus from './components/NetworkStatus'
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
+import WslUserCreationDialog from './components/WslUserCreationDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
+import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
-  const { showError, showSuccess, showLoading, dismissToast } = useToast()
+  const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -24,10 +27,14 @@ const AppContent = () => {
   const [setupComplete, setSetupComplete] = useState(false)
   const [checkingSetup, setCheckingSetup] = useState(true)
   const [installPath, setInstallPath] = useState(null)
+  const [envReady, setEnvReady] = useState(false)
+  const [checkingEnv, setCheckingEnv] = useState(true)
   
   // New states for WSL credential flow
   const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
+  const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
   const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
+  const [wslInstallationStatus, setWslInstallationStatus] = useState(null) // 'checking', 'installing', 'installed', 'not-installed'
 
   // Check setup completion status on app load
   useEffect(() => {
@@ -47,6 +54,34 @@ const AppContent = () => {
     }
 
     checkSetupStatus()
+  }, [])
+
+  // Hard gate: verify WSL + tools before allowing dashboard/login
+  useEffect(() => {
+    (async () => {
+      try {
+        const markReady = () => { setEnvReady(true); setCheckingEnv(false); };
+        // If a previous installation flagged ready, trust it but verify quickly
+        const flag = localStorage.getItem('cybrix.toolsReady') === 'true'
+        const wsl = await window.cyberGuard?.checkWsl?.()
+        if (!wsl) { setEnvReady(false); setCheckingEnv(false); return }
+        // Quick verify required tools (non-sudo)
+        const result = await window.cyberGuard?.checkRequiredToolsOnly?.(null)
+        if (result && Array.isArray(result.missingTools) && result.missingTools.length > 0) {
+          setEnvReady(false)
+        } else if (flag) {
+          markReady()
+          return
+        } else {
+          markReady()
+          return
+        }
+      } catch (e) {
+        setEnvReady(false)
+      } finally {
+        setCheckingEnv(false)
+      }
+    })()
   }, [])
 
   const handleSetupComplete = async (path) => {
@@ -123,8 +158,228 @@ const AppContent = () => {
       console.log('🚀 [APP] Starting post-login flow...')
       setIsCheckingCredentials(true)
       
-      // Check if we have stored WSL credentials
-      if (hasSecurePassword()) {
+      // Step 1: Check if WSL is installed
+      console.log('🔍 [APP] Checking if WSL is installed...')
+      setWslInstallationStatus('checking')
+      
+      let wslInstalled = false
+      if (window.cyberGuard && window.cyberGuard.checkWsl) {
+        try {
+          wslInstalled = await window.cyberGuard.checkWsl()
+          console.log('🔍 [APP] WSL installation check result:', wslInstalled)
+        } catch (error) {
+          console.error('❌ [APP] Error checking WSL:', error)
+        }
+      }
+      
+      // Step 2: If WSL is not installed, install it
+      if (!wslInstalled) {
+        console.log('❌ [APP] WSL is not installed. Starting installation...')
+        setWslInstallationStatus('installing')
+        
+        const installToast = showLoading('Installing WSL... This may take a few minutes and may require administrator privileges.')
+        
+        if (window.cyberGuard && window.cyberGuard.installWslDirect) {
+          try {
+            // Listen for installation progress
+            if (window.cyberGuard.onWslInstallProgress) {
+              window.cyberGuard.onWslInstallProgress((message) => {
+                console.log('📢 [APP] WSL install progress:', message)
+              })
+            }
+            
+            const installResult = await window.cyberGuard.installWslDirect()
+            dismissToast(installToast)
+            
+            console.log('📋 [APP] WSL installation result:', installResult)
+            
+            if (installResult && installResult.success) {
+              console.log('✅ [APP] WSL installation initiated:', installResult.message)
+              showSuccess(installResult.message || 'WSL installation started. You may need to restart your computer.')
+              
+              // If message indicates restart needed, don't check again
+              if (installResult.message && installResult.message.toLowerCase().includes('restart')) {
+                console.log('⚠️ [APP] WSL installation requires a restart')
+                showError('WSL installation requires a system restart. Please restart your computer and log in again.')
+                setIsCheckingCredentials(false)
+                return
+              }
+              
+              // Wait a bit and check again
+              await new Promise(resolve => setTimeout(resolve, 3000))
+              wslInstalled = await window.cyberGuard.checkWsl()
+              
+              if (wslInstalled) {
+                console.log('✅ [APP] WSL is now installed')
+                setWslInstallationStatus('installed')
+              } else {
+                console.log('⚠️ [APP] WSL installation may require a restart')
+                showError('WSL installation requires a system restart. Please restart your computer and log in again.')
+                setIsCheckingCredentials(false)
+                return
+              }
+            } else {
+              console.error('❌ [APP] WSL installation failed:', installResult?.error)
+              
+              // Provide helpful error message with manual installation instructions
+              const errorMsg = installResult?.error || 'Failed to install WSL'
+              showError(`${errorMsg}\n\nPlease install WSL manually:\n1. Open PowerShell as Administrator\n2. Run: wsl --install\n3. Restart your computer\n4. Log in again`)
+              setIsCheckingCredentials(false)
+              return
+            }
+          } catch (error) {
+            dismissToast(installToast)
+            console.error('❌ [APP] WSL installation error:', error)
+            showError('Failed to install WSL: ' + error.message)
+            setIsCheckingCredentials(false)
+            return
+          }
+        } else {
+          dismissToast(installToast)
+          console.error('❌ [APP] WSL installation API not available')
+          showError('WSL installation feature not available. Please install WSL manually.')
+          setIsCheckingCredentials(false)
+          return
+        }
+      } else {
+        console.log('✅ [APP] WSL is installed')
+        setWslInstallationStatus('installed')
+      }
+      
+      // Step 3: Check and install Kali Linux if missing
+      console.log('🔍 [APP] Checking if Kali Linux is installed...')
+      let kaliInstalled = false
+      if (window.cyberGuard && window.cyberGuard.checkKali) {
+        try {
+          kaliInstalled = await window.cyberGuard.checkKali()
+          console.log('🔍 [APP] Kali Linux installation check result:', kaliInstalled)
+        } catch (error) {
+          console.error('❌ [APP] Error checking Kali Linux:', error)
+        }
+      }
+      
+      // If Kali Linux is not installed, install it automatically
+      if (!kaliInstalled && wslInstalled) {
+        console.log('❌ [APP] Kali Linux is not installed. Starting automatic installation...')
+        
+        const kaliInstallToast = showLoading('Installing Kali Linux... This may take several minutes as it downloads ~1-2GB.')
+        
+        if (window.cyberGuard && window.cyberGuard.installKali) {
+          try {
+            // Listen for installation progress with percentage
+            if (window.cyberGuard.onKaliInstallProgress) {
+              window.cyberGuard.onKaliInstallProgress((progressData) => {
+                console.log('📢 [APP] Kali install progress:', progressData)
+                
+                // progressData can be either a string (old format) or object (new format)
+                if (typeof progressData === 'string') {
+                  updateToast(kaliInstallToast, { message: progressData || 'Installing Kali Linux...' })
+                } else if (progressData && typeof progressData === 'object') {
+                  // New format with percentage, message, stage, elapsed
+                  const percentage = progressData.percentage || 0
+                  const message = progressData.message || 'Installing Kali Linux...'
+                  const stage = progressData.stage || 'installing'
+                  const elapsed = progressData.elapsed || 0
+                  
+                  const formattedMessage = `${message} (${percentage}%)`
+                  const fullMessage = elapsed > 0 
+                    ? `${formattedMessage} - ${Math.floor(elapsed / 60)}m ${elapsed % 60}s elapsed`
+                    : formattedMessage
+                  
+                  updateToast(kaliInstallToast, { 
+                    message: fullMessage,
+                    percentage: percentage,
+                    stage: stage
+                  })
+                }
+              })
+            }
+            
+            const kaliInstallResult = await window.cyberGuard.installKali()
+            dismissToast(kaliInstallToast)
+            
+            console.log('📋 [APP] Kali Linux installation result:', kaliInstallResult)
+            
+            if (kaliInstallResult) {
+              console.log('✅ [APP] Kali Linux installation initiated')
+              showSuccess('Kali Linux installation started. This may take several minutes. You can continue using the application.')
+              
+              // Wait a bit and check again
+              await new Promise(resolve => setTimeout(resolve, 5000))
+              kaliInstalled = await window.cyberGuard.checkKali()
+              
+              if (kaliInstalled) {
+                console.log('✅ [APP] Kali Linux is now installed')
+              } else {
+                console.log('ℹ️ [APP] Kali Linux installation in progress (may take several minutes)')
+              }
+            } else {
+              console.log('⚠️ [APP] Kali Linux installation may have failed, but continuing...')
+            }
+          } catch (error) {
+            dismissToast(kaliInstallToast)
+            console.error('❌ [APP] Kali Linux installation error:', error)
+            // Don't block the flow if Kali installation fails - user can install manually later
+            showError('Kali Linux installation failed. You can install it manually later using: wsl --install -d kali-linux')
+          }
+        } else {
+          dismissToast(kaliInstallToast)
+          console.error('❌ [APP] Kali Linux installation API not available')
+        }
+      } else if (kaliInstalled) {
+        console.log('✅ [APP] Kali Linux is installed')
+      } else if (!wslInstalled) {
+        console.log('⚠️ [APP] WSL is not installed, skipping Kali Linux installation')
+      }
+      
+      // Step 4: Check if we have stored WSL credentials
+      const storedCredentials = getWslCredentials()
+      const hasStoredPassword = hasSecurePassword()
+      
+      if (storedCredentials && storedCredentials.username && storedCredentials.password) {
+        console.log('🔐 [APP] Found stored WSL credentials, validating...')
+        
+        // Validate the stored credentials
+        if (window.cyberGuard && window.cyberGuard.validateWslCredentials) {
+          try {
+            const isValid = await window.cyberGuard.validateWslCredentials(
+              storedCredentials.username,
+              storedCredentials.password
+            )
+            
+            if (isValid && isValid.success) {
+              console.log('✅ [APP] Stored credentials are valid')
+              // Continue with existing flow
+            } else {
+              console.log('❌ [APP] Stored credentials are invalid, asking for new credentials')
+              setShowWslUserCreationDialog(true)
+              setIsCheckingCredentials(false)
+              return
+            }
+          } catch (error) {
+            console.error('❌ [APP] Error validating credentials:', error)
+            // Show user creation dialog on validation error
+            setShowWslUserCreationDialog(true)
+            setIsCheckingCredentials(false)
+            return
+          }
+        } else if (hasStoredPassword) {
+          // Fallback to old password validation
+          const isValid = await validateStoredPassword()
+          if (!isValid) {
+            console.log('❌ [APP] Stored password is invalid, asking for new credentials')
+            setShowWslUserCreationDialog(true)
+            setIsCheckingCredentials(false)
+            return
+          }
+        } else {
+          // No stored credentials, show user creation dialog
+          console.log('🔐 [APP] No stored WSL credentials found, asking for credentials')
+          setShowWslUserCreationDialog(true)
+          setIsCheckingCredentials(false)
+          return
+        }
+      } else if (hasStoredPassword) {
         console.log('🔐 [APP] Found stored WSL password, validating...')
         
         // Validate the stored password
@@ -313,6 +568,77 @@ const AppContent = () => {
     // User cancelled, stay on login screen
   }
 
+  const handleWslUserCreationSuccess = async (username, password) => {
+    console.log('✅ [APP] WSL user created successfully:', username)
+    setShowWslUserCreationDialog(false)
+    
+    try {
+      // Store credentials securely
+      const stored = await storeWslCredentialsComplete(username, password)
+      if (stored) {
+        console.log('✅ [APP] Credentials stored successfully')
+        showSuccess(`WSL user "${username}" created and credentials saved!`)
+        
+        // Continue with the post-login flow (tool checking, etc.)
+        setIsCheckingCredentials(true)
+        
+        // Prepare Kali environment if needed
+        try {
+          const urls = [
+            'https://github.com/almandin/fuxploider.git'
+          ]
+          const progressToast = showLoading('Preparing environment...')
+          const setupResult = await ensureReposInstalled(urls, password)
+          dismissToast(progressToast)
+          if (!setupResult.success) {
+            console.warn('Repo setup failed:', setupResult.error)
+          }
+        } catch (e) {
+          console.warn('Repo setup skipped/failed:', e?.message)
+        }
+        
+        // Check tools
+        if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
+          console.log('🔧 [APP] Checking required tools...')
+          const toolCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
+          
+          if (toolCheck && toolCheck.success) {
+            console.log('✅ [APP] All tools are ready!')
+            setTimeout(() => {
+              setIsAuthenticated(true)
+            }, 800)
+          } else if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
+            console.log('⚠️ [APP] Some tools are missing:', toolCheck.missingTools)
+            showError(`Missing ${toolCheck.missingTools.length} tools: ${toolCheck.missingTools.join(', ')}. Please install them manually.`)
+            setTimeout(() => {
+              setIsAuthenticated(true)
+            }, 2000)
+          } else {
+            setTimeout(() => {
+              setIsAuthenticated(true)
+            }, 800)
+          }
+        } else {
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 800)
+        }
+      } else {
+        showError('Failed to store credentials. Please try again.')
+      }
+    } catch (error) {
+      console.error('❌ [APP] Error after user creation:', error)
+      showError('Failed to complete setup. Please try again.')
+    } finally {
+      setIsCheckingCredentials(false)
+    }
+  }
+
+  const handleWslUserCreationCancel = () => {
+    setShowWslUserCreationDialog(false)
+    // User cancelled, stay on login screen
+  }
+
 
   // Show loading screen while checking setup status
   if (checkingSetup) {
@@ -338,11 +664,30 @@ const AppContent = () => {
     )
   }
 
-  // Show setup screen if setup is not complete
-  if (!setupComplete) {
+  // Block entire app with SetupScreen until env is ready
+  if (checkingEnv) {
     return (
       <NetworkStatus>
-        <Setup onSetupComplete={handleSetupComplete} />
+        <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Preparing environment…</h2>
+            <p className="text-gray-600 dark:text-gray-300">Checking WSL and tools</p>
+          </div>
+        </div>
+      </NetworkStatus>
+    )
+  }
+
+  if (!envReady) {
+    return (
+      <NetworkStatus>
+        <SetupScreen onReady={() => setEnvReady(true)} />
       </NetworkStatus>
     )
   }
@@ -520,6 +865,13 @@ const AppContent = () => {
       isOpen={showWslPasswordDialog}
       onClose={handleWslPasswordCancel}
       onSuccess={handleWslPasswordSuccess}
+    />
+
+    {/* WSL User Creation Dialog */}
+    <WslUserCreationDialog
+      isOpen={showWslUserCreationDialog}
+      onClose={handleWslUserCreationCancel}
+      onSuccess={handleWslUserCreationSuccess}
     />
     </NetworkStatus>
   )

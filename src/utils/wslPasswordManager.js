@@ -31,9 +31,38 @@ export function storeWslCredentials(username, password) {
   try {
     localStorage.setItem(WSL_USERNAME_KEY, obfuscate(username));
     localStorage.setItem(WSL_PASSWORD_KEY, obfuscate(password));
+    console.log('✅ [WSL-PASSWORD-MANAGER] Credentials stored:', { username, passwordLength: password.length });
     return true;
   } catch (error) {
     console.error('Failed to store WSL credentials:', error);
+    return false;
+  }
+}
+
+/**
+ * Store WSL credentials and also store root password if username is root
+ * @param {string} username - WSL username
+ * @param {string} password - WSL password
+ */
+export async function storeWslCredentialsComplete(username, password) {
+  try {
+    // Store regular credentials
+    const stored = storeWslCredentials(username, password);
+    if (!stored) {
+      return false;
+    }
+    
+    // If username is root, also store as root password
+    if (username === 'root') {
+      if (window.cyberGuard && window.cyberGuard.storeRootPassword) {
+        const result = await window.cyberGuard.storeRootPassword(password);
+        console.log('✅ [WSL-PASSWORD-MANAGER] Root password also stored:', result);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Failed to store WSL credentials completely:', error);
     return false;
   }
 }

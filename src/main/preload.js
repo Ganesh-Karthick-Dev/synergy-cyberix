@@ -6,6 +6,12 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   installWsl: () => ipcRenderer.invoke('os:installWsl'),
   onWslInstallLog: (listener) => ipcRenderer.on('os:wslInstallLog', (_e, data) => listener(data)),
   onWslInstallDone: (listener) => ipcRenderer.once('os:wslInstallDone', (_e, ok) => listener(ok)),
+  // WSL Installation and User Management
+  installWslDirect: () => ipcRenderer.invoke('wsl:install'),
+  createWslUser: (username, password) => ipcRenderer.invoke('wsl:createUser', username, password),
+  validateWslCredentials: (username, password) => ipcRenderer.invoke('wsl:validateCredentials', username, password),
+  onWslInstallProgress: (listener) => ipcRenderer.on('wsl:installProgress', (_e, message) => listener(message)),
+  onWslUserCreateProgress: (listener) => ipcRenderer.on('wsl:userCreateProgress', (_e, message) => listener(message)),
   startScan: (target) => ipcRenderer.invoke('scan:start', target),
   onScanProgress: (listener) => ipcRenderer.on('scan:progress', (_e, upd) => listener(upd)),
   onScanDone: (listener) => ipcRenderer.on('scan:done', (_e, data) => listener(data)),
@@ -108,7 +114,35 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   // Install single tool
   installSingleTool: (toolName, password) => ipcRenderer.invoke('tools:installSingle', toolName, password),
   // Check required tools only (without installing)
-  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password)
+  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password),
+  // Phishing detection with dnstwist
+  runDnstwist: (domain, password) => ipcRenderer.invoke('phishing:runDnstwist', domain, password),
+  onPhishingLog: (listener) => {
+    const handler = (_e, line) => listener(line);
+    ipcRenderer.on('phishing:log', handler);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('phishing:log', handler);
+    };
+  },
+  // Setup/installer (rootless with -u root inside WSL)
+  checkWSLRootless: () => ipcRenderer.invoke('check-wsl'),
+  checkAllToolsRootless: () => ipcRenderer.invoke('check-tools'),
+  installAllToolsRootless: () => ipcRenderer.invoke('install-tools'),
+  onInstallProgress: (listener) => ipcRenderer.on('install-progress', (_e, progress) => listener(progress)),
+  // API Scanner (Wireshark-based)
+  startAPIScan: (targetUrl, duration = 30) => ipcRenderer.invoke('apiscan:start', targetUrl, duration),
+  onAPIScanProgress: (listener) => {
+    const handler = (_e, progress) => listener(progress);
+    ipcRenderer.on('apiscan:progress', handler);
+    return () => ipcRenderer.removeListener('apiscan:progress', handler);
+  },
+  onAPIScanComplete: (listener) => {
+    const handler = (_e, results) => listener(results);
+    ipcRenderer.on('apiscan:complete', handler);
+    return () => ipcRenderer.removeListener('apiscan:complete', handler);
+  },
+  exportAPIPDF: (captureData) => ipcRenderer.invoke('apiscan:export-pdf', captureData)
 });
 
 

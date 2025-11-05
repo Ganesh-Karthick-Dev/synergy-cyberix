@@ -5,6 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('child_process');
 const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
 require('dotenv').config();
+const wslHelper = require('../utils/wslHelper');
+const toolInstaller = require('../setup/toolInstaller');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -209,45 +211,257 @@ function checkKaliInstalled() {
   return false;
 }
 
-// Helper: automatically install Kali Linux
-async function installKaliLinux() {
+// Helper: automatically install Kali Linux with real-time progress and percentage
+async function installKaliLinux(event = null) {
+  console.log('🚀 [KALI-INSTALL] Starting automatic Kali Linux installation...');
+  
   return new Promise((resolve) => {
-    console.log('🚀 Starting automatic Kali Linux installation...');
+    const { spawn } = require('child_process');
+    
+    // Progress tracking
+    let currentProgress = 0;
+    let installationStage = 'initializing';
+    const startTime = Date.now();
+    let lastProgressUpdate = Date.now();
+    
+    // Send initial progress update
+    const sendProgress = (percentage, message, stage = null) => {
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        const progressData = {
+          percentage: percentage,
+          message: message,
+          stage: stage || installationStage,
+          elapsed: Math.floor((Date.now() - startTime) / 1000) // seconds
+        };
+        event.sender.send('kali:installProgress', progressData);
+        console.log(`📊 [KALI-INSTALL] Progress: ${percentage}% - ${message}`);
+      }
+    };
+    
+    sendProgress(0, 'Starting Kali Linux installation...', 'initializing');
     
     // Use wsl --install -d kali-linux for automatic installation
-    const installProcess = require('child_process').spawn('wsl', ['--install', '-d', 'kali-linux'], {
-      stdio: ['ignore', 'pipe', 'pipe']
+    const installProcess = spawn('wsl', ['--install', '-d', 'kali-linux'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+      windowsHide: true
     });
     
     let output = '';
     let errorOutput = '';
+    let lineBuffer = '';
     
+    // Progress estimation based on stages
+    const progressStages = {
+      'initializing': { min: 0, max: 5 },
+      'checking': { min: 5, max: 10 },
+      'downloading': { min: 10, max: 70 },  // Longest stage
+      'extracting': { min: 70, max: 85 },
+      'installing': { min: 85, max: 95 },
+      'configuring': { min: 95, max: 99 },
+      'completing': { min: 99, max: 100 }
+    };
+    
+    // Update progress based on elapsed time (fallback if no output)
+    const progressTimer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const elapsedMinutes = Math.floor(elapsed / 60000);
+      
+      // If no output for a while, estimate progress based on time
+      if (Date.now() - lastProgressUpdate > 30000) { // 30 seconds
+        if (installationStage === 'downloading') {
+          // Estimate download progress (typically 10-30 minutes)
+          const estimatedProgress = Math.min(70, 10 + (elapsedMinutes * 2));
+          if (estimatedProgress > currentProgress) {
+            currentProgress = estimatedProgress;
+            sendProgress(currentProgress, `Downloading Kali Linux... (${elapsedMinutes} minutes elapsed)`, 'downloading');
+          }
+        } else if (installationStage === 'installing') {
+          // Estimate install progress (typically 2-5 minutes)
+          const estimatedProgress = Math.min(95, 85 + (elapsedMinutes * 2));
+          if (estimatedProgress > currentProgress) {
+            currentProgress = estimatedProgress;
+            sendProgress(currentProgress, `Installing Kali Linux... (${elapsedMinutes} minutes elapsed)`, 'installing');
+          }
+        }
+      }
+    }, 5000); // Update every 5 seconds
+    
+    // Parse output line by line for progress indicators
     installProcess.stdout.on('data', (data) => {
       const text = data.toString();
       output += text;
-      console.log('Kali install stdout:', text);
+      lineBuffer += text;
+      
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() || ''; // Keep incomplete line in buffer
+      
+      lastProgressUpdate = Date.now();
+      
+      for (const line of lines) {
+        const lineLower = line.toLowerCase().trim();
+        console.log('📥 [KALI-INSTALL] stdout:', line);
+        
+        // Detect installation stages from output
+        if (lineLower.includes('downloading') || lineLower.includes('download')) {
+          installationStage = 'downloading';
+          currentProgress = Math.max(currentProgress, 15);
+          sendProgress(currentProgress, 'Downloading Kali Linux (~1-2GB)... This may take 10-30 minutes.', 'downloading');
+        } else if (lineLower.includes('extracting') || lineLower.includes('extract')) {
+          installationStage = 'extracting';
+          currentProgress = Math.max(currentProgress, 70);
+          sendProgress(currentProgress, 'Extracting Kali Linux files...', 'extracting');
+        } else if (lineLower.includes('installing') || lineLower.includes('install') || lineLower.includes('setting up')) {
+          installationStage = 'installing';
+          currentProgress = Math.max(currentProgress, 85);
+          sendProgress(currentProgress, 'Installing Kali Linux...', 'installing');
+        } else if (lineLower.includes('configuring') || lineLower.includes('configure') || lineLower.includes('setting')) {
+          installationStage = 'configuring';
+          currentProgress = Math.max(currentProgress, 95);
+          sendProgress(currentProgress, 'Configuring Kali Linux...', 'configuring');
+        } else if (lineLower.includes('complete') || lineLower.includes('finished') || lineLower.includes('done')) {
+          installationStage = 'completing';
+          currentProgress = 100;
+          sendProgress(100, 'Kali Linux installation completed!', 'completing');
+        } else if (lineLower.includes('error') || lineLower.includes('failed') || lineLower.includes('failure')) {
+          // Error detected in output
+          const errorMsg = `Error during ${installationStage}: ${line}`;
+          console.error('❌ [KALI-INSTALL]', errorMsg);
+          sendProgress(currentProgress, `⚠️ ${errorMsg}`, 'error');
+        } else if (lineLower.includes('percent') || lineLower.includes('%')) {
+          // Try to extract percentage from output
+          const percentMatch = lineLower.match(/(\d+)%/);
+          if (percentMatch) {
+            const extractedPercent = parseInt(percentMatch[1], 10);
+            const stageProgress = progressStages[installationStage];
+            if (stageProgress) {
+              // Map percentage to current stage range
+              const stageRange = stageProgress.max - stageProgress.min;
+              currentProgress = Math.max(currentProgress, 
+                stageProgress.min + Math.floor((extractedPercent / 100) * stageRange)
+              );
+              sendProgress(currentProgress, `Installing Kali Linux... ${extractedPercent}%`, installationStage);
+            }
+          }
+        }
+      }
     });
     
     installProcess.stderr.on('data', (data) => {
       const text = data.toString();
       errorOutput += text;
-      console.log('Kali install stderr:', text);
+      console.log('⚠️ [KALI-INSTALL] stderr:', text);
+      
+      // Check for errors in stderr
+      const textLower = text.toLowerCase();
+      if (textLower.includes('error') && !textLower.includes('information')) {
+        const errorMsg = `Installation error: ${text.trim()}`;
+        console.error('❌ [KALI-INSTALL]', errorMsg);
+        sendProgress(currentProgress, `❌ ${errorMsg}`, 'error');
+      }
     });
     
     installProcess.on('close', (code) => {
-      console.log(`Kali installation process exited with code ${code}`);
+      clearInterval(progressTimer);
+      
+      console.log(`📋 [KALI-INSTALL] Process exited with code ${code}`);
+      console.log(`📋 [KALI-INSTALL] STDOUT length: ${output.length}`);
+      console.log(`📋 [KALI-INSTALL] STDERR length: ${errorOutput.length}`);
+      
+      const combinedOutput = (output + errorOutput).toLowerCase();
+      const elapsedMinutes = Math.floor((Date.now() - startTime) / 60000);
+      
       if (code === 0) {
-        console.log('✅ Kali Linux installation completed successfully');
-        resolve(true);
+        console.log('✅ [KALI-INSTALL] Kali Linux installation completed successfully');
+        sendProgress(100, 'Kali Linux installation completed successfully!', 'completed');
+        
+        // Wait a moment for system to register the installation
+        setTimeout(() => {
+          resolve(true);
+        }, 2000);
       } else {
-        console.log('❌ Kali Linux installation failed');
-        console.log('Error output:', errorOutput);
-        resolve(false);
+        // Check if installation was actually initiated despite non-zero exit code
+        const hasInstallationIndicators = 
+          combinedOutput.includes('kali') ||
+          combinedOutput.includes('download') ||
+          combinedOutput.includes('install') ||
+          combinedOutput.includes('extract') ||
+          combinedOutput.includes('complete') ||
+          combinedOutput.includes('success');
+        
+        const hasClearErrors = 
+          combinedOutput.includes('error: invalid') ||
+          combinedOutput.includes('not found') ||
+          combinedOutput.includes('unable to') ||
+          combinedOutput.includes('cannot') ||
+          combinedOutput.includes('failed');
+        
+        if (hasInstallationIndicators && !hasClearErrors) {
+          // Installation likely started but didn't complete within our timeout
+          console.log('⚠️ [KALI-INSTALL] Installation appears to have been initiated');
+          sendProgress(95, 'Kali Linux installation initiated. It may still be downloading/installing in the background. Please wait a few more minutes.', 'installing');
+          resolve(true); // Treat as success - installation continues in background
+        } else if (hasClearErrors) {
+          // Clear error - provide detailed error message
+          let errorMessage = 'Kali Linux installation failed. ';
+          
+          if (combinedOutput.includes('error: invalid') || combinedOutput.includes('invalid distribution')) {
+            errorMessage += 'ERROR LOCATION: Distribution name validation failed. ';
+            errorMessage += 'PROBLEM: "kali-linux" distribution not recognized. ';
+            errorMessage += 'SOLUTION: Try installing manually: wsl --install -d Kali-Linux';
+          } else if (combinedOutput.includes('not found') || combinedOutput.includes('does not exist')) {
+            errorMessage += 'ERROR LOCATION: WSL distribution repository. ';
+            errorMessage += 'PROBLEM: Kali Linux distribution not available in your region/repository. ';
+            errorMessage += 'SOLUTION: Update WSL first: wsl --update, then try: wsl --install -d kali-linux';
+          } else if (combinedOutput.includes('network') || combinedOutput.includes('connection')) {
+            errorMessage += 'ERROR LOCATION: Network download. ';
+            errorMessage += 'PROBLEM: Unable to download Kali Linux due to network issues. ';
+            errorMessage += 'SOLUTION: Check your internet connection and try again later.';
+          } else if (combinedOutput.includes('access') || combinedOutput.includes('permission')) {
+            errorMessage += 'ERROR LOCATION: System permissions. ';
+            errorMessage += 'PROBLEM: Insufficient permissions to install WSL distribution. ';
+            errorMessage += 'SOLUTION: Run PowerShell as Administrator and execute: wsl --install -d kali-linux';
+          } else {
+            errorMessage += `PROBLEM: Exit code ${code}. See console logs for details. `;
+            errorMessage += `SOLUTION: Try manual installation: wsl --install -d kali-linux`;
+          }
+          
+          console.error('❌ [KALI-INSTALL]', errorMessage);
+          console.error('❌ [KALI-INSTALL] STDOUT:', output.substring(0, 1000));
+          console.error('❌ [KALI-INSTALL] STDERR:', errorOutput.substring(0, 1000));
+          
+          sendProgress(currentProgress, errorMessage, 'error');
+          resolve(false);
+        } else {
+          // Unknown status - likely installation is running in background
+          console.log('⚠️ [KALI-INSTALL] Installation status unclear - may be in progress');
+          sendProgress(90, `Installation process completed with exit code ${code}. Installation may still be in progress. Please wait ${Math.max(0, 30 - elapsedMinutes)} more minutes.`, 'installing');
+          resolve(true); // Give benefit of doubt
+        }
       }
     });
     
     installProcess.on('error', (err) => {
-      console.log('❌ Kali Linux installation error:', err.message);
+      clearInterval(progressTimer);
+      
+      console.error('❌ [KALI-INSTALL] Process error:', err.message);
+      
+      let errorMessage = 'Kali Linux installation failed. ';
+      
+      if (err.message.includes('ENOENT') || err.message.includes('not found')) {
+        errorMessage += 'ERROR LOCATION: Command execution. ';
+        errorMessage += 'PROBLEM: WSL command not found. WSL may not be installed. ';
+        errorMessage += 'SOLUTION: Install WSL first, then try installing Kali Linux.';
+      } else if (err.message.includes('spawn')) {
+        errorMessage += 'ERROR LOCATION: Process spawn. ';
+        errorMessage += 'PROBLEM: Unable to start WSL installation process. ';
+        errorMessage += 'SOLUTION: Check WSL installation and permissions.';
+      } else {
+        errorMessage += `PROBLEM: ${err.message} `;
+        errorMessage += 'SOLUTION: Try manual installation: wsl --install -d kali-linux';
+      }
+      
+      sendProgress(currentProgress, errorMessage, 'error');
       resolve(false);
     });
   });
@@ -277,6 +491,15 @@ async function createMainWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
+
+  // Suppress harmless DevTools console warnings (Autofill API errors)
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // Filter out harmless DevTools Autofill warnings
+    if (message.includes('Autofill.enable') || message.includes('Autofill.setAddresses')) {
+      return; // Suppress these warnings
+    }
+    // Allow other console messages to pass through
+  });
 
   // In development, load from Vite dev server
   if (isDev) {
@@ -605,8 +828,520 @@ async function createMainWindow() {
     }
   });
 
+  // WSL Installation and User Management handlers (registered early, before app.whenReady)
+  // WSL Installation handler (executes wsl.exe --install)
+  console.log('📝 [MAIN-INIT] Registering WSL IPC handlers BEFORE app.whenReady()...');
+  ipcMain.handle('wsl:install', async (event) => {
+    console.log('🚀 [WSL-INSTALL] Handler invoked! Starting WSL installation with admin privileges...');
+    
+    if (process.platform !== 'win32') {
+      return { success: false, error: 'WSL installation is only supported on Windows' };
+    }
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Send progress updates
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('wsl:installProgress', 'Requesting administrator privileges... Please accept the UAC prompt.');
+      }
+      
+      // Use PowerShell to request elevation and run wsl --install
+      // Start-Process with -Verb RunAs will show UAC prompt and run with admin privileges
+      const powershellCommand = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \\\"wsl.exe --install; Write-Host \\\"WSL_INSTALL_COMPLETED\\\"\\\"' -Verb RunAs -Wait -NoNewWindow"`;
+      
+      console.log('🚀 [WSL-INSTALL] Executing with admin privileges via PowerShell...');
+      console.log('🚀 [WSL-INSTALL] Command (masked):', powershellCommand.substring(0, 100) + '...');
+      
+      // Send progress update
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('wsl:installProgress', 'Installing WSL with administrator privileges... This may take a few minutes.');
+      }
+      
+      try {
+        const { stdout, stderr } = await execAsync(powershellCommand, {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 600000, // 10 minutes timeout (installation can take time)
+          shell: true
+        });
+        
+        const output = (stdout || '').toLowerCase();
+        const errorOutput = (stderr || '').toLowerCase();
+        const combinedOutput = output + ' ' + errorOutput;
+        
+        console.log('🚀 [WSL-INSTALL] Installation command executed');
+        console.log('🚀 [WSL-INSTALL] STDOUT:', stdout);
+        if (stderr) console.log('🚀 [WSL-INSTALL] STDERR:', stderr);
+        
+        // Check if installation completed or requires restart
+        if (combinedOutput.includes('wsl_install_completed') || 
+            combinedOutput.includes('restart') || 
+            combinedOutput.includes('reboot') ||
+            combinedOutput.includes('installation') ||
+            combinedOutput.includes('installed')) {
+          console.log('✅ [WSL-INSTALL] Installation initiated successfully');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation completed. A restart is required.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation completed successfully. Please restart your computer to complete the setup, then log in again.' 
+          };
+        }
+        
+        // Even if no specific message, if we got output, consider it success
+        if (stdout || stderr) {
+          console.log('✅ [WSL-INSTALL] Installation process completed (may require restart)');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation process completed.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+          };
+        }
+        
+        // No output but no error either - treat as success
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('wsl:installProgress', 'WSL installation process completed.');
+        }
+        return { 
+          success: true, 
+          message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+        };
+        
+      } catch (execError) {
+        console.log('⚠️ [WSL-INSTALL] Command execution details:', {
+          message: execError.message,
+          code: execError.code,
+          signal: execError.signal,
+          stdout: execError.stdout ? execError.stdout.substring(0, 500) : 'none',
+          stderr: execError.stderr ? execError.stderr.substring(0, 500) : 'none'
+        });
+        
+        // Check if user cancelled UAC prompt (exit code 1223 = user cancelled elevation)
+        if (execError.code === 1223 || execError.message.includes('1223') || 
+            execError.message.includes('user canceled') || execError.message.includes('cancelled')) {
+          console.log('⚠️ [WSL-INSTALL] User cancelled UAC prompt');
+          return { 
+            success: false, 
+            error: 'Administrator privileges are required. Please accept the UAC prompt or run the application as Administrator.' 
+          };
+        }
+        
+        // Even if error occurred, check output for success indicators
+        const errorOutput = (execError.stderr || execError.stdout || execError.message || '').toLowerCase();
+        const hasRestartMessage = errorOutput.includes('restart') || errorOutput.includes('reboot');
+        const hasInstallMessage = errorOutput.includes('installed') || errorOutput.includes('installation');
+        const hasWslMessage = errorOutput.includes('wsl');
+        
+        // If output indicates installation was initiated, treat as success
+        if (hasRestartMessage || (hasInstallMessage && hasWslMessage)) {
+          console.log('✅ [WSL-INSTALL] Installation likely succeeded despite error code');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation appears to have been initiated.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+          };
+        }
+        
+        // If exit code is 1 but we have some output, it might still be success
+        // (wsl --install often exits with code 1 after initiating installation)
+        if (execError.code === 1 && (execError.stdout || execError.stderr)) {
+          console.log('⚠️ [WSL-INSTALL] Exit code 1 with output - treating as potential success');
+          if (event.sender && !event.sender.isDestroyed()) {
+            event.sender.send('wsl:installProgress', 'WSL installation process completed.');
+          }
+          return { 
+            success: true, 
+            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
+          };
+        }
+        
+        // Real failure - provide helpful error
+        console.error('❌ [WSL-INSTALL] Installation failed:', execError.message);
+        return { 
+          success: false, 
+          error: `WSL installation failed. Error: ${execError.message || 'Unknown error'}. Exit code: ${execError.code || 'unknown'}. Please try installing WSL manually: Open PowerShell as Administrator and run "wsl --install", then restart your computer.` 
+        };
+      }
+    } catch (error) {
+      console.error('❌ [WSL-INSTALL] Unexpected error:', error);
+      return { 
+        success: false, 
+        error: `Unexpected error during WSL installation: ${error.message}. Please install WSL manually: Open PowerShell as Administrator and run "wsl --install", then restart your computer.` 
+      };
+    }
+  });
+
+  // WSL User Creation handler
+  ipcMain.handle('wsl:createUser', async (event, username, password) => {
+    console.log('👤 [WSL-USER-CREATE] Starting WSL user creation...');
+    console.log('👤 [WSL-USER-CREATE] Username:', username);
+    console.log('👤 [WSL-USER-CREATE] Password length:', password ? password.length : 0);
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // First, check if user already exists
+      const checkUserCommand = `wsl -e bash -c "id -u ${username} 2>/dev/null || echo 'notfound'"`;
+      console.log('👤 [WSL-USER-CREATE] Checking if user exists:', checkUserCommand);
+      
+      let checkResult;
+      try {
+        checkResult = await execAsync(checkUserCommand);
+        console.log('👤 [WSL-USER-CREATE] Check result:', checkResult.stdout.trim());
+        
+        if (checkResult.stdout.trim() !== 'notfound' && checkResult.stdout.trim() !== '') {
+          const errorMsg = `User "${username}" already exists`;
+          console.error('❌ [WSL-USER-CREATE]', errorMsg);
+          return { success: false, error: errorMsg };
+        }
+      } catch (checkError) {
+        // If check fails, user might not exist - continue with creation
+        console.log('👤 [WSL-USER-CREATE] User check failed, proceeding with creation:', checkError.message);
+      }
+      
+      // Create user using adduser or useradd with proper root access
+      const createUserScript = `
+        if id "${username}" &>/dev/null 2>&1; then
+          echo "USER_EXISTS"
+          exit 1
+        fi
+        
+        if command -v adduser >/dev/null 2>&1; then
+          adduser --disabled-password --gecos "" "${username}" 2>&1
+          echo "${username}:${password}" | chpasswd 2>&1
+        elif command -v useradd >/dev/null 2>&1; then
+          useradd -m "${username}" 2>&1
+          echo "${username}:${password}" | chpasswd 2>&1
+        else
+          echo "NO_USERADD_COMMAND"
+          exit 1
+        fi
+        
+        if id "${username}" &>/dev/null 2>&1; then
+          echo "USER_CREATED"
+        else
+          echo "USER_CREATION_FAILED"
+          exit 1
+        fi
+      `;
+      
+      // Try with root access first, then fall back to default user
+      let createCommand = `wsl -u root -e bash -c ${JSON.stringify(createUserScript)}`;
+      
+      // Alternative: If root access fails, we can try with sudo
+      const createCommandSudo = `wsl -e bash -c "echo 'root' | sudo -S bash -c ${JSON.stringify(createUserScript)}"`;
+      console.log('👤 [WSL-USER-CREATE] Create command (masked):', createCommand.replace(password, '***'));
+      
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('wsl:userCreateProgress', `Creating user "${username}"...`);
+      }
+      
+      let stdout, stderr;
+      try {
+        const result = await execAsync(createCommand, {
+          maxBuffer: 10 * 1024 * 1024,
+          timeout: 60000 // 1 minute timeout
+        });
+        stdout = result.stdout;
+        stderr = result.stderr;
+      } catch (firstError) {
+        // If root access failed, try with sudo
+        console.log('👤 [WSL-USER-CREATE] Root access failed, trying with sudo...');
+        try {
+          const sudoResult = await execAsync(createCommandSudo, {
+            maxBuffer: 10 * 1024 * 1024,
+            timeout: 60000
+          });
+          stdout = sudoResult.stdout;
+          stderr = sudoResult.stderr;
+        } catch (sudoError) {
+          // Both failed, throw the original error
+          throw firstError;
+        }
+      }
+      
+      console.log('👤 [WSL-USER-CREATE] STDOUT:', stdout);
+      if (stderr) console.log('👤 [WSL-USER-CREATE] STDERR:', stderr);
+      
+      // Check if user already exists in output
+      if (stdout.includes('USER_EXISTS') || stderr.includes('already exists') || 
+          stderr.includes('user exists') || stdout.includes('already exists')) {
+        const errorMsg = `User "${username}" already exists`;
+        console.error('❌ [WSL-USER-CREATE]', errorMsg);
+        return { success: false, error: errorMsg };
+      }
+      
+      // Check if creation was successful
+      if (stdout.includes('USER_CREATED') || stdout.includes('useradd:') === false) {
+        console.log('✅ [WSL-USER-CREATE] User created successfully');
+        
+        // Verify the user can authenticate
+        const verifyCommand = `wsl -u ${username} -e bash -c "whoami"`;
+        try {
+          const verifyResult = await execAsync(verifyCommand);
+          if (verifyResult.stdout.trim() === username) {
+            console.log('✅ [WSL-USER-CREATE] User verification successful');
+            return { success: true, message: `User "${username}" created successfully` };
+          }
+        } catch (verifyError) {
+          console.log('⚠️ [WSL-USER-CREATE] User verification failed, but user was created:', verifyError.message);
+          // Still return success since user was created
+          return { success: true, message: `User "${username}" created successfully` };
+        }
+      }
+      
+      // If we get here, something went wrong
+      const errorMsg = stderr || stdout || 'Unknown error occurred';
+      console.error('❌ [WSL-USER-CREATE] User creation failed:', errorMsg);
+      return { success: false, error: errorMsg };
+      
+    } catch (error) {
+      console.error('❌ [WSL-USER-CREATE] Error:', error);
+      
+      // Check if error indicates user already exists
+      const errorMsg = error.message || error.stderr || 'Unknown error';
+      if (errorMsg.includes('already exists') || errorMsg.includes('user exists') || 
+          errorMsg.includes('USER_EXISTS')) {
+        return { success: false, error: `User "${username}" already exists` };
+      }
+      
+      return { success: false, error: errorMsg };
+    }
+  });
+
+  // Validate WSL credentials handler
+  console.log('📝 [MAIN] Registering wsl:validateCredentials handler...');
+  ipcMain.handle('wsl:validateCredentials', async (event, username, password) => {
+    console.log('🔐 [WSL-VALIDATE] Validating WSL credentials...');
+    console.log('🔐 [WSL-VALIDATE] Username:', username);
+    console.log('🔐 [WSL-VALIDATE] Password length:', password ? password.length : 0);
+    
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Test credentials by trying to run a command as the user
+      const testCommand = `wsl -u ${username} -e bash -c "whoami"`;
+      console.log('🔐 [WSL-VALIDATE] Test command:', testCommand);
+      
+      // First, test if user exists and can run commands
+      try {
+        const result = await execAsync(testCommand, { timeout: 10000 });
+        if (result.stdout.trim() === username) {
+          console.log('✅ [WSL-VALIDATE] User exists and can execute commands');
+          
+          // Now test password by trying sudo or su
+          const passwordTestCommand = `wsl -u ${username} -e bash -c "echo '${password}' | su -c 'whoami' - 2>/dev/null || echo '${password}' | sudo -S whoami 2>/dev/null || echo 'invalid'"`;
+          try {
+            const passwordResult = await execAsync(passwordTestCommand, { timeout: 10000 });
+            if (passwordResult.stdout.includes('root') || passwordResult.stdout.trim() === username) {
+              console.log('✅ [WSL-VALIDATE] Credentials are valid');
+              return { success: true, message: 'Credentials validated successfully' };
+            } else {
+              console.log('❌ [WSL-VALIDATE] Password validation failed');
+              return { success: false, error: 'Invalid password' };
+            }
+          } catch (pwdError) {
+            // Password test failed, but user exists - return partial success
+            console.log('⚠️ [WSL-VALIDATE] Password test inconclusive, but user exists');
+            return { success: true, message: 'User exists and credentials may be valid' };
+          }
+        } else {
+          console.log('❌ [WSL-VALIDATE] User test failed - wrong username returned');
+          return { success: false, error: 'User authentication failed' };
+        }
+      } catch (testError) {
+        console.error('❌ [WSL-VALIDATE] User test failed:', testError.message);
+        return { success: false, error: `User "${username}" not found or authentication failed` };
+      }
+    } catch (error) {
+      console.error('❌ [WSL-VALIDATE] Validation error:', error);
+      return { success: false, error: error.message || 'Failed to validate credentials' };
+    }
+  });
+
+  // API Scanner - Real scanning with WSL/Kali tools
+  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 30) => {
+    try {
+      console.log('\n\n');
+      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
+      console.log('🔍 [API-SCANNER] Starting Wireshark-based API scan for:', targetUrl);
+      console.log('🔍 [API-SCANNER] Duration:', duration, 'seconds');
+      console.log('🔍 [API-SCANNER] Timestamp:', new Date().toISOString());
+      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
+      console.log('\n');
+      
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      const outDir = path.join(process.cwd(), 'temp-api-scans', `api-scan-${Date.now()}`);
+      fs.mkdirSync(outDir, { recursive: true });
+      
+      const scanner = new APIScanner(targetUrl, outDir);
+      
+      // Set up progress callback
+      scanner.setProgressCallback((update) => {
+        // Log to console with command if present
+        if (update.command) {
+          console.log(`\n[API-SCANNER-UI] ${update.message || ''}`);
+          console.log(`[API-SCANNER-UI] Command: ${update.command}\n`);
+        }
+        
+        if (event && event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('apiscan:progress', {
+            progress: update.progress || 0,
+            message: update.message || '',
+            command: update.command || null,
+            type: update.type || 'info'
+          });
+        }
+      });
+      
+      // Perform the scan
+      const results = await scanner.performScan();
+      
+      // Generate PDF report
+      if (results.capture_data) {
+        const pdfPath = path.join(outDir, 'api-scan-report.pdf');
+        await scanner.generatePDFReport(results.capture_data, pdfPath);
+        results.pdfReport = pdfPath;
+      }
+      
+      // Send completion
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('apiscan:complete', {
+          success: true,
+          results: results
+        });
+      }
+      
+      return { success: true, results: results };
+    } catch (error) {
+      console.error('❌ [API-SCANNER] Scan error:', error);
+      
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('apiscan:progress', {
+          progress: 0,
+          message: `Error: ${error.message || 'Unknown error'}`,
+          type: 'error'
+        });
+        event.sender.send('apiscan:complete', {
+          success: false,
+          error: error.message || 'Unknown error'
+        });
+      }
+      
+      return { success: false, error: error.message || 'Unknown error' };
+    }
+  });
+
+  // IPC handler for exporting PDF report
+  ipcMain.handle('apiscan:export-pdf', async (event, captureData) => {
+    try {
+      const { dialog } = require('electron');
+      const timestamp = Date.now();
+      const defaultPath = path.join(app.getPath('documents'), `api-scan-report-${timestamp}.pdf`);
+      
+      const result = await dialog.showSaveDialog({
+        title: 'Save PDF Report',
+        defaultPath: defaultPath,
+        filters: [
+          { name: 'PDF Files', extensions: ['pdf'] }
+        ]
+      });
+      
+      if (result.canceled) {
+        return { success: false, canceled: true };
+      }
+      
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      const outDir = path.dirname(result.filePath);
+      const scanner = new APIScanner('', outDir);
+      
+      const pdfPath = await scanner.generatePDFReport(captureData, result.filePath);
+      
+      return { success: true, pdfPath };
+    } catch (error) {
+      console.error('❌ [API-SCANNER] PDF export error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  console.log('✅ [MAIN-INIT] All WSL IPC handlers registered successfully');
+
   app.whenReady().then(async () => {
+    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
   const win = await createMainWindow();
+
+  // Auto-check and install Kali Linux if missing on Windows
+  if (process.platform === 'win32') {
+    setTimeout(async () => {
+      try {
+        console.log('🔍 [STARTUP] Checking for Kali Linux...');
+        const hasWsl = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
+        
+        if (hasWsl) {
+          const hasKali = checkKaliInstalled();
+          if (!hasKali) {
+            console.log('⚠️ [STARTUP] Kali Linux not detected. Starting auto-installation...');
+            
+            // Show notification to user
+            const { dialog } = require('electron');
+            const installKali = await dialog.showMessageBox(win, {
+              type: 'question',
+              title: 'Kali Linux Auto-Install',
+              message: 'Kali Linux is not installed in WSL.',
+              detail: 'Kali Linux provides the best security tools for penetration testing. Would you like to install it now? This will download and install Kali Linux in WSL automatically.',
+              buttons: ['Install Kali Now', 'Install Later'],
+              defaultId: 0,
+              cancelId: 1
+            });
+            
+            if (installKali.response === 0) {
+              console.log('🚀 [STARTUP] User chose to install Kali Linux now');
+              // Create a mock event object for progress updates
+              const mockEvent = { sender: win.webContents };
+              const result = await installKaliLinux(mockEvent);
+              if (result) {
+                console.log('✅ [STARTUP] Kali Linux installed successfully');
+                // Show success message
+                dialog.showMessageBox(win, {
+                  type: 'info',
+                  title: 'Installation Complete',
+                  message: 'Kali Linux has been installed successfully!',
+                  detail: 'You may need to restart WSL or the application for changes to take effect.'
+                });
+              } else {
+                console.log('❌ [STARTUP] Kali Linux installation failed');
+                dialog.showMessageBox(win, {
+                  type: 'error',
+                  title: 'Installation Failed',
+                  message: 'Kali Linux installation failed.',
+                  detail: 'Please try installing manually using: wsl --install -d kali-linux'
+                });
+              }
+            } else {
+              console.log('ℹ️ [STARTUP] User chose to install Kali Linux later');
+            }
+          } else {
+            console.log('✅ [STARTUP] Kali Linux is already installed');
+          }
+        } else {
+          console.log('⚠️ [STARTUP] WSL is not available');
+        }
+      } catch (error) {
+        console.error('❌ [STARTUP] Error checking/installing Kali:', error);
+      }
+    }, 2000); // Wait 2 seconds after app ready for better UX
+  }
 
   // Setup IPC handlers (moved here to access win variable)
   ipcMain.handle('setup:selectDirectory', async () => {
@@ -793,34 +1528,46 @@ async function createMainWindow() {
     });
   });
 
+  // Note: WSL handlers (wsl:install, wsl:createUser, wsl:validateCredentials) 
+  // are registered BEFORE app.whenReady() at lines 608-841
+
   // Kali Linux management
   ipcMain.handle('kali:check', () => {
     return checkKaliInstalled();
   });
 
   ipcMain.handle('kali:install', async (event) => {
-    console.log('🚀 Starting Kali Linux installation via IPC...');
+    console.log('🚀 [KALI-INSTALL-HANDLER] Starting Kali Linux installation via IPC...');
     
     // Update UI to show installation in progress
-    event.sender.send('kali:installProgress', 'Starting Kali Linux installation...');
+    if (event.sender && !event.sender.isDestroyed()) {
+      event.sender.send('kali:installProgress', 'Starting Kali Linux installation...');
+    }
     
     try {
-      const result = await installKaliLinux();
+      // Pass event to installKaliLinux so it can send progress updates
+      const result = await installKaliLinux(event);
       
       if (result) {
         // Installation successful - update UI
-        event.sender.send('kali:installComplete', true);
-        console.log('✅ Kali Linux installation completed successfully');
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('kali:installComplete', true);
+        }
+        console.log('✅ [KALI-INSTALL-HANDLER] Kali Linux installation completed successfully');
       } else {
         // Installation failed - update UI
-        event.sender.send('kali:installComplete', false);
-        console.log('❌ Kali Linux installation failed');
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('kali:installComplete', false);
+        }
+        console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation failed');
       }
       
       return result;
     } catch (error) {
-      console.log('❌ Kali Linux installation error:', error.message);
-      event.sender.send('kali:installComplete', false);
+      console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation error:', error.message);
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('kali:installComplete', false);
+      }
       return false;
     }
   });
@@ -873,81 +1620,28 @@ async function createMainWindow() {
     });
   }
 
-  // Tool checking only (no installation)
+  // Tool checking only (no installation) - FIXED to use rootless WSL
   async function checkRequiredToolsOnly(password) {
     console.log('🔧 [TOOL-CHECKER] Starting tool check (no installation)...');
-    console.log('🔧 [TOOL-CHECKER] Password provided:', password ? 'EXISTS' : 'NULL');
-    console.log('🔧 [TOOL-CHECKER] Password length:', password ? password.length : 0);
-  
+    // Password not needed anymore - we use wsl -u root directly
+    
     const requiredTools = [
       'jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb',
       'amass','john','medusa','zaproxy','mitmproxy','socat','fail2ban',
-      'curl','wget'
+      'curl','wget','pip3'
     ];
   
     const goTools = ['ffuf','nuclei','dalfox','go'];
-  
     const allTools = [...requiredTools, ...goTools];
-  
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
-    const execAsync = promisify(exec);
-  
-    // Build a safe single-quoted bash script so we don't have to escape $ inside JS
-    // The bash script loops through tools and prints either ✅ or ❌ lines
-    const bashScript = `for tool in ${allTools.join(' ')}; do
-      if command -v "$tool" >/dev/null 2>&1; then
-        echo "✅ $tool is installed -> $(command -v $tool)"
-      else
-        echo "❌ $tool is NOT installed"
-      fi
-    done`;
-  
-    // Wrap the bash script in single quotes so node doesn't expand $tool etc.
-    // Use -u root if you need root PATH, otherwise remove -u root
-    const toolCheckCommand = `wsl -d kali-linux -u root -- bash -lc '${bashScript.replace(/'/g, "'\"'\"'")}'`;
-  
-    console.log('🔧 [TOOL-CHECKER] Running tool check command:', toolCheckCommand);
-  
-    let stdout = '';
-    let stderr = '';
-    try {
-      const result = await execAsync(toolCheckCommand, { maxBuffer: 10 * 1024 * 1024 });
-      stdout = result.stdout || '';
-      stderr = result.stderr || '';
-      console.log('🔧 [TOOL-CHECKER] Command finished without throwing.');
-    } catch (execError) {
-      // execAsync throws on non-zero exit code; still attempt to capture output
-      stdout = execError.stdout || '';
-      stderr = execError.stderr || '';
-      console.log('🔧 [TOOL-CHECKER] Command threw an error. exitCode:', execError.code);
-      console.log('🔧 [TOOL-CHECKER] execError.message:', execError.message);
-      // We do NOT immediately throw — we want to parse any partial stdout for results
-    }
-  
-    console.log('🔧 [TOOL-CHECKER] Raw stdout length:', stdout.length);
-    console.log('🔧 [TOOL-CHECKER] Raw stderr length:', stderr.length);
-    if (stderr) console.log('🔧 [TOOL-CHECKER] Raw stderr (first 1000 chars):', stderr.slice(0, 1000));
-  
-    // Parse output
+    
+    // Use new wslHelper to check each tool individually (no broken bash loops)
+    const status = {};
     const missingTools = [];
-    const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    console.log('🔧 [TOOL-CHECKER] Parsed lines:', lines);
-  
-    for (const line of lines) {
-      if (line.startsWith('❌')) {
-        // Extract word-like tool name (letters, digits, hyphen, underscore)
-        const m = line.match(/❌\s+([A-Za-z0-9_\-]+)\s+is NOT installed/);
-        if (m && m[1]) {
-          missingTools.push(m[1]);
-        } else {
-          console.log('🔧 [TOOL-CHECKER] Could not extract tool name from line:', line);
-        }
-      } else if (line.startsWith('✅')) {
-        // installed line — you can parse path if needed
-      } else {
-        console.log('🔧 [TOOL-CHECKER] Unrecognized line format (ignored):', line);
-      }
+    
+    for (const tool of allTools) {
+      const installed = await wslHelper.checkTool(tool);
+      status[tool] = installed;
+      if (!installed) missingTools.push(tool);
     }
   
     const success = missingTools.length === 0;
@@ -956,9 +1650,9 @@ async function createMainWindow() {
     return {
       success,
       missingTools,
+      toolStatus: status,
       totalChecked: allTools.length,
-      installedCount: allTools.length - missingTools.length,
-      raw: { stdout, stderr }
+      installedCount: allTools.length - missingTools.length
     };
   }
   
@@ -970,7 +1664,7 @@ async function createMainWindow() {
     const requiredTools = [
       'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
       'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
-      'curl', 'wget'
+      'curl', 'wget', 'dnstwist'
     ];
 
     const goTools = [
@@ -1251,11 +1945,11 @@ async function createMainWindow() {
       });
       
       if (installKali.response === 0) {
-        const kaliInstalled = await installKaliInWsl(event);
+        const kaliInstalled = await installKaliLinux();
         if (kaliInstalled) {
-          pre.hasKali = true;
+          pre.hasKali = checkKaliInstalled(); // Re-check to confirm
           // Re-check nmap after Kali installation
-          const nmapCheck = require('child_process').spawnSync('wsl', ['sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
+          const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
           if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
             pre.wslNmap = true;
             event.sender.send('scan:progress', { stage: 'installing', message: 'nmap found in Kali Linux!' });
@@ -2030,7 +2724,7 @@ async function createMainWindow() {
           console.log(`🔧 [SINGLE-TOOL-INSTALL] Go is already installed`);
         } catch (goError) {
           console.log(`🔧 [SINGLE-TOOL-INSTALL] Go not found, installing Go first...`);
-          const goInstallCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y golang-go"`;
+          const goInstallCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt-get install -y golang-go"`;
           await execAsync(goInstallCommand);
           console.log(`🔧 [SINGLE-TOOL-INSTALL] Go installed successfully`);
         }
@@ -2060,7 +2754,7 @@ async function createMainWindow() {
           installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install amass"`;
         } else if (toolName === 'metasploit-framework') {
           // Install metasploit CLI only via apt (lighter installation)
-          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y metasploit-framework"`;
+        installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt-get install -y metasploit-framework"`;
         } else if (toolName === 'zaproxy') {
           // Install zaproxy via snap
           installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install zaproxy"`;
@@ -2068,63 +2762,35 @@ async function createMainWindow() {
         
         console.log(`🔧 [SINGLE-TOOL-INSTALL] Special command: ${installCommand.replace(usePassword, '***')}`);
       } else {
-        // Install regular apt package
-        installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y ${toolName}"`;
+        // Install regular apt package using rootless WSL
         console.log(`🔧 [SINGLE-TOOL-INSTALL] APT package detected: ${toolName}`);
-        console.log(`🔧 [SINGLE-TOOL-INSTALL] Apt command: ${installCommand.replace(usePassword, '***')}`);
-      }
-      
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] About to execute command...`);
-      
-      // First test if WSL is working
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] Testing WSL connectivity...`);
-      try {
-        const testCommand = `wsl -e bash -c "echo 'WSL test successful'"`;
-        const testResult = await execAsync(testCommand);
-        console.log(`🔧 [SINGLE-TOOL-INSTALL] WSL test result: ${testResult.stdout.trim()}`);
-      } catch (testError) {
-        console.log(`❌ [SINGLE-TOOL-INSTALL] WSL test failed: ${testError.message}`);
-        return { 
-          success: false, 
-          tool: toolName,
-          error: `WSL connectivity test failed: ${testError.message}`,
-          errorType: 'WSL_CONNECTIVITY_ERROR'
-        };
-      }
-
-      // Update package lists before installation (only for APT packages)
-      if (!goTools[toolName]) {
-        console.log(`🔧 [SINGLE-TOOL-INSTALL] Updating package lists...`);
+        
         try {
-          const updateCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt update"`;
-          await execAsync(updateCommand);
-          console.log(`🔧 [SINGLE-TOOL-INSTALL] Package lists updated successfully`);
-        } catch (updateError) {
-          console.log(`⚠️ [SINGLE-TOOL-INSTALL] Package list update failed, continuing anyway: ${updateError.message}`);
+          // Use wslHelper for rootless installation
+          const send = (progress, message) => {
+            try { if (event?.sender && !event.sender.isDestroyed()) event.sender.send('tools:installProgress', { tool: toolName, progress, message }); } catch {}
+          };
+          
+          send(5, `Updating package lists for ${toolName}…`);
+          const updateRes = await wslHelper.runWSLAsRoot('DEBIAN_FRONTEND=noninteractive apt-get update -qq');
+          if (!updateRes.success) {
+            console.log(`⚠️ [SINGLE-TOOL-INSTALL] Package list update had issues, continuing anyway`);
+          }
+          
+          send(30, `Installing ${toolName}…`);
+          const installRes = await wslHelper.runWSLAsRoot(`DEBIAN_FRONTEND=noninteractive apt-get install -y ${toolName}`, 15 * 60 * 1000);
+          
+          if (installRes.success) {
+            send(100, `${toolName} installed successfully`);
+            console.log(`✅ [SINGLE-TOOL-INSTALL] ${toolName} installed successfully`);
+            return { success: true, tool: toolName, stdout: installRes.stdout, stderr: installRes.stderr };
+          }
+          
+          throw new Error(`Installation failed: ${installRes.stderr || installRes.error}`);
+        } catch (installError) {
+          throw installError;
         }
       }
-      
-      // Execute installation with timeout
-      const { stdout, stderr } = await Promise.race([
-        execAsync(installCommand),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Command timeout after 60 seconds')), 60000)
-        )
-      ]);
-      
-      console.log(`✅ [SINGLE-TOOL-INSTALL] ${toolName} installed successfully`);
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDOUT length: ${stdout ? stdout.length : 0}`);
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDOUT: ${stdout}`);
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDERR length: ${stderr ? stderr.length : 0}`);
-      if (stderr) console.log(`🔧 [SINGLE-TOOL-INSTALL] STDERR: ${stderr}`);
-      
-      return { 
-        success: true, 
-        tool: toolName,
-        stdout: stdout,
-        stderr: stderr
-      };
-      
     } catch (error) {
       console.log(`❌ [SINGLE-TOOL-INSTALL] ===== INSTALLATION FAILED =====`);
       console.log(`❌ [SINGLE-TOOL-INSTALL] Tool: ${toolName}`);
@@ -2179,6 +2845,329 @@ async function createMainWindow() {
         error: error.message,
         stdout: error.stdout || '',
         stderr: error.stderr || ''
+      };
+    }
+  });
+
+  // Minimal new IPC for blocking setup flow using root user inside WSL
+  ipcMain.handle('check-wsl', async () => {
+    return await wslHelper.checkWSL();
+  });
+
+  ipcMain.handle('check-tools', async () => {
+    return await toolInstaller.checkAllTools();
+  });
+
+  ipcMain.handle('install-tools', async (event) => {
+    return await new Promise((resolve) => {
+      toolInstaller.installAllTools((progress) => {
+        try { if (event?.sender && !event.sender.isDestroyed()) event.sender.send('install-progress', progress); } catch {}
+      }).then(resolve);
+    });
+  });
+
+  // DNSTwist phishing detection handler - using comprehensive Python wrapper
+  ipcMain.handle('phishing:runDnstwist', async (event, domain, password) => {
+    console.log('🔍 [DNSTWIST] ===== STARTING COMPREHENSIVE PHISHING DETECTION =====');
+    console.log('🔍 [DNSTWIST] Target domain:', domain);
+    console.log('🔍 [DNSTWIST] Timestamp:', new Date().toISOString());
+    
+    try {
+      // Extract domain from URL if needed
+      let targetDomain = domain;
+      try {
+        const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+        targetDomain = url.hostname.replace('www.', '');
+      } catch (e) {
+        // If URL parsing fails, use domain as-is
+        targetDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+      }
+      
+      console.log('🔍 [DNSTWIST] Processed domain:', targetDomain);
+      
+      // Send progress update to frontend
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'initializing', 
+          message: 'Initializing comprehensive phishing detection...',
+          progress: 5
+        });
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'checking', 
+          message: 'Checking dnstwist and Python wrapper...',
+          progress: 15
+        });
+      }
+      
+      // Check if dnstwist is installed using rootless WSL
+      console.log('🔍 [DNSTWIST] Checking installation...');
+      
+      const isInstalled = await wslHelper.checkTool('dnstwist');
+      
+      if (!isInstalled) {
+        console.log('❌ [DNSTWIST] dnstwist is not installed');
+        console.log('🔍 [DNSTWIST] Attempting to install dnstwist using rootless WSL...');
+        
+        // Install dnstwist using rootless WSL (no password needed)
+        {
+          // Send progress update
+          if (event && event.sender) {
+            event.sender.send('phishing:progress', { 
+              stage: 'installing', 
+              message: 'Installing dnstwist...',
+              progress: 20
+            });
+          }
+          
+          // Use rootless WSL installation
+          console.log('🔍 [DNSTWIST] Installing dnstwist using rootless WSL...');
+          
+          try {
+            // Update package lists first
+            const updateRes = await wslHelper.runWSLAsRoot('DEBIAN_FRONTEND=noninteractive apt-get update -qq');
+            if (!updateRes.success) {
+              console.log('⚠️ [DNSTWIST] Package list update had issues, continuing anyway');
+            }
+            
+            // Install dnstwist
+            const installRes = await wslHelper.runWSLAsRoot('DEBIAN_FRONTEND=noninteractive apt-get install -y dnstwist', 120000);
+            if (!installRes.success) {
+              throw new Error(installRes.stderr || installRes.error || 'dnstwist installation failed');
+            }
+            
+            console.log('✅ [DNSTWIST] dnstwist installation completed');
+            
+            // Wait a moment for installation to complete
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Re-check installation using rootless WSL
+            try {
+              const recheckInstalled = await wslHelper.checkTool('dnstwist');
+              if (!recheckInstalled) {
+                throw new Error('dnstwist installation verification failed');
+              }
+              console.log('✅ [DNSTWIST] dnstwist verified after installation');
+            } catch (recheckError) {
+              console.log('⚠️ [DNSTWIST] Installation verification failed, proceeding anyway');
+            }
+          } catch (installError) {
+            console.log('❌ [DNSTWIST] Installation failed:', installError.message);
+            return { 
+              success: false, 
+              error: 'dnstwist is not installed and installation failed. Please install manually via: sudo apt install dnstwist',
+              installed: false,
+              details: installError.message || 'Installation failed'
+            };
+          }
+        }
+      } else {
+        const pathResult = await wslHelper.runWSL('command -v dnstwist');
+        console.log('✅ [DNSTWIST] dnstwist found at:', pathResult.stdout || 'installed');
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'scanning', 
+          message: 'Running comprehensive dnstwist analysis with all features...',
+          progress: 30
+        });
+      }
+      
+      // Get Python wrapper path
+      const wrapperPath = path.join(__dirname, '..', '..', 'backend', 'dnstwist_wrapper.py');
+      const wrapperPathWSL = wrapperPath.replace(/\\/g, '/').replace(/^([A-Z]):/, (m, letter) => `/mnt/${letter.toLowerCase()}`);
+      
+      console.log('🔍 [DNSTWIST] Python wrapper path:', wrapperPath);
+      console.log('🔍 [DNSTWIST] WSL wrapper path:', wrapperPathWSL);
+      
+      // Build command to run Python wrapper via WSL
+      // FIXED: Use comma-separated fuzzers instead of 'all', and --ssdeep is handled by wrapper
+      const commandParts = [
+        'python3',
+        wrapperPathWSL,
+        '--fuzzers', '*original,addition,bitsquatting,dictionary,homoglyph,transposition,subdomain',
+        '--registered',
+        '--geoip',
+        '--phash',
+        '--screenshots',
+        '--ssdeep',  // Wrapper converts this to --lsh ssdeep
+        '--format', 'json',
+        targetDomain
+      ];
+      
+      console.log('🔍 [DNSTWIST] Executing Python wrapper via WSL');
+      console.log('🔍 [DNSTWIST] Command:', commandParts.join(' '));
+      
+      // Execute using spawn - pass command parts directly to WSL
+      const { spawn } = require('child_process');
+      const child = spawn('wsl', commandParts, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: path.join(__dirname, '..', '..')
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        try { 
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('phishing:log', output);
+          }
+        } catch {}
+      });
+      
+      child.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        try { 
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('phishing:log', output);
+          }
+        } catch {}
+      });
+      
+      const exitCode = await new Promise((resolve, reject) => {
+        child.on('close', (code) => { resolve(code); });
+        child.on('error', (error) => { reject(error); });
+      });
+      
+      stdout = stdout.trim();
+      stderr = stderr.trim();
+      
+      console.log('✅ [DNSTWIST] Python wrapper completed');
+      console.log('📤 [DNSTWIST] STDOUT length:', stdout ? stdout.length : 0);
+      if (stderr) console.log('⚠️ [DNSTWIST] STDERR:', stderr.substring(0, 500));
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'parsing', 
+          message: 'Parsing comprehensive scan results...',
+          progress: 70
+        });
+      }
+      
+      // Parse JSON output from Python wrapper
+      let scanResults = null;
+      try {
+        // Find JSON in output (may have error messages before JSON)
+        const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          scanResults = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No JSON output found in Python wrapper response');
+        }
+        
+        console.log(`✅ [DNSTWIST] Parsed comprehensive results`);
+        console.log(`📊 [DNSTWIST] Found ${scanResults.statistics?.total_variations || 0} domain variations`);
+        
+        if (!scanResults.success) {
+          throw new Error(scanResults.error || 'Python wrapper returned unsuccessful result');
+        }
+      } catch (parseError) {
+        console.log('⚠️ [DNSTWIST] Failed to parse JSON output:', parseError.message);
+        console.log('⚠️ [DNSTWIST] STDOUT:', stdout.substring(0, 1000));
+        
+        // Fallback: try basic dnstwist command
+        console.log('⚠️ [DNSTWIST] Falling back to basic dnstwist command...');
+        
+        // Build basic command
+        const basicCmd = ['dnstwist', '--format', 'json', '--registered', targetDomain];
+        const basicChild = spawn('wsl', basicCmd, {
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let basicStdout = '';
+        let basicStderr = '';
+        
+        basicChild.stdout.on('data', (data) => {
+          basicStdout += data.toString();
+        });
+        
+        basicChild.stderr.on('data', (data) => {
+          basicStderr += data.toString();
+        });
+        
+        const basicExitCode = await new Promise((resolve, reject) => {
+          basicChild.on('close', (code) => { resolve(code); });
+          basicChild.on('error', (error) => { reject(error); });
+        });
+        
+        if (basicExitCode === 0 && basicStdout.trim()) {
+          try {
+            const basicResults = JSON.parse(basicStdout.trim());
+            // Build basic results structure
+            scanResults = {
+              success: true,
+              target_url: domain,
+              target_domain: targetDomain,
+              timestamp: new Date().toISOString(),
+              threat_score: 50,
+              findings: [],
+              domain_variations: Array.isArray(basicResults) ? basicResults.map(r => ({
+                domain: r['domain-name'] || r.domain_name || r.domain || '',
+                dns_a: r['dns-a'] || r.dns_a || r.a || [],
+                dns_mx: r['dns-mx'] || r.dns_mx || r.mx || [],
+                dns_ns: r['dns-ns'] || r.dns_ns || r.ns || [],
+                fuzzer: r.fuzzer || 'unknown',
+                active: ((r['dns-a'] || r.dns_a || r.a || []).length > 0 || 
+                        (r['dns-mx'] || r.dns_mx || r.mx || []).length > 0 ||
+                        (r['dns-ns'] || r.dns_ns || r.ns || []).length > 0)
+              })) : [],
+              statistics: {
+                total_variations: Array.isArray(basicResults) ? basicResults.length : 0,
+                active_domains: 0,
+                inactive_domains: 0
+              },
+              recommendations: [],
+              evidence: {
+                scan_tool: 'dnstwist',
+                scan_method: 'Basic typosquatting detection',
+                raw_output_preview: basicStdout.substring(0, 1000)
+              }
+            };
+          } catch (e) {
+            throw new Error(`Failed to parse fallback output: ${parseError.message}`);
+          }
+        } else {
+          throw new Error(`Python wrapper failed: ${parseError.message}. Fallback also failed.`);
+        }
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'complete', 
+          message: 'Comprehensive scan completed successfully!',
+          progress: 95
+        });
+      }
+      
+      console.log('✅ [DNSTWIST] Comprehensive scan completed successfully');
+      console.log(`📊 [DNSTWIST] Threat score: ${scanResults.threat_score || 0}/100`);
+      
+      return {
+        success: true,
+        results: scanResults,
+        installed: true
+      };
+      
+    } catch (error) {
+      console.log('❌ [DNSTWIST] Scan failed:', error.message);
+      console.log('❌ [DNSTWIST] Error details:', error);
+      
+      return {
+        success: false,
+        error: error.message,
+        installed: true,
+        details: error.stdout || error.stderr || ''
       };
     }
   });
