@@ -3,8 +3,14 @@
  * Handles API calls to Grok (xAI) for generating security scan suggestions
  */
 
-const GROK_API_KEY = 'xai-xUf90svgLcrJKX89n9ku3JxiAi3tkrFW7S5LqAdP4ky88yf7DC1rdogLhLJRCcZ3qALUDdEPvwlIT0mn'
+// Get API key from environment variable (Vite uses import.meta.env, Node.js uses process.env)
+const GROK_API_KEY = import.meta.env.VITE_GROK_API_KEY || process.env.GROK_API_KEY
 const GROK_API_URL = 'https://api.x.ai/v1/chat/completions'
+
+// Validate API key is present
+if (!GROK_API_KEY) {
+  console.warn('⚠️ GROK_API_KEY is not set. AI suggestions will not work. Please set VITE_GROK_API_KEY in your .env file.')
+}
 
 /**
  * Get AI suggestions from Grok API based on scan results
@@ -17,6 +23,11 @@ const GROK_API_URL = 'https://api.x.ai/v1/chat/completions'
  */
 export async function getAISuggestions(scanType, scanName, scanResults, rawOutput, target) {
   try {
+    // Check if API key is available
+    if (!GROK_API_KEY) {
+      throw new Error('GROK_API_KEY is not configured. Please set VITE_GROK_API_KEY in your .env file.')
+    }
+    
     // Extract relevant information from scan results
     const findings = scanResults?.findings || []
     const recommendations = scanResults?.recommendations || []
