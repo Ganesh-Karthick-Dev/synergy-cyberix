@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400;500;600;700;800;900&display=swap');
 
 /* Enable class-based dark mode without a Tailwind config (Tailwind v4) */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -6,6 +7,17 @@
 /* Global base colors so all screens inherit proper light/dark defaults */
 html, body, #root {
   min-height: 100%;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+}
+
+/* Ensure all elements inherit Poppins font unless explicitly set to monospace */
+*, *::before, *::after {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+}
+
+/* Keep monospace for code elements */
+code, pre, .font-mono, [class*="font-mono"] {
+  font-family: 'Courier New', Courier, monospace !important;
 }
 
 body {

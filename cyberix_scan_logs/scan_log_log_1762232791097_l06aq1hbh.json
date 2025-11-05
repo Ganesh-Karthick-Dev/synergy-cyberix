@@ -1,0 +1,12 @@
+{
+  "id": "log_1762232791097_l06aq1hbh",
+  "timestamp": "2025-11-04T05:06:31.097Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "https://webn",
+  "status": "completed",
+  "startTime": "2025-11-04T05:04:31.097Z",
+  "endTime": "2025-11-04T05:06:31.097Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

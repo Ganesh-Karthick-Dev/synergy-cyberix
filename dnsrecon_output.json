@@ -1,0 +1,147 @@
+[
+    {
+        "arguments": "/usr/bin/dnsrecon -d cricbuzz.com -j dnsrecon_output.json",
+        "date": "2025-11-05 06:32:35.871163",
+        "type": "ScanInfo"
+    },
+    {
+        "address": "67.228.254.4",
+        "domain": "cricbuzz.com",
+        "mname": "ns1.softlayer.com",
+        "type": "SOA"
+    },
+    {
+        "address": "2607:f0d0:0:f:1::1",
+        "domain": "cricbuzz.com",
+        "mname": "ns1.softlayer.com",
+        "type": "SOA"
+    },
+    {
+        "Version": "",
+        "address": "67.228.255.5",
+        "domain": "cricbuzz.com",
+        "recursive": "True",
+        "target": "ns2.softlayer.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2607:f0d0:0:f:2::1",
+        "domain": "cricbuzz.com",
+        "recursive": "False",
+        "target": "ns2.softlayer.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"undisclosed\"",
+        "address": "67.228.254.4",
+        "domain": "cricbuzz.com",
+        "recursive": "True",
+        "target": "ns1.softlayer.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2607:f0d0:0:f:1::1",
+        "domain": "cricbuzz.com",
+        "recursive": "False",
+        "target": "ns1.softlayer.com",
+        "type": "NS"
+    },
+    {
+        "address": "142.251.12.26",
+        "domain": "cricbuzz.com",
+        "exchange": "aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "172.217.78.27",
+        "domain": "cricbuzz.com",
+        "exchange": "alt2.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "192.178.164.27",
+        "domain": "cricbuzz.com",
+        "exchange": "alt4.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "142.250.101.27",
+        "domain": "cricbuzz.com",
+        "exchange": "alt3.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "192.178.163.27",
+        "domain": "cricbuzz.com",
+        "exchange": "alt1.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2404:6800:4003:c0f::1b",
+        "domain": "cricbuzz.com",
+        "exchange": "aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2607:f8b0:4023:1c05::1a",
+        "domain": "cricbuzz.com",
+        "exchange": "alt2.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2607:f8b0:4023:2009::1b",
+        "domain": "cricbuzz.com",
+        "exchange": "alt4.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2607:f8b0:4023:c06::1b",
+        "domain": "cricbuzz.com",
+        "exchange": "alt3.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2607:f8b0:400e:c17::1a",
+        "domain": "cricbuzz.com",
+        "exchange": "alt1.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "13.235.191.202",
+        "domain": "cricbuzz.com",
+        "name": "cricbuzz.com",
+        "type": "A"
+    },
+    {
+        "domain": "cricbuzz.com",
+        "name": "cricbuzz.com",
+        "strings": "google-site-verification=6qCbU2ucmIR9vTgDb21zzFsHBUZkMuE5TZe2hDXu2-w",
+        "type": "TXT"
+    },
+    {
+        "domain": "cricbuzz.com",
+        "name": "cricbuzz.com",
+        "strings": "google-site-verification=YumzUXJdhlFP9XYW-7E0W0wjg1vxiuQGxlLvr-Vgwiw",
+        "type": "TXT"
+    },
+    {
+        "domain": "cricbuzz.com",
+        "name": "cricbuzz.com",
+        "strings": "v=spf1 ip4:169.38.73.165 ip4:161.202.169.175 include:_spf.google.com -all",
+        "type": "TXT"
+    },
+    {
+        "domain": "cricbuzz.com",
+        "name": "cricbuzz.com",
+        "strings": "MS=ms59781144",
+        "type": "TXT"
+    },
+    {
+        "domain": "cricbuzz.com",
+        "name": "_dmarc.cricbuzz.com",
+        "strings": "v=DMARC1; p=reject; rua=mailto:dmarc@cricbuzz.com, mailto:dmarc@cricbuzz.com; pct=100; adkim=s; aspf=s",
+        "type": "TXT"
+    }
+]

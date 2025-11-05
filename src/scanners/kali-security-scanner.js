@@ -96,15 +96,137 @@ class KaliSecurityScanner {
     }
   }
 
+  async executeKaliToolWithTimeout(toolName, command, testId, timeoutMs = 300000) {
+    this.log(`🔧 Executing ${toolName}: ${command} (timeout: ${timeoutMs}ms)`, testId);
+
+    return new Promise((resolve, reject) => {
+      const { exec } = require('child_process');
+      const kaliCommand = `wsl bash -c "${command.replace(/"/g, '\\"')}"`;
+      console.log(`🔧 [WSL] Executing: ${kaliCommand}`);
+      
+      const child = exec(kaliCommand, { 
+        timeout: timeoutMs, 
+        cwd: this.outputDir,
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer for large outputs
+      }, (error, stdout, stderr) => {
+        if (error) {
+          // If command was killed due to timeout, include that in the error
+          if (error.signal === 'SIGTERM' || error.killed) {
+            reject({ 
+              error: `Command timed out after ${timeoutMs}ms`,
+              stderr: stderr || '',
+              stdout: stdout || '',
+              timedOut: true
+            });
+          } else {
+            reject({ 
+              error: error.message, 
+              stderr: stderr || '',
+              stdout: stdout || ''
+            });
+          }
+        } else {
+          resolve({ stdout, stderr });
+        }
+      });
+
+      // Log real-time output to console AND UI
+      if (child.stdout) {
+        child.stdout.on('data', (data) => {
+          const output = data.toString();
+          if (output.trim()) {
+            console.log(`📋 [DNS-RT] ${output.trim()}`);
+            // Send to UI in real-time
+            if (this.progressCallback) {
+              this.progressCallback({
+                testId: testId,
+                testName: 'DNS Resolution & Analysis',
+                progress: 0,
+                message: output.trim(),
+                type: 'info'
+              });
+            }
+          }
+        });
+      }
+
+      if (child.stderr) {
+        child.stderr.on('data', (data) => {
+          const output = data.toString();
+          if (output.trim()) {
+            console.log(`📋 [DNS-RT-ERR] ${output.trim()}`);
+            // Send to UI in real-time
+            if (this.progressCallback) {
+              this.progressCallback({
+                testId: testId,
+                testName: 'DNS Resolution & Analysis',
+                progress: 0,
+                message: output.trim(),
+                type: 'error'
+              });
+            }
+          }
+        });
+      }
+    });
+  }
+
   async executeAllTests() {
     const results = {};
 
-    // 1. CSRF Test (FIRST TEST ENABLED)
+    // 1. DNS Resolution & Analysis (FIRST TEST - RUNS ONE BY ONE)
+    this.log('🔧 Executing DNS Resolution & Analysis...', 'dns-resolution');
+    console.log('🔍 [DNS-EXECUTION] ===== STARTING DNS SCAN =====');
+    console.log('🔍 [DNS-EXECUTION] Target domain:', this.domain);
+    console.log('🔍 [DNS-EXECUTION] Timestamp:', new Date().toISOString());
+    
+    try {
+      // Run DNS scan (executes commands one by one with full logging)
+      const dnsResult = await this.runDNSScan();
+      
+      console.log('🔍 [DNS-EXECUTION] ===== DNS SCAN COMPLETE =====');
+      console.log('🔍 [DNS-EXECUTION] DNS result status:', dnsResult?.status);
+      
+      results['dns-resolution'] = dnsResult;
+    } catch (error) {
+      console.log('🔍 [DNS-EXECUTION] ===== DNS SCAN FAILED =====');
+      console.log('🔍 [DNS-EXECUTION] Error:', error.message);
+      
+      // Create fallback DNS result
+      results['dns-resolution'] = {
+        testId: 'dns-resolution',
+        testName: 'DNS Resolution & Analysis',
+        category: 'Infrastructure',
+        severity: 'high',
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        findings: [
+          {
+            type: 'critical',
+            message: 'DNS scan failed',
+            details: error.message
+          }
+        ],
+        recommendations: [
+          'Check network connectivity',
+          'Verify DNS server settings',
+          'Ensure target domain is accessible'
+        ],
+        report: {
+          target: this.domain,
+          scanType: 'DNS Resolution & Analysis',
+          error: error.message,
+          summary: 'DNS analysis failed due to technical issues'
+        }
+      };
+    }
+
+    // 2. CSRF Test
     this.log('🔧 Executing CSRF Test...', 'csrf-test');
     console.log('🔍 [CSRF-EXECUTION] ===== STARTING CSRF TEST =====');
     console.log('🔍 [CSRF-EXECUTION] Target domain:', this.domain);
     console.log('🔍 [CSRF-EXECUTION] Timestamp:', new Date().toISOString());
-    console.log('🔍 [CSRF-EXECUTION] NOTE: Only CSRF test is enabled - other tests are temporarily disabled');
     
     try {
       // Use the new comprehensive CSRF test method
@@ -114,14 +236,6 @@ class KaliSecurityScanner {
       console.log('🔍 [CSRF-EXECUTION] CSRF result:', csrfResult);
       
       results['csrf-test'] = csrfResult;
-      
-      // Return results in the format expected by the frontend
-      const formattedResults = {
-        tests: results
-      };
-      
-      console.log('🔍 [CSRF-EXECUTION] Formatted results:', formattedResults);
-      return formattedResults;
     } catch (error) {
       console.log('🔍 [CSRF-EXECUTION] ===== CSRF TEST FAILED =====');
       console.log('🔍 [CSRF-EXECUTION] Error:', error.message);
@@ -168,27 +282,271 @@ class KaliSecurityScanner {
   }
 
   async runDNSScan() {
-    try {
-      console.log('🔍 Starting comprehensive DNS analysis...');
-      
-      // Execute all DNS commands in a single batch with proper formatting
-      const batchCommand = `echo "=== DNS Analysis for ${this.domain} ===" && echo "1. Basic DNS lookup:" && dig +short ${this.domain} A 2>/dev/null || echo "DNS lookup failed" && echo "" && echo "2. Detailed DNS records:" && dig +noall +answer ${this.domain} A 2>/dev/null || echo "A record lookup failed" && dig +noall +answer ${this.domain} MX 2>/dev/null || echo "MX record lookup failed" && dig +noall +answer ${this.domain} TXT 2>/dev/null || echo "TXT record lookup failed" && dig +noall +answer ${this.domain} NS 2>/dev/null || echo "NS record lookup failed" && dig +noall +answer ${this.domain} SOA 2>/dev/null || echo "SOA record lookup failed" && echo "" && echo "3. Reverse DNS lookup:" && IP=\\$(dig +short ${this.domain} A 2>/dev/null | head -1) && if [ ! -z "\\$IP" ]; then dig -x \\$IP +short 2>/dev/null || echo "Reverse DNS lookup failed"; else echo "No IP found for reverse lookup"; fi && echo "" && echo "4. DNS reconnaissance:" && timeout 30 dnsrecon -d ${this.domain} 2>/dev/null || echo "DNS reconnaissance timeout/failed" && echo "" && echo "5. DNS enumeration:" && timeout 30 dnsenum ${this.domain} 2>/dev/null || echo "DNS enumeration timeout/failed" && echo "" && echo "=== DNS Analysis Complete ==="`;
+    const startTime = Date.now();
+    const timeoutMs = 300000; // 5 minutes
+    const allResults = [];
+    let partialResults = [];
+    let timedOut = false;
 
-      console.log('🔍 Executing comprehensive DNS analysis commands...');
-      const result = await this.executeKaliTool('DNS Analysis Batch', batchCommand, 'dns-resolution');
+    try {
+      console.log('🔍 [DNS] Starting comprehensive DNS analysis...');
+      console.log('🔍 [DNS] Domain:', this.domain);
+      console.log('🔍 [DNS] Timeout: 5 minutes (300000ms)');
       
-      console.log('🔍 [DNS-DEBUG] Raw result from executeKaliTool:', {
-        stdoutLength: result.stdout ? result.stdout.length : 0,
-        stderrLength: result.stderr ? result.stderr.length : 0,
-        stdoutPreview: result.stdout ? result.stdout.substring(0, 200) + '...' : 'No stdout',
-        stderrPreview: result.stderr ? result.stderr.substring(0, 200) + '...' : 'No stderr'
-      });
+      // Send initial messages to UI
+      this.log('Starting comprehensive DNS analysis...', 'dns-resolution');
+      this.log(`Domain: ${this.domain}`, 'dns-resolution');
+      this.log('Timeout: 5 minutes (300000ms)', 'dns-resolution');
       
-      const results = [{
-        command: 'DNS Analysis Batch',
-        output: result.stdout,
-        stderr: result.stderr
-      }];
+      // Define commands to execute one by one
+      const dnsCommands = [
+        {
+          name: 'Basic DNS Lookup (ANY)',
+          command: `dig +short ${this.domain} ANY`,
+          cmd: `dig +short ${this.domain} ANY`
+        },
+        {
+          name: 'Detailed DNS Records (A MX TXT NS SOA)',
+          command: `dig +noall +answer ${this.domain} A MX TXT NS SOA`,
+          cmd: `dig +noall +answer ${this.domain} A MX TXT NS SOA`
+        },
+        {
+          name: 'Reverse DNS Lookup',
+          command: `IP=$(dig +short ${this.domain} | head -1) && dig -x $IP +short`,
+          cmd: `dig -x $(dig +short ${this.domain}) +short`
+        },
+        {
+          name: 'DNS Reconnaissance (dnsrecon)',
+          command: `dnsrecon -d ${this.domain}`,
+          cmd: `dnsrecon -d ${this.domain}`
+        },
+        {
+          name: 'DNS Enumeration (dnsenum)',
+          command: `dnsenum ${this.domain}`,
+          cmd: `dnsenum ${this.domain}`
+        }
+      ];
+
+      // Execute commands one by one
+      for (let i = 0; i < dnsCommands.length; i++) {
+        const cmdInfo = dnsCommands[i];
+        
+        // Check timeout before each command
+        const elapsed = Date.now() - startTime;
+        if (elapsed >= timeoutMs) {
+          console.log(`⏱️ [DNS] Timeout reached (${elapsed}ms) - stopping DNS scan`);
+          timedOut = true;
+          break;
+        }
+
+        const remainingTime = timeoutMs - elapsed;
+        const commandHeader = `\n===== Command ${i + 1}/${dnsCommands.length}: ${cmdInfo.name} =====`;
+        const rawCommandMsg = `Raw Command: ${cmdInfo.cmd}`;
+        const remainingTimeMsg = `Remaining time: ${Math.floor(remainingTime / 1000)}s`;
+        
+        console.log(`🔍 [DNS] ${commandHeader}`);
+        console.log(`🔍 [DNS] ${rawCommandMsg}`);
+        console.log(`🔍 [DNS] ${remainingTimeMsg}`);
+        
+        // Send to UI
+        this.log(commandHeader, 'dns-resolution');
+        this.log(rawCommandMsg, 'dns-resolution');
+        this.log(remainingTimeMsg, 'dns-resolution');
+        this.log(`Executing: ${cmdInfo.cmd}`, 'dns-resolution');
+        
+        try {
+          // Execute command with remaining timeout
+          const commandTimeout = Math.min(remainingTime, 60000); // Max 60s per command, but respect overall timeout
+          
+          const result = await this.executeKaliToolWithTimeout(
+            cmdInfo.name,
+            cmdInfo.cmd,
+            'dns-resolution',
+            commandTimeout
+          );
+
+          // Show raw results in console AND UI
+          const completionMsg = `\n✅ Command ${i + 1} completed:`;
+          const stdoutHeader = `📋 STDOUT (${result.stdout?.length || 0} bytes):`;
+          const stdoutContent = result.stdout || '(no output)';
+          const separator = '─'.repeat(80);
+          
+          console.log(`\n✅ [DNS] ${completionMsg}`);
+          console.log(`📋 [DNS] ${stdoutHeader}`);
+          console.log(separator);
+          console.log(stdoutContent);
+          console.log(separator);
+          
+          // Send to UI
+          this.log(completionMsg, 'dns-resolution');
+          this.log(stdoutHeader, 'dns-resolution');
+          this.log(separator, 'dns-resolution');
+          
+          // Send stdout line by line to UI
+          if (stdoutContent && stdoutContent !== '(no output)') {
+            const stdoutLines = stdoutContent.split('\n');
+            for (const line of stdoutLines) {
+              if (line.trim()) {
+                this.log(`  ${line}`, 'dns-resolution');
+              }
+            }
+          } else {
+            this.log('  (no output)', 'dns-resolution');
+          }
+          this.log(separator, 'dns-resolution');
+          
+          if (result.stderr && result.stderr.trim()) {
+            const stderrHeader = `📋 STDERR (${result.stderr?.length || 0} bytes):`;
+            console.log(`📋 [DNS] ${stderrHeader}`);
+            console.log(separator);
+            console.log(result.stderr);
+            console.log(separator);
+            
+            // Send stderr to UI
+            this.log(stderrHeader, 'dns-resolution');
+            this.log(separator, 'dns-resolution');
+            const stderrLines = result.stderr.split('\n');
+            for (const line of stderrLines) {
+              if (line.trim()) {
+                this.log(`  ${line}`, 'dns-resolution');
+              }
+            }
+            this.log(separator, 'dns-resolution');
+          }
+
+          allResults.push({
+            command: cmdInfo.cmd,
+            name: cmdInfo.name,
+            output: result.stdout || '',
+            stderr: result.stderr || '',
+            completed: true,
+            elapsed: Date.now() - startTime
+          });
+
+          partialResults.push({
+            command: cmdInfo.cmd,
+            name: cmdInfo.name,
+            output: result.stdout || '',
+            stderr: result.stderr || '',
+            completed: true
+          });
+
+        } catch (error) {
+          const isTimeout = error.timedOut || error.error?.includes('timed out') || error.error?.includes('timeout');
+          const errorMsg = `\n❌ Command ${i + 1} ${isTimeout ? 'timed out' : 'failed'}:`;
+          const errorDetails = `Error: ${error.error || error.message || 'Unknown error'}`;
+          const stderrInfo = `STDERR: ${error.stderr || '(no stderr)'}`;
+          const stdoutInfo = `STDOUT: ${error.stdout || '(no stdout)'}`;
+          const separator = '─'.repeat(80);
+          
+          console.log(`\n❌ [DNS] ${errorMsg}`);
+          console.log(`📋 [DNS] ${errorDetails}`);
+          console.log(`📋 [DNS] ${stderrInfo}`);
+          console.log(`📋 [DNS] ${stdoutInfo}`);
+          console.log(separator);
+          
+          // Send to UI
+          this.log(errorMsg, 'dns-resolution');
+          this.log(errorDetails, 'dns-resolution');
+          if (error.stderr && error.stderr.trim()) {
+            this.log(stderrInfo, 'dns-resolution');
+            const stderrLines = error.stderr.split('\n');
+            for (const line of stderrLines) {
+              if (line.trim()) {
+                this.log(`  ${line}`, 'dns-resolution');
+              }
+            }
+          }
+          if (error.stdout && error.stdout.trim()) {
+            this.log(stdoutInfo, 'dns-resolution');
+            const stdoutLines = error.stdout.split('\n');
+            for (const line of stdoutLines) {
+              if (line.trim()) {
+                this.log(`  ${line}`, 'dns-resolution');
+              }
+            }
+          }
+          this.log(separator, 'dns-resolution');
+          
+          // If this is the last command and it timed out, mark overall scan as timed out
+          if (isTimeout && i === dnsCommands.length - 1) {
+            console.log(`⏱️ [DNS] Last command timed out - marking overall scan as timed out`);
+            this.log(`⏱️ Last command timed out - marking overall scan as timed out`, 'dns-resolution');
+            timedOut = true;
+          }
+
+          allResults.push({
+            command: cmdInfo.cmd,
+            name: cmdInfo.name,
+            output: error.stdout || '',
+            stderr: error.stderr || error.error || error.message || '',
+            completed: false,
+            error: error.error || error.message,
+            elapsed: Date.now() - startTime
+          });
+
+          partialResults.push({
+            command: cmdInfo.cmd,
+            name: cmdInfo.name,
+            output: error.stdout || '',
+            stderr: error.stderr || error.error || error.message || '',
+            completed: false,
+            error: error.error || error.message
+          });
+
+          // Continue with next command even if one fails
+          continue;
+        }
+
+        // Check timeout after each command
+        const elapsedAfter = Date.now() - startTime;
+        if (elapsedAfter >= timeoutMs) {
+          console.log(`⏱️ [DNS] Timeout reached after command ${i + 1} (${elapsedAfter}ms)`);
+          timedOut = true;
+          break;
+        }
+      }
+
+      const totalElapsed = Date.now() - startTime;
+      const completedCount = allResults.filter(r => r.completed).length;
+      
+      // Check if any command timed out (not the overall 5-minute timeout)
+      const hasTimeout = allResults.some(r => !r.completed && (r.error?.includes('timed out') || r.error?.includes('timeout')));
+      
+      // If any command timed out, mark overall scan as timed out
+      if (hasTimeout && !timedOut) {
+        timedOut = true; // Mark as timed out to show partial results and allow scan to continue
+        console.log(`⏱️ [DNS] One or more commands timed out - marking as timed out with partial results`);
+        this.log(`⏱️ One or more commands timed out - marking as timed out with partial results`, 'dns-resolution');
+      }
+      
+      const summaryHeader = `\n===== DNS Scan Summary =====`;
+      const elapsedMsg = `Total elapsed: ${totalElapsed}ms (${Math.floor(totalElapsed / 1000)}s)`;
+      const commandsExecutedMsg = `Commands executed: ${completedCount}/${dnsCommands.length}`;
+      const timeoutMsg = `Timed out: ${timedOut ? 'YES' : 'NO'}`;
+      
+      console.log(`\n🔍 [DNS] ${summaryHeader}`);
+      console.log(`🔍 [DNS] ${elapsedMsg}`);
+      console.log(`🔍 [DNS] ${commandsExecutedMsg}`);
+      console.log(`🔍 [DNS] ${timeoutMsg}`);
+      
+      // Send summary to UI
+      this.log(summaryHeader, 'dns-resolution');
+      this.log(elapsedMsg, 'dns-resolution');
+      this.log(commandsExecutedMsg, 'dns-resolution');
+      this.log(timeoutMsg, 'dns-resolution');
+      
+      if (timedOut || hasTimeout) {
+        const timeoutMsg2 = `⚠️ Scan timed out - using partial results from ${completedCount} command(s). Continuing to next scan.`;
+        console.log(`⚠️ [DNS] ${timeoutMsg2}`);
+        this.log(timeoutMsg2, 'dns-resolution');
+      } else {
+        const successMsg = `✅ All commands completed successfully`;
+        console.log(`✅ [DNS] ${successMsg}`);
+        this.log(successMsg, 'dns-resolution');
+      }
+      
+      const results = allResults;
 
       // Parse results and create comprehensive report
       console.log('🔍 [DNS-DEBUG] Parsing DNS results...');
@@ -230,19 +588,48 @@ class KaliSecurityScanner {
         scan_health: this.generateScanHealth(structuredData)
       };
 
+      // Include raw command results in report for timeout cases
+      const rawCommandsOutput = allResults.map(r => ({
+        command: r.command,
+        name: r.name,
+        completed: r.completed,
+        output: r.output || '',
+        stderr: r.stderr || '',
+        error: r.error || null,
+        elapsed: r.elapsed || 0
+      }));
+
       const finalResult = {
         testId: 'dns-resolution',
         testName: 'DNS Resolution & Analysis',
         category: 'Infrastructure',
         severity: dnsReport.security_score.score < 50 ? 'critical' : dnsReport.security_score.score < 70 ? 'high' : dnsReport.security_score.score < 85 ? 'medium' : 'low',
-        status: 'completed',
+        status: (timedOut || hasTimeout) ? 'timed out' : 'completed',
         timestamp: new Date().toISOString(),
-        findings: dnsReport.findings,
+        findings: timedOut ? [
+          {
+            type: 'warning',
+            message: `DNS scan timed out after 5 minutes`,
+            details: `Partial results from ${completedCount} command(s) are available. Scan was moved to next test to avoid blocking.`
+          },
+          ...dnsReport.findings
+        ] : dnsReport.findings,
         recommendations: this.generateRecommendations(structuredData),
-        report: dnsReport
+        report: {
+          ...dnsReport,
+          timedOut: timedOut || hasTimeout,
+          elapsed: totalElapsed,
+          commandsExecuted: allResults.filter(r => r.completed).length,
+          totalCommands: dnsCommands.length,
+          rawCommandsOutput: rawCommandsOutput,
+          partialResults: (timedOut || hasTimeout) ? partialResults : null,
+          scanType: 'DNS Resolution & Analysis',
+          target: this.domain
+        },
+        error: (timedOut || hasTimeout) ? `DNS scan timed out after 5 minutes. Partial results from ${completedCount} command(s) are available.` : null
       };
       
-      console.log('🔍 [DNS-DEBUG] Final DNS result:', finalResult);
+      console.log('🔍 [DNS-DEBUG] Final DNS result:', JSON.stringify(finalResult, null, 2));
       return finalResult;
     } catch (error) {
       console.error('❌ DNS analysis failed:', error);

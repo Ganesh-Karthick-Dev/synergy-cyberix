@@ -2,6 +2,51 @@ import { useState, useEffect } from 'react'
 import { useScanning } from '../context/ScanningContext'
 import scanLogger from '../utils/scanLogger'
 
+// Import markdown converter
+let markdownToHTML;
+try {
+  const reportGen = require('../utils/scanReportGenerator');
+  markdownToHTML = reportGen.markdownToHTML;
+} catch (e) {
+  // Fallback if module not found
+  markdownToHTML = (md) => md.replace(/\n/g, '<br />');
+}
+
+// Helper function to strip ANSI escape codes
+const stripAnsiCodes = (text) => {
+  if (!text || typeof text !== 'string') return text
+  // Remove ANSI escape codes: \x1b[...m, [1m, [33m, [0m, etc.
+  // But preserve timestamps like [2025-11-04 14:30:01]
+  // Only remove actual ANSI escape sequences, not bracket patterns
+  
+  // First, protect timestamps by temporarily replacing them
+  const timestampPattern = /\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/g
+  const timestamps = []
+  let protectedText = text.replace(timestampPattern, (match, content) => {
+    timestamps.push(match)
+    return `__TIMESTAMP_${timestamps.length - 1}__`
+  })
+  
+  // Remove ANSI codes
+  let cleaned = protectedText
+    .replace(/\x1b\[[0-9;]*m/g, '')  // Remove ANSI escape sequences
+    .replace(/\[[0-9;]*m/g, '')      // Remove incomplete ANSI patterns
+    .replace(/\[\d+[m[]?/g, '')      // Remove ANSI number patterns
+  
+  // Restore timestamps
+  timestamps.forEach((timestamp, index) => {
+    cleaned = cleaned.replace(`__TIMESTAMP_${index}__`, timestamp)
+  })
+  
+  return cleaned.trim()
+}
+
+// Helper to sanitize error messages (remove wsl references)
+const sanitizeError = (error) => {
+  if (!error || typeof error !== 'string') return error
+  return error.replace(/Command failed: wsl\s+/gi, 'Command failed: ').replace(/wsl\s+/gi, '')
+}
+
 function NetworkScanning() {
   const [isStarting, setIsStarting] = useState(false)
   const [target, setTarget] = useState('')
@@ -14,6 +59,15 @@ function NetworkScanning() {
     services: 0
   })
   const [riskIssues, setRiskIssues] = useState([])
+  const [consoleLog, setConsoleLog] = useState([])
+  const [commandResults, setCommandResults] = useState({})
+  const [scanTimer, setScanTimer] = useState({
+    startTime: null,
+    elapsed: 0,
+    expectedEndTime: null,
+    completedTime: null,
+    isRunning: false
+  })
 
   const { scanStatus, scanProgress, startNetworkScan, abortScan } = useScanning()
   const [showDetails, setShowDetails] = useState(false)
@@ -62,7 +116,6 @@ function NetworkScanning() {
   }
 
   const handleStartScan = async () => {
-    setIsStarting(true)
     if (!target.trim()) {
       alert('Please enter a target IP or hostname')
       return
@@ -73,11 +126,29 @@ function NetworkScanning() {
       return
     }
 
+    if (scanStatus.isScanning) {
+      alert('Scan is already in progress')
+      return
+    }
+
+    setIsStarting(true)
     setScanResults(null)
     setScanStats({ openPorts: 0, closedPorts: 0, filteredPorts: 0, services: 0 })
+    setConsoleLog([])
+    setCommandResults({})
+    
+    // Initialize timer with actual system time
+    const startTime = new Date()
+    const expectedEndTime = new Date(startTime.getTime() + 10 * 60 * 1000) // 10 minutes from start
+    setScanTimer({
+      startTime: startTime,
+      elapsed: 0,
+      expectedEndTime: expectedEndTime,
+      completedTime: null,
+      isRunning: true
+    })
     
     // Log scan start
-    const startTime = new Date()
     await scanLogger.logScan({
       scanType: 'network',
       scanName: 'Network Scan',
@@ -90,10 +161,17 @@ function NetworkScanning() {
     })
     
     try {
-      await startNetworkScan(target)
+      console.log('Starting network scan for target:', target.trim())
+      const result = await window.cyberGuard.startNetworkScan(target.trim())
+      console.log('Network scan started, result:', result)
+      
+      if (result && result.error) {
+        throw new Error(result.error)
+      }
     } catch (error) {
       console.error('Scan start error:', error)
       alert('Failed to start network scan: ' + (error?.message || String(error)))
+      setIsStarting(false)
       
       // Log scan failure
       await scanLogger.logScan({
@@ -106,9 +184,102 @@ function NetworkScanning() {
         duration: new Date().getTime() - startTime.getTime(),
         result: `Failed to start: ${error.message}`
       })
-    } finally {
-      setIsStarting(false)
     }
+  }
+
+  // Listen for scan progress updates
+  useEffect(() => {
+    if (!window.cyberGuard) return
+    
+    // Define the progress handler
+    const progressHandler = (update) => {
+        // Append console log if present (store as array of lines)
+        if (update.consoleLog) {
+          setConsoleLog(prev => {
+            const newLines = update.consoleLog.split('\n').filter(line => line.trim())
+            return [...prev, ...newLines]
+          })
+          console.log(update.consoleLog)
+        }
+        
+        // Store command results
+        if (update.command && update.stage) {
+          setCommandResults(prev => ({
+            ...prev,
+            [update.stage]: {
+              command: update.command,
+              output: update.output || '',
+              message: update.message || '',
+              stage: update.stage
+            }
+          }))
+        }
+    }
+    
+    // Register the listener
+    window.cyberGuard.onNetworkScanProgress(progressHandler)
+    
+    // Cleanup: Remove listener when component unmounts or dependencies change
+    return () => {
+      if (window.cyberGuard && window.cyberGuard.removeListener) {
+        // Note: ipcRenderer.removeListener might be needed if available
+        // For now, we rely on React's cleanup and Electron's automatic cleanup
+      }
+    }
+  }, [])
+
+  // Timer effect - update elapsed time every second using actual system time
+  useEffect(() => {
+    let interval = null
+    if (scanTimer.isRunning && scanTimer.startTime) {
+      interval = setInterval(() => {
+        // Use actual system time to calculate elapsed
+        const now = new Date()
+        const start = new Date(scanTimer.startTime)
+        const elapsed = Math.floor((now - start) / 1000) // seconds
+        setScanTimer(prev => ({ ...prev, elapsed }))
+      }, 1000)
+    }
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [scanTimer.isRunning, scanTimer.startTime])
+
+  // Handle scan abort - set completed time
+  useEffect(() => {
+    if (!scanStatus.isScanning && !isStarting && scanTimer.isRunning && scanTimer.startTime && !scanTimer.completedTime) {
+      const completedTime = new Date()
+      setScanTimer(prev => ({
+        ...prev,
+        isRunning: false,
+        completedTime: completedTime
+      }))
+    }
+  }, [scanStatus.isScanning, isStarting, scanTimer.isRunning, scanTimer.startTime, scanTimer.completedTime])
+
+  // Format time helper
+  const formatTime = (seconds) => {
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    if (hrs > 0) {
+      return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+    }
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  // Format date/time helper
+  const formatDateTime = (date) => {
+    if (!date) return 'N/A'
+    return new Date(date).toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    })
   }
 
   // Listen for scan completion
@@ -117,76 +288,69 @@ function NetworkScanning() {
       window.cyberGuard.onNetworkScanDone(async (result) => {
         try {
           console.log('Network scan completed:', result)
-          console.log('Result type:', typeof result)
-          console.log('Result keys:', result ? Object.keys(result) : 'No result')
+          setIsStarting(false)
           
-          let scanData = null
-          let isSuccess = false
+          // Check if scan was aborted
+          if (result && result.aborted) {
+            console.log('Scan was aborted')
+            setScanTimer(prev => ({ 
+              ...prev, 
+              isRunning: false,
+              completedTime: new Date()
+            }))
+            return
+          }
           
-          if (result && result.success && result.result) {
-            // Handle new backend shape: { jsonReport, htmlReport, pdfReport, reportData }
+          const completedTime = new Date()
+          setScanTimer(prev => ({ 
+            ...prev, 
+            isRunning: false,
+            completedTime: completedTime
+          }))
+          console.log('Set isStarting to false')
+          
+          // Handle new command-based results structure
+          if (result && result.results) {
+            // New structure with command results
+            setCommandResults(result.results)
+            
+            // Ensure we have the JSON data properly structured
+            const scanData = {
+              results: {
+                json: result.results.json || result.results,
+                markdown: result.results.markdown || '',
+                raw: result.results.raw || ''
+              },
+              target: result.target || target,
+              extractedIP: result.extractedIP || null,
+              success: result.success !== false
+            }
+            
+            setScanResults(scanData)
+          } else if (result && result.success && result.result) {
+            // Handle old backend shape
             const r = result.result
             if (r && r.reportData) {
-              console.log('Merging reportData with file paths for UI rendering')
-              scanData = { ...r.reportData, jsonReport: r.jsonReport, htmlReport: r.htmlReport, pdfReport: r.pdfReport }
+              const scanData = { ...r.reportData, jsonReport: r.jsonReport, htmlReport: r.htmlReport, pdfReport: r.pdfReport }
               setScanResults(scanData)
-              isSuccess = true
             } else {
-              console.log('Setting scan results from success:', r)
-              scanData = r
-              setScanResults(scanData)
-              isSuccess = true
-            }
-          } else if (result && result.result) {
-            // Direct result object
-            const r = result.result
-            if (r && r.reportData) {
-              scanData = { ...r.reportData, jsonReport: r.jsonReport, htmlReport: r.htmlReport, pdfReport: r.pdfReport }
-              setScanResults(scanData)
-              isSuccess = true
-            } else {
-              console.log('Setting direct scan results:', r)
-              scanData = r
-              setScanResults(scanData)
-              isSuccess = true
-            }
-          } else if (result && !result.success && !result.result) {
-            // Handle case where result is the actual data directly
-            if (result.reportData) {
-              scanData = { ...result.reportData, jsonReport: result.jsonReport, htmlReport: result.htmlReport, pdfReport: result.pdfReport }
-              setScanResults(scanData)
-              isSuccess = true
-            } else {
-              console.log('Setting result as direct data:', result)
-              scanData = result
-              setScanResults(scanData)
-              isSuccess = true
-            }
-          } else if (result && result.success && !result.result) {
-            // Handle case where success is true but no result property
-            if (result.reportData) {
-              scanData = { ...result.reportData, jsonReport: result.jsonReport, htmlReport: result.htmlReport, pdfReport: result.pdfReport }
-              setScanResults(scanData)
-              isSuccess = true
-            } else {
-              console.log('Setting result as success data:', result)
-              scanData = result
-              setScanResults(scanData)
-              isSuccess = true
+              setScanResults(r)
             }
           } else {
-            console.warn('Invalid scan result:', result)
             setScanResults({ 
-              summary: 'Scan completed but no detailed results available',
-              error: result?.error || 'Unknown error'
+              summary: 'Scan completed',
+              success: result?.success || false,
+              error: result?.error || null
             })
-            isSuccess = false
           }
           
           // Log scan completion
           const endTime = new Date()
-          const startTime = new Date(endTime.getTime() - (result?.duration || 120000)) // Default 2 min
-          const openPorts = scanData?.ports?.filter(p => p.state === 'open').length || 0
+          const startTime = new Date(endTime.getTime() - (result?.duration || 120000))
+          const isSuccess = result?.success !== false
+          const nmapOutput = result?.results?.nmapFullScan?.stdout || result?.results?.nmapFastScan?.stdout || ''
+          const openPortsMatch = nmapOutput.match(/(\d+)\/tcp\s+open/g)
+          const openPorts = openPortsMatch ? openPortsMatch.length : 0
           const resultSummary = isSuccess ? 
             `Scan completed - ${openPorts} open ports found` : 
             'Network scan failed'
@@ -204,675 +368,32 @@ function NetworkScanning() {
           
         } catch (error) {
           console.error('Error handling network scan completion:', error)
+          setIsStarting(false)
           setScanResults({ 
             summary: 'Scan completed with errors',
             error: error.message 
-          })
-          
-          // Log scan error
-          const endTime = new Date()
-          await scanLogger.logScan({
-            scanType: 'network',
-            scanName: 'Network Scan',
-            target: target.trim(),
-            status: 'failed',
-            startTime: new Date(endTime.getTime() - 120000).toISOString(),
-            endTime: endTime.toISOString(),
-            duration: 120000,
-            result: `Error processing results: ${error.message}`
           })
         }
       })
     }
   }, [target])
 
-  // Update scan statistics from actual scan results
-  useEffect(() => {
-    console.log('Updating scan statistics, scanResults:', scanResults)
-    console.log('scanResults.scanStats:', scanResults?.scanStats)
-    console.log('scanResults.summary:', scanResults?.summary)
-    console.log('scanResults.findings:', scanResults?.findings)
-    
-    if (scanResults && scanResults.scanStats) {
-      // Priority 1: Use scanStats directly from results
-      console.log('Using scanStats directly:', scanResults.scanStats)
-      setScanStats({
-        openPorts: scanResults.scanStats.openPorts || 0,
-        closedPorts: scanResults.scanStats.closedPorts || 0,
-        filteredPorts: scanResults.scanStats.filteredPorts || 0,
-        services: scanResults.scanStats.openPorts || 0 // Use open ports as services
-      })
-    } else if (scanResults && scanResults.summary && typeof scanResults.summary === 'object') {
-      // Priority 2: Use summary object
-      console.log('Using summary object for stats:', scanResults.summary)
-      setScanStats({
-        openPorts: scanResults.summary.openPorts || 0,
-        closedPorts: scanResults.summary.closedPorts || 0,
-        filteredPorts: scanResults.summary.filteredPorts || 0,
-        services: scanResults.summary.totalFiles || 0
-      })
-    } else if (scanResults && scanResults.findings && scanResults.findings.allPorts) {
-      // Priority 3: Calculate from port data
-      console.log('Using findings.allPorts for stats:', scanResults.findings.allPorts)
-      const allPorts = scanResults.findings.allPorts
-      const openPorts = allPorts.filter(port => port.status === 'open').length
-      const closedPorts = allPorts.filter(port => port.status === 'closed').length
-      const filteredPorts = allPorts.filter(port => port.status === 'filtered').length
-      
-      setScanStats({
-        openPorts,
-        closedPorts,
-        filteredPorts,
-        services: openPorts
-      })
-    } else if (scanResults && scanResults.serviceDetections) {
-      // Priority 4: Use service detections to estimate port counts
-      console.log('Using serviceDetections for stats:', scanResults.serviceDetections)
-      const openPorts = scanResults.serviceDetections.length
-      setScanStats({
-        openPorts,
-        closedPorts: 0,
-        filteredPorts: 0,
-        services: openPorts
-      })
-    } else {
-      // Fallback: parse from progress messages (old method)
-      console.log('Using progress messages for stats')
-      scanProgress.forEach(update => {
-        if (update.message.includes('open port')) {
-          setScanStats(prev => ({ ...prev, openPorts: prev.openPorts + 1 }))
-        }
-        if (update.message.includes('closed port')) {
-          setScanStats(prev => ({ ...prev, closedPorts: prev.closedPorts + 1 }))
-        }
-        if (update.message.includes('filtered port')) {
-          setScanStats(prev => ({ ...prev, filteredPorts: prev.filteredPorts + 1 }))
-        }
-        if (update.message.includes('service detected')) {
-          setScanStats(prev => ({ ...prev, services: prev.services + 1 }))
-        }
-      })
-    }
-  }, [scanResults, scanProgress])
-
-  // Derive critical/high issues with explanations and remediation
-  useEffect(() => {
-    if (!scanResults) { setRiskIssues([]); return }
-    const issues = []
-
-    const addIssue = (sev, title, why, fix, ref = null) => {
-      issues.push({ severity: sev, title, why, fix, ref })
-    }
-
-    // From explicit vulnerabilities if present
-    if (Array.isArray(scanResults.vulnerabilities)) {
-      scanResults.vulnerabilities.forEach(v => {
-        const sev = (v.severity || '').toLowerCase()
-        if (sev === 'critical' || sev === 'high') {
-          addIssue(
-            sev,
-            v.type || 'Vulnerability',
-            v.description || 'This finding has been flagged as high risk.',
-            v.remediation || 'Apply vendor patches and follow best-practice hardening.',
-            v.references && v.references[0] ? v.references[0] : null
-          )
-        }
-      })
-    }
-
-    // Heuristics from open ports
-    const open = scanResults?.findings?.allPorts || []
-    const openOnly = open.filter(p => p.status === 'open')
-    const isOpen = (port) => openOnly.some(p => Number(p.port) === Number(port))
-
-    if (isOpen(22)) {
-      addIssue(
-        'high',
-        'SSH exposed on the internet (port 22)',
-        'Public SSH increases attack surface (credential stuffing, brute force, key theft).',
-        'Restrict SSH to VPN or specific IPs, disable password login, enable key-based auth, and consider moving to a non-default port.',
-      )
-    }
-    if (isOpen(3306)) {
-      addIssue(
-        'critical',
-        'MySQL exposed (port 3306)',
-        'Databases accessible from the internet can lead to data exfiltration and RCE via auth bypass or weak creds.',
-        'Bind MySQL to localhost/private network, enforce TLS and strong auth, and restrict with firewall/security groups.'
-      )
-    }
-    if (isOpen(5432)) {
-      addIssue(
-        'critical',
-        'PostgreSQL exposed (port 5432)',
-        'Internet-exposed databases are a common breach vector.',
-        'Restrict access to trusted networks, require TLS and strong auth, disable unused roles, and monitor access logs.'
-      )
-    }
-    if (isOpen(6379)) {
-      addIssue(
-        'critical',
-        'Redis exposed without authentication (port 6379)',
-        'Default Redis often runs without auth; exposure can allow arbitrary data manipulation and RCE.',
-        'Enable requirepass or ACLs, bind to localhost/VPC, and place behind a firewall or proxy.'
-      )
-    }
-    if (isOpen(80) && !isOpen(443)) {
-      addIssue(
-        'high',
-        'HTTP without HTTPS',
-        'Unencrypted traffic allows credential/session interception.',
-        'Enable HTTPS with modern TLS, redirect HTTP to HTTPS, and set HSTS.'
-      )
-    }
-
-    setRiskIssues(issues)
-  }, [scanResults])
-
-  const downloadResults = async (format = 'json') => {
-    if (!scanResults) {
-      alert('No scan results available to download')
-      return
-    }
-    
-    console.log('Downloading format:', format)
-    console.log('Scan results:', scanResults)
-    
-    try {
-      // Check if we have actual generated report files from the backend
-      if (scanResults.jsonReport && format === 'json') {
-        // Use the actual generated JSON report
-        await downloadGeneratedReport(scanResults.jsonReport, 'JSON')
-        return
-      } else if (scanResults.htmlReport && format === 'html') {
-        // Use the actual generated HTML report
-        await downloadGeneratedReport(scanResults.htmlReport, 'HTML')
-        return
-      } else if (scanResults.pdfReport && format === 'pdf') {
-        // Use the actual generated PDF report
-        await downloadGeneratedReport(scanResults.pdfReport, 'PDF')
-        return
-      }
-      
-      // Fallback: Generate reports from scan data if backend reports are not available
-      let dataStr, mimeType, extension, filename
-      
-      if (format === 'json') {
-        dataStr = JSON.stringify(scanResults, null, 2)
-        mimeType = 'application/json'
-        extension = 'json'
-        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.json`
-      } else if (format === 'txt') {
-        // Convert to professional text format
-        dataStr = convertToProfessionalText(scanResults)
-        mimeType = 'text/plain;charset=utf-8'
-        extension = 'txt'
-        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.txt`
-      } else if (format === 'html') {
-        // Generate HTML report from scan data
-        dataStr = generateHTMLFromScanData(scanResults)
-        mimeType = 'text/html;charset=utf-8'
-        extension = 'html'
-        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.html`
-      } else if (format === 'pdf') {
-        // Generate proper PDF content
-        dataStr = convertToPDF(scanResults)
-        mimeType = 'application/pdf'
-        extension = 'pdf'
-        filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.pdf`
-      }
-      
-      console.log('Generated data length:', dataStr.length)
-      console.log('MIME type:', mimeType)
-      console.log('Filename:', filename)
-      
-      // Create blob with proper encoding
-      const dataBlob = new Blob([dataStr], { type: mimeType })
-      
-      // Create download link
-      const url = URL.createObjectURL(dataBlob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      link.style.display = 'none'
-      
-      // Add to DOM, click, and remove
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      
-      // Clean up
-      setTimeout(() => {
-        URL.revokeObjectURL(url)
-      }, 100)
-      
-      // Show success message
-      alert(`✅ Download started: ${filename}`)
-    } catch (error) {
-      console.error('Download error:', error)
-      alert(`❌ Download failed: ${error.message}`)
-    }
-  }
-
-  const openPortDetails = (portRow) => {
-    // Enrich with service detection entry if available
-    let serviceInfo = null
-    if (scanResults?.serviceDetections && portRow?.port) {
-      serviceInfo = scanResults.serviceDetections.find(s => Number(s.port) === Number(portRow.port)) || null
-    }
-    setSelectedPort({ ...portRow, serviceInfo })
-    setShowDetails(true)
-  }
-
-  const closePortDetails = () => {
-    setShowDetails(false)
-    setSelectedPort(null)
-  }
-
-  // Helper function to download generated reports from backend
-  const downloadGeneratedReport = async (filePath, format) => {
-    try {
-      if (window.cyberGuard && window.cyberGuard.saveReportAs) {
-        const filename = `network-scan-${target}-${new Date().toISOString().split('T')[0]}.${format.toLowerCase()}`
-        await window.cyberGuard.saveReportAs(filePath, filename)
-        alert(`✅ ${format} report downloaded successfully`)
-      } else {
-        throw new Error('Report download system not available')
-      }
-    } catch (error) {
-      console.error(`Error downloading ${format} report:`, error)
-      alert(`❌ Failed to download ${format} report: ${error.message}`)
-    }
-  }
-
-  const convertToExcelCSV = (data) => {
-    if (!data) return 'No scan data available'
-    
-    console.log('Converting to Excel CSV:', data)
-    
-    let csv = ''
-    
-    // Header Section
-    csv += 'Network Security Scan Report\n'
-    csv += `Scan Date,${new Date().toLocaleString()}\n`
-    csv += `Target,${scanStatus.target || 'Unknown'}\n`
-    csv += `Scan Type,Network Analysis\n`
-    csv += `Status,${data.summary || 'Completed'}\n\n`
-    
-    // Executive Summary
-    if (data.summary && typeof data.summary === 'object') {
-      csv += 'Executive Summary\n'
-      csv += 'Metric,Value\n'
-      csv += `Total Files Generated,${data.summary.totalFiles || 0}\n`
-      csv += `Service Detection,${data.summary.bannerGrabbing || 'N/A'}\n`
-      csv += `OS Detection,${data.summary.osDetection || 'N/A'}\n`
-      csv += `MAC Detection,${data.summary.macDetection || 'N/A'}\n`
-      csv += `Total Ports Scanned,${data.summary.totalPortsScanned || 0}\n`
-      csv += `Open Ports,${data.summary.openPorts || 0}\n`
-      csv += `Closed Ports,${data.summary.closedPorts || 0}\n`
-      csv += `Filtered Ports,${data.summary.filteredPorts || 0}\n\n`
-    }
-    
-    // OS Detection Section
-    if (data.findings?.osDetection) {
-      csv += 'Operating System Detection\n'
-      csv += 'OS Family,OS Version,Confidence,Details\n'
-      csv += `"${data.findings.osDetection.family || 'Unknown'}","${data.findings.osDetection.version || 'Unknown'}",${data.findings.osDetection.confidence || 0},"${(data.findings.osDetection.details || 'N/A').replace(/"/g, '""')}"\n\n`
-    }
-    
-    // Scan Statistics
-    if (data.findings?.scanStatistics) {
-      csv += 'Scan Statistics & Timing\n'
-      csv += 'Metric,Value\n'
-      csv += `Duration,"${data.findings.scanStatistics.duration} seconds"\n`
-      csv += `Packets Sent,${data.findings.scanStatistics.packetsSent}\n`
-      csv += `Packets Received,${data.findings.scanStatistics.packetsReceived}\n`
-      csv += `Scan Start,"${new Date(data.findings.scanStatistics.startTime).toLocaleString()}"\n`
-      csv += `Scan End,"${new Date(data.findings.scanStatistics.endTime).toLocaleString()}"\n\n`
-    }
-    
-    // Port Scan Results
-    if (data.findings?.allPorts && data.findings.allPorts.length > 0) {
-      csv += 'Port Scan Results\n'
-      csv += 'Port,Status,Service,Banner\n'
-      data.findings.allPorts.forEach(port => {
-        const banner = (port.banner || 'N/A').replace(/"/g, '""').replace(/\n/g, ' ').replace(/\r/g, ' ')
-        csv += `${port.port},"${port.status.toUpperCase()}","${port.service}","${banner}"\n`
-      })
-      csv += '\n'
-    }
-    
-    // Recommendations Section
-    if (data.recommendations && data.recommendations.length > 0) {
-      csv += 'Security Recommendations\n'
-      csv += 'Priority,Recommendation\n'
-      data.recommendations.forEach((rec, index) => {
-        const cleanRec = rec.replace(/"/g, '""')
-        csv += `High,"${cleanRec}"\n`
-      })
-      csv += '\n'
-    }
-    
-    // Summary
-    csv += 'Scan Summary\n'
-    csv += `Summary,"${(data.summary || 'Network analysis completed successfully.').replace(/"/g, '""')}"\n`
-    
-    console.log('Generated CSV length:', csv.length)
-    return csv
-  }
-
-  const convertToProfessionalText = (data) => {
-    if (!data) return 'No scan results available'
-    
-    let text = ``
-    text += `╔══════════════════════════════════════════════════════════════════════════════╗\n`
-    text += `║                           NETWORK SECURITY SCAN REPORT                      ║\n`
-    text += `╚══════════════════════════════════════════════════════════════════════════════╝\n\n`
-    
-    text += `📊 SCAN OVERVIEW\n`
-    text += `═══════════════════════════════════════════════════════════════════════════════\n`
-    text += `Scan Date:     ${new Date().toLocaleString()}\n`
-    text += `Target:        ${scanStatus.target}\n`
-    text += `Scan Type:     Network Security Analysis\n`
-    text += `Status:        ${data.summary || 'Completed'}\n\n`
-    
-    // OS Detection Section
-    if (data.osDetection) {
-      text += `🖥️  OPERATING SYSTEM DETECTION\n`
-      text += `═══════════════════════════════════════════════════════════════════════════════\n`
-      text += `OS Version:    ${data.osDetection.version || 'Unknown'}\n`
-      text += `Confidence:    ${data.osDetection.confidence || 0}%\n`
-      text += `Details:       ${data.osDetection.details || 'N/A'}\n\n`
-    }
-    
-    // Scan Statistics
-    if (data.scanStats) {
-      text += `📈 SCAN STATISTICS\n`
-      text += `═══════════════════════════════════════════════════════════════════════════════\n`
-      text += `Open Ports:        ${data.scanStats.openPorts || 0}\n`
-      text += `Closed Ports:      ${data.scanStats.closedPorts || 0}\n`
-      text += `Filtered Ports:    ${data.scanStats.filteredPorts || 0}\n`
-      text += `Services Detected:  ${data.scanStats.services || 0}\n\n`
-    }
-    
-    // Security Recommendations
-    if (data.recommendations && data.recommendations.length > 0) {
-      text += `🔒 SECURITY RECOMMENDATIONS\n`
-      text += `═══════════════════════════════════════════════════════════════════════════════\n`
-      data.recommendations.forEach((rec, index) => {
-        text += `${index + 1}. ${rec}\n`
-      })
-      text += `\n`
-    }
-    
-    text += `═══════════════════════════════════════════════════════════════════════════════\n`
-    text += `Report Generated by Cyberix Security Scanner\n`
-    text += `Generated on: ${new Date().toLocaleString()}\n`
-    
-    return text
-  }
-
-  // Generate HTML report from scan data
-  const generateHTMLFromScanData = (data) => {
-    if (!data) return '<html><body><h1>No scan data available</h1></body></html>'
-    
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Network Analysis Report - ${scanStatus.target || 'Unknown'}</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .header { text-align: center; border-bottom: 2px solid #007acc; padding-bottom: 20px; margin-bottom: 30px; }
-        .header h1 { color: #007acc; margin: 0; }
-        .header p { color: #666; margin: 5px 0; }
-        .section { margin: 30px 0; }
-        .section h2 { color: #333; border-left: 4px solid #007acc; padding-left: 15px; }
-        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
-        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #28a745; }
-        .summary-card h3 { margin: 0 0 10px 0; color: #333; }
-        .summary-card p { margin: 0; color: #666; }
-        .findings-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        .findings-table th, .findings-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        .findings-table th { background: #f8f9fa; font-weight: bold; }
-        .status-open { color: #28a745; font-weight: bold; }
-        .status-closed { color: #dc3545; font-weight: bold; }
-        .status-filtered { color: #ffc107; font-weight: bold; }
-        .recommendations { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 6px; padding: 15px; }
-        .recommendations h3 { margin-top: 0; color: #856404; }
-        .recommendations ul { margin: 0; }
-        .recommendations li { margin: 5px 0; }
-        .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🌐 Network Analysis Report</h1>
-            <p><strong>Target:</strong> ${scanStatus.target || 'Unknown'}</p>
-            <p><strong>Scan Date:</strong> ${new Date().toLocaleString()}</p>
-            <p><strong>Scan Type:</strong> Network Analysis</p>
-        </div>
-        
-        <div class="section">
-            <h2>📊 Executive Summary</h2>
-            ${data.summary && typeof data.summary === 'object' ? `
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <h3>Total Files Generated</h3>
-                    <p>${data.summary.totalFiles || 0}</p>
-                </div>
-                <div class="summary-card">
-                    <h3>Service Detection</h3>
-                    <p>${data.summary.bannerGrabbing || 'N/A'}</p>
-                </div>
-                <div class="summary-card">
-                    <h3>OS Detection</h3>
-                    <p>${data.summary.osDetection || 'N/A'}</p>
-                </div>
-                <div class="summary-card">
-                    <h3>MAC Detection</h3>
-                    <p>${data.summary.macDetection || 'N/A'}</p>
-                </div>
-                <div class="summary-card">
-                    <h3>Total Ports Scanned</h3>
-                    <p>${data.summary.totalPortsScanned || 0}</p>
-                </div>
-                <div class="summary-card">
-                    <h3>Open Ports</h3>
-                    <p>${data.summary.openPorts || 0}</p>
-                </div>
-            </div>
-            ` : `
-            <div class="summary-card">
-                <h3>Scan Status</h3>
-                <p>${data.summaryText || data.summary || 'Completed'}</p>
-            </div>
-            `}
-        </div>
-        
-        ${data.findings?.allPorts && data.findings.allPorts.length > 0 ? `
-        <div class="section">
-            <h2>🔍 Network Findings</h2>
-            <table class="findings-table">
-                <thead>
-                    <tr>
-                        <th>Port</th>
-                        <th>Status</th>
-                        <th>Service</th>
-                        <th>Banner/Details</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${data.findings.allPorts.map(port => `
-                    <tr>
-                        <td>${port.port}</td>
-                        <td><span class="status-${port.status}">${port.status.toUpperCase()}</span></td>
-                        <td>${port.service || 'Unknown'}</td>
-                        <td>${port.banner || (port.status === 'open' ? 'No banner received' : 'N/A')}</td>
-                    </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-        ` : ''}
-        
-        ${data.findings?.osDetection ? `
-        <div class="section">
-            <h2>🖥️ Operating System Detection</h2>
-            <div style="background: #e8f4fd; padding: 15px; border-radius: 6px; border-left: 4px solid #007acc;">
-                <p><strong>OS Family:</strong> ${data.findings.osDetection.family}</p>
-                <p><strong>OS Version:</strong> ${data.findings.osDetection.version}</p>
-                <p><strong>Confidence:</strong> ${data.findings.osDetection.confidence}%</p>
-                <p><strong>Details:</strong> ${data.findings.osDetection.details}</p>
-            </div>
-        </div>
-        ` : ''}
-        
-        ${data.recommendations && data.recommendations.length > 0 ? `
-        <div class="section">
-            <h2>💡 Security Recommendations</h2>
-            <div class="recommendations">
-                <h3>Recommended Actions</h3>
-                <ul>
-                    ${data.recommendations.map(rec => `<li>${rec}</li>`).join('')}
-                </ul>
-            </div>
-        </div>
-        ` : ''}
-        
-        <div class="footer">
-            <p>Report generated by Cyberix Security Scanner</p>
-            <p>Generated on ${new Date().toLocaleString()}</p>
-        </div>
-    </div>
-</body>
-</html>`
-  }
-
-  const convertToPDF = (data) => {
-    console.log('Converting to PDF:', data)
-    
-    // Create a comprehensive PDF content with all scan data
-    let pdfContent = ''
-    
-    // Header
-    pdfContent += '╔══════════════════════════════════════════════════════════════════════════════╗\n'
-    pdfContent += '║                           NETWORK SECURITY SCAN REPORT                      ║\n'
-    pdfContent += '║                        Generated by Cyberix Security Scanner                ║\n'
-    pdfContent += '╚══════════════════════════════════════════════════════════════════════════════╝\n\n'
-    
-    // Scan Overview
-    pdfContent += '📊 SCAN OVERVIEW\n'
-    pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-    pdfContent += `Scan Date:     ${new Date().toLocaleString()}\n`
-    pdfContent += `Target:        ${scanStatus.target || 'Unknown'}\n`
-    pdfContent += `Scan Type:     Network Security Analysis\n`
-    pdfContent += `Status:        ${data.summary || 'Completed'}\n\n`
-
-    // Executive Summary
-    if (data.summary && typeof data.summary === 'object') {
-      pdfContent += '📋 EXECUTIVE SUMMARY\n'
-      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-      pdfContent += `Total Files Generated: ${data.summary.totalFiles || 0}\n`
-      pdfContent += `Service Detection:     ${data.summary.bannerGrabbing || 'N/A'}\n`
-      pdfContent += `OS Detection:          ${data.summary.osDetection || 'N/A'}\n`
-      pdfContent += `MAC Detection:         ${data.summary.macDetection || 'N/A'}\n`
-      pdfContent += `Total Ports Scanned:   ${data.summary.totalPortsScanned || 0}\n`
-      pdfContent += `Open Ports:           ${data.summary.openPorts || 0}\n`
-      pdfContent += `Closed Ports:         ${data.summary.closedPorts || 0}\n`
-      pdfContent += `Filtered Ports:       ${data.summary.filteredPorts || 0}\n\n`
-    } else {
-      pdfContent += '📋 EXECUTIVE SUMMARY\n'
-      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-      pdfContent += `Status: ${data.summaryText || data.summary || 'Completed'}\n\n`
-    }
-
-    // OS Detection Section
-    if (data.findings?.osDetection) {
-      pdfContent += '🖥️  OPERATING SYSTEM DETECTION\n'
-      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-      pdfContent += `OS Family:     ${data.findings.osDetection.family || 'Unknown'}\n`
-      pdfContent += `OS Version:     ${data.findings.osDetection.version || 'Unknown'}\n`
-      pdfContent += `Confidence:    ${data.findings.osDetection.confidence || 0}%\n`
-      pdfContent += `Details:       ${data.findings.osDetection.details || 'N/A'}\n\n`
-    }
-
-    // Scan Statistics
-    if (data.findings?.scanStatistics) {
-      pdfContent += '📈 SCAN STATISTICS & TIMING\n'
-      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-      pdfContent += `Duration:          ${data.findings.scanStatistics.duration} seconds\n`
-      pdfContent += `Packets Sent:      ${data.findings.scanStatistics.packetsSent}\n`
-      pdfContent += `Packets Received:  ${data.findings.scanStatistics.packetsReceived}\n`
-      pdfContent += `Scan Start:        ${new Date(data.findings.scanStatistics.startTime).toLocaleString()}\n`
-      pdfContent += `Scan End:          ${new Date(data.findings.scanStatistics.endTime).toLocaleString()}\n\n`
-    }
-
-    // Port Scan Results
-    if (data.findings?.allPorts && data.findings.allPorts.length > 0) {
-      pdfContent += '🔍 PORT SCAN RESULTS\n'
-      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-      pdfContent += 'Port    Status     Service    Banner/Details\n'
-      pdfContent += '───────────────────────────────────────────────────────────────────────────────\n'
-      
-      data.findings.allPorts.slice(0, 50).forEach(port => {
-        const banner = (port.banner || 'N/A').replace(/\n/g, ' ').replace(/\r/g, ' ')
-        pdfContent += `${port.port.toString().padEnd(8)} ${port.status.toUpperCase().padEnd(10)} ${port.service.padEnd(10)} ${banner}\n`
-      })
-      
-      if (data.findings.allPorts.length > 50) {
-        pdfContent += `\n... and ${data.findings.allPorts.length - 50} more ports\n`
-      }
-      pdfContent += '\n'
-    }
-
-    // Security Recommendations
-    if (data.recommendations && data.recommendations.length > 0) {
-      pdfContent += '🔒 SECURITY RECOMMENDATIONS\n'
-      pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-      pdfContent += 'Recommended Actions:\n\n'
-      data.recommendations.forEach((rec, index) => {
-        pdfContent += `${index + 1}. ${rec}\n`
-      })
-      pdfContent += '\n'
-    }
-
-    // Scan Summary
-    pdfContent += '📋 SCAN SUMMARY\n'
-    pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-    pdfContent += `${data.summary || 'Network analysis completed successfully.'}\n\n`
-    
-    pdfContent += '═══════════════════════════════════════════════════════════════════════════════\n'
-    pdfContent += 'Report Generated by Cyberix Security Scanner\n'
-    pdfContent += `Generated on: ${new Date().toLocaleString()}\n`
-
-    console.log('Generated PDF content length:', pdfContent.length)
-    return pdfContent
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header with Status */}
+      {/* Header */}
       <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 text-white">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-white dark:bg-slate-800/20 rounded-lg">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold">Network Scanning</h2>
-              <p className="text-orange-100">Professional network analysis and port discovery</p>
-            </div>
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-white dark:bg-slate-800/20 rounded-lg">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
+            </svg>
           </div>
-         
+          <div>
+            <h2 className="text-2xl font-bold">Network Scanning</h2>
+            <p className="text-orange-100">Professional network analysis and port discovery</p>
+          </div>
         </div>
       </div>
-
 
       {/* Scan Configuration */}
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
@@ -888,10 +409,11 @@ function NetworkScanning() {
         
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-3">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
               Target IP Address or Hostname
             </label>
-            <div className="relative">
+            <div className="flex gap-3">
+              <div className="relative flex-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
@@ -901,137 +423,168 @@ function NetworkScanning() {
                 type="text"
                 value={target}
                 onChange={(e) => setTarget(e.target.value)}
-                placeholder="e.g., 192.168.1.1, example.com, or scanme.nmap.org"
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors"
-                disabled={scanStatus.isScanning}
+                placeholder="e.g., 192.168.1.1, example.com, or webnox.in"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100"
+                disabled={scanStatus.isScanning || isStarting}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && target.trim() && !scanStatus.isScanning && !isStarting) {
+                    handleStartScan()
+                  }
+                }}
               />
             </div>
-          </div>
-          
-          {/* Scan Features */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-              <div className="flex items-center space-x-3 mb-2">
-                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h4 className="font-medium text-orange-900">Port Discovery</h4>
-              </div>
-              <p className="text-sm text-orange-700">Comprehensive port scanning with service detection</p>
-            </div>
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-center space-x-3 mb-2">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                <h4 className="font-medium text-green-900">Service Detection</h4>
-              </div>
-              <p className="text-sm text-green-700">Identifies running services and versions</p>
-            </div>
-            <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
-              <div className="flex items-center space-x-3 mb-2">
-                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                </svg>
-                <h4 className="font-medium text-purple-900">OS Detection</h4>
-              </div>
-              <p className="text-sm text-purple-700">Advanced OS fingerprinting and analysis</p>
-            </div>
-          </div>
-          
-          <div className="flex space-x-4">
             <button
-              onClick={handleStartScan}
-              disabled={isStarting || !target.trim()}
-              className="px-8 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
+                onClick={scanStatus.isScanning || isStarting ? abortScan : handleStartScan}
+                disabled={!target.trim() && !scanStatus.isScanning && !isStarting}
+                className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2 whitespace-nowrap"
             >
-              {scanStatus.isScanning ? (
+              {scanStatus.isScanning || isStarting ? (
                 <>
                   <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  <span>Scanning...</span>
+                    <span>Stop Scan</span>
                 </>
               ) : (
                 <>
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h8m-5-8V6a2 2 0 012-2h2a2 2 0 012 2v2M7 7h10a2 2 0 012 2v8a2 2 0 01-2 2H7a2 2 0 01-2-2V9a2 2 0 012-2z" />
                   </svg>
-                  <span>Start Network Scan</span>
+                    <span>Start Scan</span>
                 </>
               )}
             </button>
-            
-            {scanStatus.isScanning && (
-              <button
-                onClick={abortScan}
-                className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center space-x-2"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                <span>Abort Scan</span>
-              </button>
-            )}
+            </div>
           </div>
+          
+          {/* Enhanced Timer Display */}
+          {(scanTimer.isRunning || scanTimer.completedTime) && scanTimer.startTime && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-xl p-6 shadow-lg">
+              <div className="flex items-center space-x-2 mb-4">
+                <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h4 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                  {scanTimer.isRunning ? 'Scan in Progress' : 'Scan Completed'}
+                </h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white dark:bg-slate-800 rounded-lg p-4 border border-blue-200 dark:border-blue-700 shadow-sm">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Started</span>
+                  </div>
+                  <span className="text-base font-bold text-gray-900 dark:text-gray-100">
+                      {formatDateTime(scanTimer.startTime)}
+                    </span>
+                  </div>
+                <div className="bg-white dark:bg-slate-800 rounded-lg p-4 border border-blue-200 dark:border-blue-700 shadow-sm">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Elapsed Time</span>
+                  </div>
+                  <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      {formatTime(scanTimer.elapsed)}
+                    </span>
+                  </div>
+                <div className="bg-white dark:bg-slate-800 rounded-lg p-4 border border-blue-200 dark:border-blue-700 shadow-sm">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                      {scanTimer.isRunning ? 'Expected End' : 'Completed'}
+                    </span>
+                  </div>
+                  <span className="text-base font-bold text-gray-900 dark:text-gray-100">
+                    {scanTimer.completedTime 
+                      ? formatDateTime(scanTimer.completedTime)
+                      : formatDateTime(scanTimer.expectedEndTime)
+                    }
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
         </div>
       </div>
 
-      {/* Scan Statistics */}
-      {scanStatus.isScanning && (
+      {/* Console Log - Vertical Display */}
+      {consoleLog && consoleLog.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
-            <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span>Scan Statistics</span>
+            <span>Console Log</span>
           </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{scanStats.openPorts}</div>
-              <div className="text-sm text-green-700">Open Ports</div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => {
+                  const logText = consoleLog.join('\n')
+                  navigator.clipboard.writeText(logText).then(() => {
+                    alert('Log copied to clipboard!')
+                  }).catch(() => {
+                    alert('Failed to copy log')
+                  })
+                }}
+                className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
+                title="Copy Log"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to clear the console log?')) {
+                    setConsoleLog([])
+                  }
+                }}
+                className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center"
+                title="Clear Log"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
             </div>
-            <div className="text-center p-4 bg-red-50 rounded-lg">
-              <div className="text-2xl font-bold text-red-600">{scanStats.closedPorts}</div>
-              <div className="text-sm text-red-700">Closed Ports</div>
-            </div>
-            <div className="text-center p-4 bg-yellow-50 rounded-lg">
-              <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
-              <div className="text-sm text-yellow-700">Filtered</div>
-            </div>
-            <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <div className="text-2xl font-bold text-orange-600">{scanStats.services}</div>
-              <div className="text-sm text-orange-700">Services</div>
+          </div>
+          <div className="bg-gray-900 rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm">
+            <div className="space-y-1">
+              {consoleLog.map((line, index) => {
+                let cleanedLine = stripAnsiCodes(line)
+                
+                // Fix truncated timestamps at the start of line (e.g., "-11-04 09:00:01]" -> "[2025-11-04 09:00:01]")
+                // Pattern: starts with "-" followed by MM-DD HH:MM:SS]
+                cleanedLine = cleanedLine.replace(/^-(\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/g, (match, rest) => {
+                  const now = new Date()
+                  const year = now.getFullYear()
+                  return `[${year}-${rest}]`
+                })
+                
+                // Fix timestamps missing opening bracket (e.g., "2025-11-04 09:00:01]" -> "[2025-11-04 09:00:01]")
+                cleanedLine = cleanedLine.replace(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/g, '[$1]')
+                
+                // Fix timestamps that are completely missing brackets
+                cleanedLine = cleanedLine.replace(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/g, '[$1]')
+                
+                return (
+                <div key={index} className="text-green-400 py-1 border-b border-gray-800 last:border-b-0">
+                    {cleanedLine}
+                </div>
+                )
+              })}
             </div>
           </div>
         </div>
       )}
 
-      {/* Scan Progress */}
-      {scanProgress.length > 0 && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
-            <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>Scan Progress</span>
-          </h3>
-          <div className="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
-            {scanProgress.map((entry, index) => (
-              <div key={index} className={`mb-1 flex items-start space-x-2 ${
-                entry.stage === 'error' ? 'text-red-400' :
-                entry.stage === 'warning' ? 'text-yellow-400' :
-                entry.stage === 'installing' ? 'text-orange-400' :
-                'text-green-400'
-              }`}>
-                <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">[{new Date().toLocaleTimeString()}]</span>
-                <span className="font-medium">{entry.stage.toUpperCase()}:</span>
-                <span>{entry.message}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Scan Results */}
       {scanResults && (
@@ -1043,44 +596,6 @@ function NetworkScanning() {
               </svg>
               <span>Scan Results</span>
             </h3>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => downloadResults('json')}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center space-x-2 shadow-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>JSON</span>
-              </button>
-              <button
-                onClick={() => downloadResults('html')}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 shadow-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                <span>HTML</span>
-              </button>
-              <button
-                onClick={() => downloadResults('txt')}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2 shadow-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>TXT</span>
-              </button>
-              <button
-                onClick={() => downloadResults('pdf')}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 shadow-sm"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                </svg>
-                <span>PDF</span>
-              </button>
-            </div>
           </div>
           
           {scanResults.error ? (
@@ -1094,775 +609,873 @@ function NetworkScanning() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                 <div className="flex items-center space-x-2 mb-2">
-                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  <p className="text-green-800 font-medium">Network scan completed successfully</p>
+                  <p className="text-green-800 dark:text-green-200 font-medium">Network scan completed successfully</p>
                 </div>
-                <p className="text-green-700 text-sm">
-                  Analysis completed for target: <span className="font-mono font-medium">{target}</span>
+                <p className="text-green-700 dark:text-green-300 text-sm">
+                  Analysis completed for target: <span className="font-mono font-medium">{scanResults.target || target}</span>
+                  {scanResults.extractedIP && (
+                    <span className="ml-2">(IP: <span className="font-mono font-medium">{scanResults.extractedIP}</span>)</span>
+                  )}
                 </p>
               </div>
-              
-              {(scanResults.summaryText || (typeof scanResults.summary === 'string' && scanResults.summary)) && (
-                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                  <h4 className="font-medium text-orange-900 mb-2 flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span>Summary</span>
-                  </h4>
-                  <p className="text-orange-800">{scanResults.summaryText || scanResults.summary}</p>
+
+              {/* Markdown Report Display */}
+              {scanResults.results?.markdown && (
+                <div className="bg-white dark:bg-slate-900 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-lg">
+                  <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
+                    <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                      <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>Security Scan Report</span>
+                    </h4>
+                  </div>
+                  
+                  <div 
+                    className="prose prose-slate dark:prose-invert max-w-none prose-headings:text-gray-900 dark:prose-headings:text-gray-100 prose-p:text-gray-700 dark:prose-p:text-gray-300 prose-strong:text-gray-900 dark:prose-strong:text-gray-100 prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-pre:bg-gray-900 dark:prose-pre:bg-slate-800 prose-pre:text-green-400 overflow-x-auto"
+                    dangerouslySetInnerHTML={{ 
+                      __html: markdownToHTML(scanResults.results.markdown) 
+                    }}
+                  />
                 </div>
               )}
 
-              {/* Executive Summary */}
-              {scanResults.summary && typeof scanResults.summary === 'object' && (
-                <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 text-white mb-6">
-                  <h3 className="text-2xl font-bold mb-4 flex items-center space-x-2">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span>Executive Summary</span>
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanResults.summary.totalFiles || 0}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">Total Files Generated</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{scanResults.summary.bannerGrabbing || 'N/A'}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">Service Detection</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{scanResults.summary.osDetection || 'N/A'}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">OS Detection</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{scanResults.summary.macDetection || 'N/A'}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">MAC Detection</div>
-                    </div>
-                  </div>
-                  
-                  {/* Port Statistics in Executive Summary */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">Total Ports Scanned</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.openPorts}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">Open Ports</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.closedPorts}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">Closed Ports</div>
-                    </div>
-                    <div className="bg-white dark:bg-slate-800/20 rounded-lg p-4">
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanStats.filteredPorts}</div>
-                      <div className="text-sm text-gray-700 dark:text-gray-300">Filtered Ports</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Enhanced PDF Report Preview */}
-              {scanResults && (
-                <div className="p-8 mb-8">
-                  {/* Header with gradient background */}
-                  <div className="bg-gradient-to-r from-red-600 to-red-700 rounded-xl p-6 mb-6 text-white shadow-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="bg-white dark:bg-slate-800/20 rounded-lg p-2">
-                          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h3 className="text-2xl font-bold">PDF Report Preview</h3>
-                          <p className="text-red-100 text-sm">Live preview of your security scan report</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm text-red-100">Generated</div>
-                        <div className="font-semibold">{new Date().toLocaleDateString()}</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Report Content with enhanced styling */}
-                  <div className="bg-white dark:bg-slate-800 rounded-xl shadow-inner border border-gray-200 dark:border-slate-700 overflow-hidden">
-              
-                    
-                    <div className="p-6 space-y-6">
-                      {/* Report Header */}
-                    
-
-                      
-                      
-                      {/* Enhanced Scan Overview */}
-                      <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-xl p-6 border-l-4 border-orange-500 shadow-sm">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <div className="bg-orange-500 rounded-lg p-2">
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              {/* Detailed Scan Results - Section by Section */}
+              {scanResults.results?.json && (() => {
+                const jsonData = scanResults.results.json;
+                const parsed = jsonData.parsed || {};
+                const findings = jsonData.findings || {};
+                
+                return (
+                  <div className="space-y-6">
+                    {/* 1. WhatWeb Results */}
+                    {parsed.whatweb && (
+                      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
+                          <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                            <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
                             </svg>
                           </div>
-                          <h4 className="text-xl font-bold text-orange-800">SCAN OVERVIEW</h4>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center py-2 border-b border-orange-200">
-                              <span className="font-semibold text-orange-700">Scan Date:</span>
-                              <span className="text-orange-900 font-mono">{new Date().toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between items-center py-2 border-b border-orange-200">
-                              <span className="font-semibold text-orange-700">Target:</span>
-                              <span className="text-orange-900 font-mono bg-orange-100 px-2 py-1 rounded">{target}</span>
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center py-2 border-b border-orange-200">
-                              <span className="font-semibold text-orange-700">Scan Type:</span>
-                              <span className="text-orange-900">Network Analysis</span>
-                            </div>
-                            <div className="flex justify-between items-center py-2">
-                              <span className="font-semibold text-orange-700">Status:</span>
-                              <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center space-x-1">
-                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                </svg>
-                                <span>Completed Successfully</span>
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Enhanced Executive Summary */}
-                      <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 border-l-4 border-green-500 shadow-sm">
-                        <div className="flex items-center space-x-3 mb-6">
-                          <div className="bg-green-500 rounded-lg p-2">
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          </div>
-                          <h4 className="text-xl font-bold text-green-800">EXECUTIVE SUMMARY</h4>
-                        </div>
-                        
-                        {/* Summary Cards Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
-                            <div className="text-2xl font-bold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.totalFiles || 0 : 0}</div>
-                            <div className="text-sm text-green-700 font-medium">Total Files Generated</div>
-                          </div>
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
-                            <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.bannerGrabbing || 'N/A' : 'N/A'}</div>
-                            <div className="text-sm text-green-700 font-medium">Service Detection</div>
-                          </div>
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
-                            <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.osDetection || 'N/A' : 'N/A'}</div>
-                            <div className="text-sm text-green-700 font-medium">OS Detection</div>
-                          </div>
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
-                            <div className="text-lg font-semibold text-green-600">{scanResults.summary && typeof scanResults.summary === 'object' ? scanResults.summary.macDetection || 'N/A' : 'N/A'}</div>
-                            <div className="text-sm text-green-700 font-medium">MAC Detection</div>
+                          <div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Web Technology Detection</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">WhatWeb fingerprinting results</p>
                           </div>
                         </div>
                         
-                        {/* Port Statistics */}
-                        <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-green-200">
-                          <h5 className="font-semibold text-green-800 mb-3 flex items-center space-x-2">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                            <span>Port Analysis</span>
-                          </h5>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="text-center">
-                              <div className="text-2xl font-bold text-gray-800">{scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts}</div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400">Total Scanned</div>
+                        <div className="space-y-4">
+                          {parsed.whatweb.domain && (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Domain:</span>
+                              <span className="text-sm text-gray-900 dark:text-gray-100 font-mono">{parsed.whatweb.domain}</span>
                             </div>
-                            <div className="text-center">
-                              <div className="text-2xl font-bold text-green-600">{scanStats.openPorts}</div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400">Open</div>
+                          )}
+                          {parsed.whatweb.server && (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Web Server:</span>
+                              <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded text-sm font-medium">{parsed.whatweb.server}</span>
                             </div>
-                            <div className="text-center">
-                              <div className="text-2xl font-bold text-red-600">{scanStats.closedPorts}</div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400">Closed</div>
+                          )}
+                          {parsed.whatweb.status && (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Status:</span>
+                              <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 rounded text-sm font-medium">{parsed.whatweb.status}</span>
                             </div>
-                            <div className="text-center">
-                              <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
-                              <div className="text-sm text-gray-600 dark:text-gray-400">Filtered</div>
+                          )}
+                          {parsed.whatweb.ip && (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">IP Address:</span>
+                              <span className="text-sm text-gray-900 dark:text-gray-100 font-mono">{parsed.whatweb.ip}</span>
                             </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Enhanced Scan Statistics */}
-                      <div className="bg-gradient-to-r from-purple-50 to-violet-50 rounded-xl p-6 border-l-4 border-purple-500 shadow-sm">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <div className="bg-purple-500 rounded-lg p-2">
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                          </div>
-                          <h4 className="text-xl font-bold text-purple-800">SCAN STATISTICS</h4>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
-                            <div className="text-3xl font-bold text-green-600 mb-1">{scanStats.openPorts}</div>
-                            <div className="text-sm text-purple-700 font-medium">Open Ports</div>
-                            <div className="w-full bg-green-100 rounded-full h-2 mt-2">
-                              <div className="bg-green-500 h-2 rounded-full" style={{width: `${(scanStats.openPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
-                            </div>
-                          </div>
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
-                            <div className="text-3xl font-bold text-red-600 mb-1">{scanStats.closedPorts}</div>
-                            <div className="text-sm text-purple-700 font-medium">Closed Ports</div>
-                            <div className="w-full bg-red-100 rounded-full h-2 mt-2">
-                              <div className="bg-red-500 h-2 rounded-full" style={{width: `${(scanStats.closedPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
-                            </div>
-                          </div>
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
-                            <div className="text-3xl font-bold text-yellow-600 mb-1">{scanStats.filteredPorts}</div>
-                            <div className="text-sm text-purple-700 font-medium">Filtered Ports</div>
-                            <div className="w-full bg-yellow-100 rounded-full h-2 mt-2">
-                              <div className="bg-yellow-500 h-2 rounded-full" style={{width: `${(scanStats.filteredPorts / Math.max(scanStats.openPorts + scanStats.closedPorts + scanStats.filteredPorts, 1)) * 100}%`}}></div>
-                            </div>
-                          </div>
-                          <div className="bg-white dark:bg-slate-800 rounded-lg p-4 text-center shadow-sm border border-purple-200">
-                            <div className="text-3xl font-bold text-orange-600 mb-1">{scanStats.services}</div>
-                            <div className="text-sm text-purple-700 font-medium">Services</div>
-                          <div className="w-full bg-orange-100 rounded-full h-2 mt-2">
-                              <div className="bg-blue-500 h-2 rounded-full" style={{width: `${Math.min(100, (scanStats.services / Math.max(scanStats.openPorts, 1)) * 100)}%`}}></div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Enhanced Service Detection Results */}
-                      {scanResults.serviceDetections && scanResults.serviceDetections.length > 0 && (
-                        <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-6 border-l-4 border-orange-500 shadow-sm">
-                          <div className="flex items-center space-x-3 mb-4">
-                            <div className="bg-orange-500 rounded-lg p-2">
-                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                              </svg>
-                            </div>
-                            <h4 className="text-xl font-bold text-orange-800">SERVICE DETECTION RESULTS</h4>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {scanResults.serviceDetections.slice(0, 6).map((service, index) => (
-                              <div key={index} className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-orange-200">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center space-x-2">
-                                    <div className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-semibold">
-                                      Port {service.port}
-                                    </div>
-                                    <div className="text-orange-600 font-medium">{service.service}</div>
-                                  </div>
-                                  <div className="w-3 h-3 bg-green-400 rounded-full"></div>
-                                </div>
-                                {service.version && (
-                                  <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 px-2 py-1 rounded">
-                                    Version: {service.version}
-                                  </div>
-                                )}
-                                {service.banner && (
-                                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 font-mono bg-gray-100 p-2 rounded">
-                                    {service.banner.substring(0, 100)}...
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                          {scanResults.serviceDetections.length > 6 && (
-                            <div className="mt-4 text-center">
-                              <div className="bg-orange-100 text-orange-800 px-4 py-2 rounded-lg inline-block">
-                                ... and {scanResults.serviceDetections.length - 6} more services detected
-                              </div>
+                          )}
+                          {findings.whatweb?.finding && (
+                            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                              <p className="text-sm text-blue-900 dark:text-blue-100">{findings.whatweb.finding}</p>
                             </div>
                           )}
                         </div>
-                      )}
-                      
-                      {/* Enhanced OS Detection Results */}
-                      {scanResults.osDetection && (
-                        <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl p-6 border-l-4 border-indigo-500 shadow-sm">
-                          <div className="flex items-center space-x-3 mb-4">
-                            <div className="bg-indigo-500 rounded-lg p-2">
-                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                            <h4 className="text-xl font-bold text-indigo-800">OS DETECTION RESULTS</h4>
+                      </div>
+                    )}
+
+                    {/* 2. Ping Results */}
+                    {parsed.ping && (
+                      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
+                          <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                            <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-indigo-200">
-                              <div className="text-sm text-indigo-600 font-medium mb-1">Operating System</div>
-                              <div className="text-lg font-bold text-indigo-800">{scanResults.osDetection.family || 'Unknown'}</div>
+                          <div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">ICMP Ping Test</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Network connectivity test results</p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {parsed.ping.transmitted !== undefined && (
+                            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Packets Transmitted</p>
+                              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{parsed.ping.transmitted}</p>
                             </div>
-                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-indigo-200">
-                              <div className="text-sm text-indigo-600 font-medium mb-1">Version</div>
-                              <div className="text-lg font-bold text-indigo-800">{scanResults.osDetection.version || 'Unknown'}</div>
+                          )}
+                          {parsed.ping.received !== undefined && (
+                            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Packets Received</p>
+                              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{parsed.ping.received}</p>
                             </div>
-                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-indigo-200">
-                              <div className="text-sm text-indigo-600 font-medium mb-1">Confidence</div>
-                              <div className="text-lg font-bold text-indigo-800 flex items-center space-x-2">
-                                <span>{scanResults.osDetection.confidence || 0}%</span>
-                                <div className="w-16 bg-indigo-100 rounded-full h-2">
-                                  <div className="bg-indigo-500 h-2 rounded-full" style={{width: `${scanResults.osDetection.confidence || 0}%`}}></div>
-                                </div>
+                          )}
+                          {parsed.ping.packet_loss_percent !== undefined && (
+                            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Packet Loss</p>
+                              <p className={`text-2xl font-bold ${parsed.ping.packet_loss_percent > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                {parsed.ping.packet_loss_percent.toFixed(1)}%
+                              </p>
+                            </div>
+                          )}
+                          {findings.ping?.finding && (
+                            <div className="bg-gray-50 dark:bg-slate-700 rounded-lg p-4">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Status</p>
+                              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{findings.ping.finding}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 3. DNS Records */}
+                    {parsed.dns && (
+                      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
+                          <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+                            <svg className="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">DNS Records</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Domain name resolution information</p>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          {parsed.dns.A_record && (
+                            <div className="flex items-center space-x-2">
+                              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">A Record:</span>
+                              <span className="text-sm text-gray-900 dark:text-gray-100 font-mono bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">{parsed.dns.A_record}</span>
+                            </div>
+                          )}
+                          {parsed.dns.MX_records && parsed.dns.MX_records.length > 0 && (
+                            <div>
+                              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">MX Records:</p>
+                              <div className="space-y-2">
+                                {parsed.dns.MX_records.map((mx, idx) => (
+                                  <div key={idx} className="flex items-center space-x-2 bg-gray-50 dark:bg-slate-700 p-2 rounded">
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">Priority {mx.priority}:</span>
+                                    <span className="text-sm text-gray-900 dark:text-gray-100 font-mono">{mx.server}</span>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          </div>
+                          )}
+                          {findings.dns_records?.finding && (
+                            <div className="mt-4 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                              <p className="text-sm text-purple-900 dark:text-purple-100">{findings.dns_records.finding}</p>
+                            </div>
+                          )}
                         </div>
-                      )}
-                      
-                      {/* Enhanced MAC Detection Results */}
-                      {scanResults.macDetection && (
-                        <div className="bg-gradient-to-r from-teal-50 to-cyan-50 rounded-xl p-6 border-l-4 border-teal-500 shadow-sm">
-                          <div className="flex items-center space-x-3 mb-4">
-                            <div className="bg-teal-500 rounded-lg p-2">
-                              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                              </svg>
-                            </div>
-                            <h4 className="text-xl font-bold text-teal-800">MAC DETECTION RESULTS</h4>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-teal-200">
-                              <div className="text-sm text-teal-600 font-medium mb-1">MAC Address</div>
-                              <div className="text-lg font-bold text-teal-800 font-mono">{scanResults.macDetection.macAddress || 'N/A'}</div>
-                            </div>
-                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-teal-200">
-                              <div className="text-sm text-teal-600 font-medium mb-1">Vendor</div>
-                              <div className="text-lg font-bold text-teal-800">{scanResults.macDetection.vendor || 'N/A'}</div>
-                            </div>
-                            <div className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-teal-200">
-                              <div className="text-sm text-teal-600 font-medium mb-1">Device Type</div>
-                              <div className="text-lg font-bold text-teal-800">{scanResults.macDetection.deviceType || 'N/A'}</div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      
-                      {/* Enhanced Security Recommendations */}
-                      <div className="bg-gradient-to-r from-red-50 to-pink-50 rounded-xl p-6 border-l-4 border-red-500 shadow-sm">
-                        <div className="flex items-center space-x-3 mb-4">
-                          <div className="bg-red-500 rounded-lg p-2">
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      </div>
+                    )}
+
+                    {/* 4. Nmap Port Scan Results */}
+                    {(parsed.nmap_xml || parsed.nmap_text) && (
+                      <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+                        <div className="flex items-center space-x-3 mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
+                          <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                            <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                             </svg>
                           </div>
-                          <h4 className="text-xl font-bold text-red-800">SECURITY RECOMMENDATIONS</h4>
+                          <div>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Port Scan Results</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Nmap port discovery and service detection</p>
+                          </div>
                         </div>
-                        <div className="space-y-3">
-                          {[
-                            { 
-                              icon: (
-                                <svg className="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                                </svg>
-                              ), 
-                              text: 'Review open ports and close unnecessary services', 
-                              priority: 'High' 
-                            },
-                            { 
-                              icon: (
-                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                              ), 
-                              text: 'Update detected services to latest versions', 
-                              priority: 'High' 
-                            },
-                            { 
-                              icon: (
-                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                                </svg>
-                              ), 
-                              text: 'Implement proper firewall rules', 
-                              priority: 'Medium' 
-                            },
-                            { 
-                              icon: (
-                                <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                              ), 
-                              text: 'Monitor network traffic for anomalies', 
-                              priority: 'Medium' 
-                            },
-                            { 
-                              icon: (
-                                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                                </svg>
-                              ), 
-                              text: 'Regular security assessments recommended', 
-                              priority: 'Low' 
-                            }
-                          ].map((rec, index) => (
-                            <div key={index} className="bg-white dark:bg-slate-800 rounded-lg p-4 shadow-sm border border-red-200 flex items-start space-x-3">
-                              <div className="flex-shrink-0 mt-1">{rec.icon}</div>
-                              <div className="flex-1">
-                                <div className="text-red-800 font-medium">{rec.text}</div>
-                                <div className="text-sm text-red-600 mt-1">
-                                  Priority: <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                                    rec.priority === 'High' ? 'bg-red-100 text-red-800' :
-                                    rec.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-green-100 text-green-800'
-                                  }`}>{rec.priority}</span>
+                        
+                        {(() => {
+                          const nmapData = parsed.nmap_xml || parsed.nmap_text || {};
+                          const hosts = nmapData.hosts || [];
+                          const ports = nmapData.ports || [];
+                          const hostInfo = hosts[0] || nmapData;
+                          
+                          return (
+                            <div className="space-y-4">
+                              {hostInfo.ip && (
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Target IP:</span>
+                                  <span className="text-sm text-gray-900 dark:text-gray-100 font-mono bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded">{hostInfo.ip}</span>
                                 </div>
-                              </div>
+                              )}
+                              {hostInfo.host && (
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Hostname:</span>
+                                  <span className="text-sm text-gray-900 dark:text-gray-100">{hostInfo.host}</span>
+                                </div>
+                              )}
+                              {hostInfo.status && (
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Host Status:</span>
+                                  <span className={`px-2 py-1 rounded text-sm font-medium ${
+                                    hostInfo.status === 'up' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' :
+                                    'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200'
+                                  }`}>
+                                    {hostInfo.status}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              {ports.length > 0 && (
+                                <div className="mt-4">
+                                  <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                                    Open Ports ({ports.length}):
+                                  </p>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {ports.map((port, idx) => (
+                                      <div key={idx} className="bg-gray-50 dark:bg-slate-700 rounded-lg p-3 border border-gray-200 dark:border-slate-600">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <span className="font-bold text-gray-900 dark:text-gray-100">
+                                            Port {port.port}/{port.proto || port.protocol || 'tcp'}
+                                          </span>
+                                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                            port.state === 'open' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200' :
+                                            port.state === 'closed' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200' :
+                                            'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200'
+                                          }`}>
+                                            {port.state || 'unknown'}
+                                          </span>
+                                        </div>
+                                        {port.service && (typeof port.service === 'object' ? port.service.name : port.service) && (
+                                          <p className="text-sm text-gray-700 dark:text-gray-300">
+                                            Service: <span className="font-medium">{typeof port.service === 'object' ? port.service.name : port.service}</span>
+                                          </p>
+                                        )}
+                                        {port.service && typeof port.service === 'object' && port.service.product && (
+                                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                                            Product: {port.service.product}
+                                            {port.service.version && ` (${port.service.version})`}
+                                          </p>
+                                        )}
+                                        {port.version && (
+                                          <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{port.version}</p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {findings.open_ports && (
+                                <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                                  <p className="text-sm text-orange-900 dark:text-orange-100 font-medium">{findings.open_ports.finding}</p>
+                                </div>
+                              )}
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()}
                       </div>
-                      
-                      {/* Enhanced Report Footer */}
-                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-6 border-t border-gray-200 dark:border-slate-700">
-                        <div className="text-center">
-                          <div className="flex items-center justify-center space-x-2 mb-4">
-                            <div className="w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
-                              <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
-                              </svg>
-                            </div>
-                            <span className="text-lg font-semibold text-gray-700">Report generated by Cyberix Security Scanner</span>
-                          </div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                            For detailed analysis and comprehensive data, download the complete PDF report
-                          </div>
-                          <div className="flex justify-center space-x-3">
-                            <button
-                              onClick={() => downloadResults('pdf')}
-                              className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold flex items-center space-x-2 transition-colors duration-200 shadow-lg hover:shadow-xl"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              <span>Download PDF</span>
-                            </button>
-                            <button
-                              onClick={() => downloadResults('html')}
-                              className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold flex items-center space-x-2 transition-colors duration-200 shadow-lg hover:shadow-xl"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                              <span>Download HTML</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Debug Information - Show scan results structure */}
-              {/* {process.env.NODE_ENV === 'development' && scanResults && (
-                <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
-                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Debug Info - Scan Results Structure</h4>
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    <p>Scan Results Keys: {Object.keys(scanResults).join(', ')}</p>
-                    <p>Summary Type: {typeof scanResults.summary}</p>
-                    <p>Summary Keys: {scanResults.summary && typeof scanResults.summary === 'object' ? Object.keys(scanResults.summary).join(', ') : 'N/A'}</p>
-                    <p>Findings: {scanResults.findings ? 'Present' : 'Missing'}</p>
-                    <p>Findings Keys: {scanResults.findings ? Object.keys(scanResults.findings).join(', ') : 'N/A'}</p>
-                    <p>All Ports: {scanResults.findings?.allPorts ? scanResults.findings.allPorts.length : 0}</p>
-                    <p>Scan Stats: {JSON.stringify(scanStats)}</p>
-                  </div>
-                </div>
-              )} */}
-
-              {/* Port Scan Results */}
-              {scanResults.findings && scanResults.findings.allPorts && (
-                <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 mb-6">
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Network Findings - Port Scan Results</span>
-                  </h3>
-                  {/* Results Overview */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-blue-500">
-                      <div className="text-sm text-gray-600">Top Services Detected</div>
-                      <div className="mt-2 text-gray-900 dark:text-gray-100 text-sm">
-                        {(scanResults.serviceDetections || [])
-                          .slice(0,5)
-                          .map((s, i) => (
-                            <div key={i} className="flex justify-between border-b border-gray-100 py-1">
-                              <span className="font-medium">{s.service || 'unknown'}</span>
-                              <span className="font-mono">:{s.port}</span>
-                            </div>
-                          ))}
-                        {(scanResults.serviceDetections || []).length === 0 && (
-                          <div className="text-gray-500">No services identified</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-indigo-500">
-                      <div className="text-sm text-gray-600">Target</div>
-                      <div className="mt-2 font-mono text-gray-900 dark:text-gray-100">{target || scanResults.target || 'Unknown'}</div>
-                      <div className="text-xs text-gray-500 mt-1">Scan Time: {new Date().toLocaleString()}</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-emerald-500">
-                      <div className="text-sm text-gray-600">Files Generated</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {scanResults.jsonReport && (
-                          <button onClick={() => downloadGeneratedReport(scanResults.jsonReport, 'JSON')} className="px-3 py-1 text-xs bg-orange-600 text-white rounded">JSON</button>
-                        )}
-                        {scanResults.htmlReport && (
-                          <button onClick={() => downloadGeneratedReport(scanResults.htmlReport, 'HTML')} className="px-3 py-1 text-xs bg-green-600 text-white rounded">HTML</button>
-                        )}
-                        {scanResults.pdfReport && (
-                          <button onClick={() => downloadGeneratedReport(scanResults.pdfReport, 'PDF')} className="px-3 py-1 text-xs bg-red-600 text-white rounded">PDF</button>
-                        )}
-                        {!scanResults.jsonReport && !scanResults.htmlReport && !scanResults.pdfReport && (
-                          <div className="text-gray-500 text-sm">No files available</div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Port Statistics */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-green-500">
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{scanResults.summary?.totalPortsScanned || 0}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Total Ports Scanned</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-green-500">
-                      <div className="text-2xl font-bold text-green-600">{scanResults.summary?.openPorts || 0}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Open Ports</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-red-500">
-                      <div className="text-2xl font-bold text-red-600">{scanResults.summary?.closedPorts || 0}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Closed Ports</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-4 border-l-4 border-yellow-500">
-                      <div className="text-2xl font-bold text-yellow-600">{scanResults.summary?.filteredPorts || 0}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Filtered Ports</div>
-                    </div>
-                  </div>
-
-                  {/* Port Details Table */}
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Port</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Status</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Service</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Banner/Details</th>
-                          <th className="border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {scanResults.findings.allPorts.slice(0, 20).map((port, index) => (
-                          <tr key={index} className="hover:bg-gray-50">
-                            <td className="border border-gray-300 px-4 py-2 font-mono">{port.port}</td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                port.status === 'open' ? 'bg-green-100 text-green-800' :
-                                port.status === 'closed' ? 'bg-red-100 text-red-800' :
-                                'bg-yellow-100 text-yellow-800'
-                              }`}>
-                                {port.status.toUpperCase()}
-                              </span>
-                            </td>
-                            <td className="border border-gray-300 px-4 py-2">{port.service}</td>
-                            <td className="border border-gray-300 px-4 py-2 text-sm font-mono">{port.banner || 'N/A'}</td>
-                            <td className="border border-gray-300 px-4 py-2">
-                              <button onClick={() => openPortDetails(port)} className="text-orange-600 hover:text-orange-700 font-medium">
-                                View Details
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {scanResults.findings.allPorts.length > 20 && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 text-center">
-                        Showing first 20 ports of {scanResults.findings.allPorts.length} total
-                      </p>
                     )}
-                  </div>
-                </div>
-              )}
 
-              {/* Operating System Detection */}
-              {scanResults.findings?.osDetection && (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-xl p-6 border border-orange-200 mb-6">
-                  <h3 className="text-lg font-semibold text-orange-900 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                    <span>Operating System Detection</span>
-                  </h3>
-                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">OS Family:</span>
-                      <span className="text-orange-600 font-semibold">{scanResults.findings.osDetection.family || 'Unknown'}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">OS Version:</span>
-                      <span className="text-orange-600 font-semibold">{scanResults.findings.osDetection.version || 'Unknown'}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">Confidence:</span>
-                      <span className="text-green-600 font-semibold">{scanResults.findings.osDetection.confidence || 0}%</span>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-700 block mb-2">Details:</span>
-                      <span className="text-gray-600 dark:text-gray-400">{scanResults.findings.osDetection.details || 'N/A'}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Scan Statistics & Timing */}
-              {scanResults.findings?.scanStatistics && (
-                <div className="bg-gradient-to-br from-yellow-50 to-orange-100 rounded-xl p-6 border border-yellow-200 mb-6">
-                  <h3 className="text-lg font-semibold text-yellow-900 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                    <span>Scan Statistics & Timing</span>
-                  </h3>
-                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">Scan Duration:</span>
-                      <span className="text-yellow-600 font-semibold">{scanResults.findings.scanStatistics.duration} seconds</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">Packets Sent:</span>
-                      <span className="text-yellow-600 font-semibold">{scanResults.findings.scanStatistics.packetsSent}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">Packets Received:</span>
-                      <span className="text-yellow-600 font-semibold">{scanResults.findings.scanStatistics.packetsReceived}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">Scan Start:</span>
-                      <span className="text-gray-600 dark:text-gray-400">{new Date(scanResults.findings.scanStatistics.startTime).toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-700">Scan End:</span>
-                      <span className="text-gray-600 dark:text-gray-400">{new Date(scanResults.findings.scanStatistics.endTime).toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Security Recommendations */}
-              {scanResults.recommendations && scanResults.recommendations.length > 0 && (
-                <div className="bg-gradient-to-br from-yellow-50 to-orange-100 rounded-xl p-6 border border-yellow-200 mb-6">
-                  <h3 className="text-lg font-semibold text-yellow-900 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
-                    <span>Security Recommendations</span>
-                  </h3>
-                  <div className="bg-white dark:bg-slate-800 rounded-lg p-4">
-                    <h4 className="font-semibold text-yellow-800 mb-3">Recommended Actions</h4>
-                    <div className="space-y-3">
-                      {scanResults.recommendations.map((rec, index) => (
-                        <div key={index} className="flex items-start space-x-3">
-                          <div className="flex-shrink-0 w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center">
-                            <span className="text-yellow-600 font-semibold text-sm">{index + 1}</span>
+                    {/* 5. Other Findings */}
+                    {Object.entries(findings).filter(([key]) => !['whatweb', 'ping', 'dns_records', 'open_ports'].includes(key)).map(([key, finding]) => (
+                      <div key={key} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-6 shadow-sm">
+                        <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
+                          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 capitalize">{key.replace(/_/g, ' ')}</h3>
+                          <span className={`px-3 py-1 rounded text-sm font-medium ${
+                            finding.risk === 'high' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                            finding.risk === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
+                            finding.risk === 'low' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' :
+                            'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-200'
+                          }`}>
+                            {finding.risk || 'info'}
+                          </span>
+                        </div>
+                        {finding.finding && (
+                          <p className="text-gray-700 dark:text-gray-300 mb-4">{finding.finding}</p>
+                        )}
+                        {finding.recommended_tests && finding.recommended_tests.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Recommended Actions:</p>
+                            <ul className="space-y-2">
+                              {finding.recommended_tests.map((test, idx) => (
+                                <li key={idx} className="flex items-start space-x-2">
+                                  <span className="text-blue-600 dark:text-blue-400 mt-1">•</span>
+                                  <span className="text-sm text-gray-600 dark:text-gray-400 font-mono bg-gray-50 dark:bg-slate-700 px-2 py-1 rounded">{test}</span>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
-                          <p className="text-gray-700">{rec}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Critical & High Risks */}
-              {riskIssues.length > 0 && (
-                <div className="bg-gradient-to-r from-rose-50 to-red-50 rounded-xl p-6 border border-red-200 mb-6">
-                  <h3 className="text-lg font-semibold text-red-800 mb-4 flex items-center space-x-2">
-                    <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path d="M8.257 3.099c.765-1.36 2.72-1.36 3.485 0l6.518 11.594c.75 1.334-.213 2.997-1.742 2.997H3.48c-1.53 0-2.492-1.663-1.742-2.997L8.257 3.1zM11 13a1 1 0 10-2 0 1 1 0 002 0zm-1-2a1 1 0 01-1-1V7a1 1 0 112 0v3a1 1 0 01-1 1z"/></svg>
-                    <span>Critical & High Risks</span>
-                  </h3>
-                  <div className="space-y-4">
-                    {riskIssues.map((i, idx) => (
-                      <div key={idx} className="bg-white dark:bg-slate-800 rounded-lg p-4 border border-red-100">
-                        <div className="flex items-start justify-between">
-                          <div className="font-semibold text-gray-900 dark:text-gray-100">{i.title}</div>
-                          <span className={`px-2 py-1 rounded text-xs font-semibold ${i.severity === 'critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>{i.severity.toUpperCase()}</span>
-                        </div>
-                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300"><span className="font-medium">Why this matters:</span> {i.why}</div>
-                        <div className="mt-2 text-sm text-gray-700 dark:text-gray-300"><span className="font-medium">How to fix:</span> {i.fix}</div>
-                        {i.ref && (
-                          <div className="mt-2 text-xs"><a href={i.ref} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">Reference</a></div>
                         )}
                       </div>
                     ))}
                   </div>
+                );
+              })()}
+
+              {/* Overall Recommendation */}
+              {scanResults.results?.json?.overall_recommendation && (
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+                  <h4 className="text-lg font-semibold text-blue-900 dark:text-blue-100 flex items-center space-x-2 mb-3">
+                    <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    <span>Overall Recommendation</span>
+                  </h4>
+                  {scanResults.results.json.overall_recommendation.summary && (
+                    <p className="text-blue-800 dark:text-blue-200 mb-3">{scanResults.results.json.overall_recommendation.summary}</p>
+                  )}
+                  {scanResults.results.json.overall_recommendation.next_steps_safe_scans && scanResults.results.json.overall_recommendation.next_steps_safe_scans.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-2">Next Steps:</p>
+                      <ul className="list-disc list-inside text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                        {scanResults.results.json.overall_recommendation.next_steps_safe_scans.map((step, idx) => (
+                          <li key={idx} className="font-mono text-xs">{step}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Debug Information */}
-              {/* {process.env.NODE_ENV === 'development' && (
-                <div className="bg-gray-100 rounded-xl p-4 border border-gray-300">
-                  <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Debug Info</h4>
-                  <div className="text-xs text-gray-600 dark:text-gray-400">
-                    <p>Scan Results Keys: {scanResults ? Object.keys(scanResults).join(', ') : 'No results'}</p>
-                    <p>Summary: {scanResults.summary ? 'Present' : 'Missing'}</p>
-                    <p>Findings: {scanResults.findings ? 'Present' : 'Missing'}</p>
-                    <p>Ports: {scanResults.findings?.allPorts ? scanResults.findings.allPorts.length : 0}</p>
-                    <p>Recommendations: {scanResults.recommendations ? scanResults.recommendations.length : 0}</p>
-                  </div>
-                </div>
-              )} */}
-            </div>
-          )}
-          {/* Port Details Modal */}
-          {showDetails && selectedPort && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-              <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-3xl border border-gray-200 dark:border-slate-700">
-                <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
-                  <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Port {selectedPort.port} Details</h4>
-                  <button onClick={closePortDetails} className="text-gray-500 hover:text-gray-700">✕</button>
-                </div>
-                <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Service</div>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{selectedPort.service || selectedPort.serviceInfo?.service || 'Unknown'}</div>
+              {/* Raw JSON Output - Collapsed by default, shown at the end */}
+              {(scanResults.results?.json || scanResults.results) && (
+                <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 mb-2 flex items-center space-x-2">
+                      <svg className="w-5 h-5 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>View Raw JSON Data</span>
+                    </summary>
+                    <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto mt-2">
+                      <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">
+                        {JSON.stringify(scanResults.results?.json || scanResults.results || scanResults, null, 2)}
+                      </pre>
                     </div>
-                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Version</div>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">{selectedPort.serviceInfo?.version || 'N/A'}</div>
-                    </div>
-                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4 md:col-span-2">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">Banner</div>
-                      <div className="font-mono text-sm text-gray-900 dark:text-gray-100 break-words">{selectedPort.banner || selectedPort.serviceInfo?.banner || 'N/A'}</div>
-                    </div>
-                  </div>
-                  {selectedPort.serviceInfo?.cpe && (
-                    <div className="bg-gray-50 dark:bg-slate-900/40 rounded-lg p-4">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">CPE</div>
-                      <div className="font-mono text-sm text-gray-900 dark:text-gray-100">{selectedPort.serviceInfo.cpe}</div>
-                    </div>
-                  )}
-                  <div className="text-xs text-gray-500">Tip: Use Port Scanning for deep vulnerability analysis.</div>
+                  </details>
                 </div>
-                <div className="flex justify-end gap-2 p-4 border-t border-gray-200 dark:border-slate-700">
-                  <button onClick={closePortDetails} className="px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">Close</button>
+              )}
+
+              {/* Legacy Command Results (fallback) */}
+              {scanResults.results && !scanResults.results.markdown && (
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>Command Execution Results</span>
+                  </h4>
+                  
+                  {/* WhatWeb Result */}
+                  {scanResults.results.whatweb && (() => {
+                    const result = scanResults.results.whatweb
+                    const parsed = result.parsed || {}
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>1. WhatWeb Scan - Web Technology Detection</span>
+                          </h5>
+                        </div>
+                        
+                        {/* Parsed Data Display */}
+                        {parsed.url && (
+                          <div className="mb-4 space-y-3">
+                            {parsed.url && (
+                              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                <p className="text-sm text-blue-900 dark:text-blue-100">
+                                  <span className="font-semibold">Target URL:</span>{' '}
+                                  <span className="font-mono text-blue-600 dark:text-blue-400">{parsed.url}</span>
+                                </p>
+                              </div>
+                            )}
+                            
+                            {parsed.status && (
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                  <p className="text-xs text-gray-600 dark:text-gray-400">HTTP Status</p>
+                                  <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                    {parsed.status.code} {parsed.status.text}
+                                  </p>
+                                </div>
+                                {parsed.country && (
+                                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Country</p>
+                                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{parsed.country}</p>
+                                  </div>
+                                )}
+                                {parsed.server && (
+                                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Web Server</p>
+                                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{parsed.server}</p>
+                                  </div>
+                                )}
+                                {parsed.title && (
+                                  <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p className="text-xs text-gray-600 dark:text-gray-400">Page Title</p>
+                                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate" title={parsed.title}>{parsed.title}</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            
+                            {parsed.technologies && parsed.technologies.length > 0 && (
+                              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                                <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">Detected Technologies:</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {parsed.technologies.map((tech, idx) => (
+                                    <span key={idx} className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs font-medium">
+                                      {tech.name}: {tech.value}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Raw Output (collapsible) */}
+                        <details className="mt-4">
+                          <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                            View Raw Output
+                          </summary>
+                          <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput || 'No output available'}</pre>
+                          </div>
+                        </details>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Ping Result */}
+                  {scanResults.results.ping && (() => {
+                    const result = scanResults.results.ping
+                    const parsed = result.parsed || {}
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>2. Ping Test - Network Connectivity</span>
+                          </h5>
+                        </div>
+                        
+                        {/* Parsed Data Display */}
+                        {parsed.target && (
+                          <div className="mb-4 space-y-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                                <p className="text-xs text-blue-600 dark:text-blue-400">Target</p>
+                                <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">{parsed.target}</p>
+                                {parsed.ip && (
+                                  <p className="text-xs text-blue-700 dark:text-blue-300 font-mono mt-1">{parsed.ip}</p>
+                                )}
+                              </div>
+                              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p className="text-xs text-gray-600 dark:text-gray-400">Packets Transmitted</p>
+                                <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{parsed.packetsTransmitted || 0}</p>
+                              </div>
+                              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p className="text-xs text-gray-600 dark:text-gray-400">Packets Received</p>
+                                <p className={`text-lg font-semibold ${parsed.packetsReceived > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  {parsed.packetsReceived || 0}
+                                </p>
+                              </div>
+                              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p className="text-xs text-gray-600 dark:text-gray-400">Packet Loss</p>
+                                <p className={`text-lg font-semibold ${parsed.packetLoss === 0 ? 'text-green-600 dark:text-green-400' : parsed.packetLoss === 100 ? 'text-red-600 dark:text-red-400' : 'text-yellow-600 dark:text-yellow-400'}`}>
+                                  {parsed.packetLoss || 0}%
+                                </p>
+                              </div>
+                            </div>
+                            
+                            {parsed.rtt && (
+                              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                                <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">Round-Trip Time (RTT) Statistics:</p>
+                                <div className="grid grid-cols-4 gap-3">
+                                  <div>
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Minimum</p>
+                                    <p className="text-sm font-semibold text-purple-900 dark:text-purple-100">{parsed.rtt.min} ms</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Average</p>
+                                    <p className="text-sm font-semibold text-purple-900 dark:text-purple-100">{parsed.rtt.avg} ms</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Maximum</p>
+                                    <p className="text-sm font-semibold text-purple-900 dark:text-purple-100">{parsed.rtt.max} ms</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Mean Deviation</p>
+                                    <p className="text-sm font-semibold text-purple-900 dark:text-purple-100">{parsed.rtt.mdev} ms</p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {parsed.time && (
+                              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p className="text-xs text-gray-600 dark:text-gray-400">Total Time</p>
+                                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{parsed.time} ms</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Raw Output (collapsible) */}
+                        <details className="mt-4">
+                          <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                            View Raw Output
+                          </summary>
+                          <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput || 'No output available'}</pre>
+                          </div>
+                        </details>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Hping3 Result */}
+                  {scanResults.results.hping3 && (() => {
+                    const result = scanResults.results.hping3
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    const errorMsg = sanitizeError(result.error || '')
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>3. Hping3 Scan - Advanced Packet Analysis</span>
+                          </h5>
+                        </div>
+                        
+                        {errorMsg && (
+                          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-900 dark:text-red-100">
+                              <span className="font-semibold">Error:</span> {errorMsg}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {rawOutput && (
+                          <details className="mt-4">
+                            <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                              View Raw Output
+                            </summary>
+                            <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                              <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput}</pre>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Host Result */}
+                  {scanResults.results.host && (() => {
+                    const result = scanResults.results.host
+                    const parsed = result.parsed || {}
+                    const ip = result.ip || parsed.ip
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>4. Host Lookup - DNS Resolution</span>
+                          </h5>
+                        </div>
+                        
+                        {/* Parsed Data Display */}
+                        {ip && (
+                          <div className="mb-4 space-y-3">
+                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                              <p className="text-sm text-blue-900 dark:text-blue-100">
+                                <span className="font-semibold">Resolved IP Address:</span>{' '}
+                                <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{ip}</span>
+                              </p>
+                              {parsed.domain && (
+                                <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">Domain: {parsed.domain}</p>
+                              )}
+                            </div>
+                            
+                            {parsed.mxRecords && parsed.mxRecords.length > 0 && (
+                              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                                <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">Mail Exchange (MX) Records:</p>
+                                <div className="space-y-2">
+                                  {parsed.mxRecords.map((mx, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-2 bg-purple-100 dark:bg-purple-900 rounded">
+                                      <span className="text-sm text-purple-800 dark:text-purple-200 font-mono">{mx.host}</span>
+                                      <span className="text-xs text-purple-600 dark:text-purple-400 bg-purple-200 dark:bg-purple-800 px-2 py-1 rounded">
+                                        Priority: {mx.priority}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Raw Output (collapsible) */}
+                        <details className="mt-4">
+                          <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                            View Raw Output
+                          </summary>
+                          <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                            <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput || 'No output available'}</pre>
+                          </div>
+                        </details>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Nmap Host Discovery Result */}
+                  {scanResults.results.nmapHostDiscovery && (() => {
+                    const result = scanResults.results.nmapHostDiscovery
+                    const parsed = result.parsed || {}
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    const errorMsg = sanitizeError(result.error || '')
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>5. Nmap Host Discovery - Network Presence Detection</span>
+                          </h5>
+                        </div>
+                        
+                        {errorMsg && (
+                          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-900 dark:text-red-100">
+                              <span className="font-semibold">Error:</span> {errorMsg}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {parsed.host && (
+                          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <p className="text-sm text-blue-900 dark:text-blue-100">
+                              <span className="font-semibold">Host:</span> {parsed.host}
+                            </p>
+                            {parsed.hostState && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">State: {parsed.hostState}</p>
+                            )}
+                          </div>
+                        )}
+                        
+                        {parsed.ports && parsed.ports.length > 0 && (
+                          <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                            <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">Open Ports:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {parsed.ports.map((port, idx) => (
+                                <span key={idx} className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs font-medium">
+                                  {port.port}/{port.protocol} ({port.state})
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {rawOutput && (
+                          <details className="mt-4">
+                            <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                              View Raw Output
+                            </summary>
+                            <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                              <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput}</pre>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Nmap Fast Scan Result */}
+                  {scanResults.results.nmapFastScan && (() => {
+                    const result = scanResults.results.nmapFastScan
+                    const parsed = result.parsed || {}
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    const errorMsg = sanitizeError(result.error || '')
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>6. Nmap Fast Scan - Common Ports Discovery</span>
+                          </h5>
+                        </div>
+                        
+                        {errorMsg && (
+                          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-900 dark:text-red-100">
+                              <span className="font-semibold">Error:</span> {errorMsg}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {parsed.host && (
+                          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <p className="text-sm text-blue-900 dark:text-blue-100">
+                              <span className="font-semibold">Host:</span> {parsed.host}
+                            </p>
+                            {parsed.hostState && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">State: {parsed.hostState}</p>
+                            )}
+                          </div>
+                        )}
+                        
+                        {parsed.ports && parsed.ports.length > 0 && (
+                          <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                            <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">Discovered Ports ({parsed.ports.length}):</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {parsed.ports.map((port, idx) => (
+                                <div key={idx} className="p-2 bg-purple-100 dark:bg-purple-900 rounded">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-mono text-purple-800 dark:text-purple-200">{port.port}/{port.protocol}</span>
+                                    <span className={`text-xs px-2 py-1 rounded ${port.state === 'open' ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-800'}`}>
+                                      {port.state}
+                                    </span>
+                                  </div>
+                                  {port.service && (
+                                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Service: {port.service}</p>
+                                  )}
+                                  {port.version && (
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Version: {port.version}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {rawOutput && (
+                          <details className="mt-4">
+                            <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                              View Raw Output
+                            </summary>
+                            <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                              <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput}</pre>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Nmap Full Scan Result */}
+                  {scanResults.results.nmapFullScan && (() => {
+                    const result = scanResults.results.nmapFullScan
+                    const parsed = result.parsed || {}
+                    const rawOutput = stripAnsiCodes((result.raw?.stdout || '') + (result.raw?.stderr || ''))
+                    const errorMsg = sanitizeError(result.error || '')
+                    
+                    return (
+                      <div className="bg-white dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h5 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                            <span className={`px-2 py-1 rounded text-xs ${result.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                              {result.success ? 'SUCCESS' : 'FAILED'}
+                            </span>
+                            <span>7. Nmap Full Port Scan - Complete Port Range Analysis (1-65535)</span>
+                          </h5>
+                        </div>
+                        
+                        {errorMsg && (
+                          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-900 dark:text-red-100">
+                              <span className="font-semibold">Error:</span> {errorMsg}
+                            </p>
+                          </div>
+                        )}
+                        
+                        {parsed.host && (
+                          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                            <p className="text-sm text-blue-900 dark:text-blue-100">
+                              <span className="font-semibold">Host:</span> {parsed.host}
+                            </p>
+                            {parsed.hostState && (
+                              <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">State: {parsed.hostState}</p>
+                            )}
+                          </div>
+                        )}
+                        
+                        {parsed.ports && parsed.ports.length > 0 && (
+                          <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                            <p className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-2">
+                              Open Ports Found ({parsed.ports.length}):
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-96 overflow-y-auto">
+                              {parsed.ports.map((port, idx) => (
+                                <div key={idx} className="p-2 bg-purple-100 dark:bg-purple-900 rounded">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-mono text-purple-800 dark:text-purple-200">{port.port}/{port.protocol}</span>
+                                    <span className={`text-xs px-2 py-1 rounded ${port.state === 'open' ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-800'}`}>
+                                      {port.state}
+                                    </span>
+                                  </div>
+                                  {port.service && (
+                                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Service: {port.service}</p>
+                                  )}
+                                  {port.version && (
+                                    <p className="text-xs text-purple-600 dark:text-purple-400">Version: {port.version}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {rawOutput && (
+                          <details className="mt-4">
+                            <summary className="cursor-pointer text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-2">
+                              View Raw Output
+                            </summary>
+                            <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
+                              <pre className="text-green-400 font-mono text-xs whitespace-pre-wrap leading-relaxed">{rawOutput}</pre>
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
-              </div>
+              )}
             </div>
           )}
         </div>

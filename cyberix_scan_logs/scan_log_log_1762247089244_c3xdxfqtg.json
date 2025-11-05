@@ -1,0 +1,12 @@
+{
+  "id": "log_1762247089244_c3xdxfqtg",
+  "timestamp": "2025-11-04T09:04:49.244Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "https://webnox.in",
+  "status": "failed",
+  "startTime": "2025-11-04T09:02:49.244Z",
+  "endTime": "2025-11-04T09:04:49.244Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}

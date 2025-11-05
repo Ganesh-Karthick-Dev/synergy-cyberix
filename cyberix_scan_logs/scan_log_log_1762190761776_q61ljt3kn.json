@@ -1,0 +1,12 @@
+{
+  "id": "log_1762190761776_q61ljt3kn",
+  "timestamp": "2025-11-03T17:26:01.776Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "https://webnox.in",
+  "status": "failed",
+  "startTime": "2025-11-03T17:21:36.150Z",
+  "endTime": "2025-11-03T17:26:01.776Z",
+  "duration": 265626,
+  "result": "Failed to start: Error invoking remote method 'networkscan:start': Error: No handler registered for 'networkscan:start'"
+}

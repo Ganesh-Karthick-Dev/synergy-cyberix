@@ -1,0 +1,12 @@
+{
+  "id": "log_1762232791099_84zj2jp1r",
+  "timestamp": "2025-11-04T05:06:31.099Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "webno",
+  "status": "completed",
+  "startTime": "2025-11-04T05:04:31.099Z",
+  "endTime": "2025-11-04T05:06:31.099Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

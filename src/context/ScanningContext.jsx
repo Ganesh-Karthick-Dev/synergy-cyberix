@@ -143,21 +143,43 @@ export const ScanningProvider = ({ children }) => {
     try {
       if (typeof window !== 'undefined' && window.cyberGuard) {
         if (scanStatus.scanType === 'Network Scan') {
-          await window.cyberGuard.abortNetworkScan()
+          const result = await window.cyberGuard.abortNetworkScan()
+          console.log('Abort result:', result)
+          
+          // Update status immediately
+          setScanStatus({
+            isScanning: false,
+            scanType: '',
+            target: '',
+            progress: 0,
+            message: 'Scan aborted',
+            startTime: null
+          })
+          setScanProgress([])
+        } else {
+          // For other scan types, just update status
+          setScanStatus({
+            isScanning: false,
+            scanType: '',
+            target: '',
+            progress: 0,
+            message: '',
+            startTime: null
+          })
+          setScanProgress([])
         }
-        // Add port scan abort if available
-        setScanStatus({
-          isScanning: false,
-          scanType: '',
-          target: '',
-          progress: 0,
-          message: '',
-          startTime: null
-        })
-        setScanProgress([])
       }
     } catch (error) {
       console.error('Error aborting scan:', error)
+      // Still update status even if abort fails
+      setScanStatus({
+        isScanning: false,
+        scanType: '',
+        target: '',
+        progress: 0,
+        message: 'Abort failed',
+        startTime: null
+      })
     }
   }
 

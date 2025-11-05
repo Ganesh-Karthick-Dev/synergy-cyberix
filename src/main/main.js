@@ -303,7 +303,7 @@ async function createMainWindow() {
       mainWindow.loadURL(`data:text/html,
         <html>
           <head><title>Cyberix - Loading Error</title></head>
-          <body style="font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white;">
+          <body style="font-family: 'Poppins', sans-serif; padding: 20px; background: #1a1a1a; color: white;">
             <h1>🚨 Cyberix Loading Error</h1>
             <p>The development server could not be found. Please ensure:</p>
             <ul>
@@ -603,6 +603,637 @@ async function createMainWindow() {
       });
       return { error: error.message };
     }
+  });
+
+  // Network scan handlers (register early, before app.whenReady)
+  let networkScanChild = null;
+  let networkScanAbortController = null;
+  let currentNetworkScanTarget = null;
+  
+  console.log('[NETWORK-SCAN] Registering networkscan:start handler...');
+  ipcMain.handle('networkscan:start', async (event, target) => {
+    console.log('[NETWORK-SCAN] Handler called for target:', target);
+    if (networkScanChild) return { error: 'Network scan already running' };
+    
+    try {
+      // Create abort controller for this scan
+      networkScanAbortController = new AbortController();
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Helper function to strip ANSI escape codes
+      const stripAnsiCodes = (text) => {
+        if (!text || typeof text !== 'string') return text;
+        return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[[0-9;]*m/g, '').replace(/\[\d+[m[]?/g, '').trim();
+      };
+      
+      // Helper function to execute command and parse output
+      const executeCommand = async (command, timeout = 30000) => {
+        try {
+          const { stdout, stderr } = await execAsync(command, {
+            maxBuffer: 10 * 1024 * 1024,
+            timeout: timeout,
+            windowsHide: true
+          });
+          // Strip ANSI codes from output
+          return { 
+            success: true, 
+            stdout: stripAnsiCodes(stdout || ''), 
+            stderr: stripAnsiCodes(stderr || ''), 
+            error: null 
+          };
+        } catch (error) {
+          // Sanitize error message to remove "wsl" references
+          let errorMessage = error.message || '';
+          errorMessage = errorMessage.replace(/Command failed: wsl\s+/gi, 'Command failed: ');
+          errorMessage = errorMessage.replace(/wsl\s+/gi, '');
+          
+          // Strip ANSI codes from output
+          return { 
+            success: false, 
+            stdout: stripAnsiCodes(error.stdout || ''), 
+            stderr: stripAnsiCodes(error.stderr || ''), 
+            error: errorMessage,
+            code: error.code
+          };
+        }
+      };
+      
+      // Parser functions for different command outputs
+      const parsePingOutput = (output) => {
+        const result = {
+          target: null,
+          ip: null,
+          packetsTransmitted: 0,
+          packetsReceived: 0,
+          packetLoss: 0,
+          time: null,
+          rtt: null,
+          raw: output
+        };
+        
+        // Extract target and IP
+        const pingMatch = output.match(/PING\s+(\S+)\s+\(([^)]+)\)/);
+        if (pingMatch) {
+          result.target = pingMatch[1];
+          result.ip = pingMatch[2];
+        }
+        
+        // Extract statistics
+        const statsMatch = output.match(/(\d+)\s+packets\s+transmitted[,\s]+(\d+)\s+received[,\s]+(\d+)%\s+packet\s+loss[,\s]+time\s+(\d+)ms/);
+        if (statsMatch) {
+          result.packetsTransmitted = parseInt(statsMatch[1]);
+          result.packetsReceived = parseInt(statsMatch[2]);
+          result.packetLoss = parseInt(statsMatch[3]);
+          result.time = parseInt(statsMatch[4]);
+        }
+        
+        // Extract RTT statistics
+        const rttMatch = output.match(/rtt\s+min\/avg\/max\/mdev\s*=\s*([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)\s*ms/);
+        if (rttMatch) {
+          result.rtt = {
+            min: parseFloat(rttMatch[1]),
+            avg: parseFloat(rttMatch[2]),
+            max: parseFloat(rttMatch[3]),
+            mdev: parseFloat(rttMatch[4])
+          };
+        }
+        
+        return result;
+      };
+      
+      const parseHostOutput = (output) => {
+        const result = {
+          domain: null,
+          ip: null,
+          mxRecords: [],
+          txtRecords: [],
+          raw: output
+        };
+        
+        const lines = output.split('\n');
+        for (const line of lines) {
+          // Extract IP address
+          const ipMatch = line.match(/has\s+address\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+          if (ipMatch) {
+            result.ip = ipMatch[1];
+          }
+          
+          // Extract MX records
+          const mxMatch = line.match(/mail\s+is\s+handled\s+by\s+(\d+)\s+(\S+)/);
+          if (mxMatch) {
+            result.mxRecords.push({ priority: parseInt(mxMatch[1]), host: mxMatch[2] });
+          }
+        }
+        
+        return result;
+      };
+      
+      const parseWhatwebOutput = (output) => {
+        const result = {
+          url: null,
+          status: null,
+          country: null,
+          server: null,
+          title: null,
+          technologies: [],
+          raw: output
+        };
+        
+        // Parse whatweb output (format: URL [Status] [Country] [Server] [Title] [Technologies...])
+        const lines = output.split('\n');
+        for (const line of lines) {
+          if (line.trim()) {
+            // Extract URL
+            const urlMatch = line.match(/^(\S+)/);
+            if (urlMatch) result.url = urlMatch[1];
+            
+            // Extract status
+            const statusMatch = line.match(/\[(\d{3})\s+(\w+)\]/);
+            if (statusMatch) {
+              result.status = { code: parseInt(statusMatch[1]), text: statusMatch[2] };
+            }
+            
+            // Extract country
+            const countryMatch = line.match(/Country\[([^\]]+)\]/);
+            if (countryMatch) result.country = countryMatch[1];
+            
+            // Extract server
+            const serverMatch = line.match(/HTTPServer\[([^\]]+)\]/);
+            if (serverMatch) result.server = serverMatch[1];
+            
+            // Extract title
+            const titleMatch = line.match(/Title\[([^\]]+)\]/);
+            if (titleMatch) result.title = titleMatch[1];
+            
+            // Extract technologies
+            const techMatches = line.matchAll(/(\w+)\[([^\]]+)\]/g);
+            for (const match of techMatches) {
+              if (!['Country', 'HTTPServer', 'Title', 'IP'].includes(match[1])) {
+                result.technologies.push({ name: match[1], value: match[2] });
+              }
+            }
+          }
+        }
+        
+        return result;
+      };
+      
+      const parseNmapOutput = (output) => {
+        const result = {
+          host: null,
+          hostState: null,
+          ports: [],
+          services: [],
+          os: null,
+          raw: output
+        };
+        
+        const lines = output.split('\n');
+        let currentHost = null;
+        
+        for (const line of lines) {
+          // Extract host
+          const hostMatch = line.match(/Nmap scan report for\s+(.+)/);
+          if (hostMatch) {
+            currentHost = hostMatch[1].trim();
+            result.host = currentHost;
+          }
+          
+          // Extract host state
+          const hostStateMatch = line.match(/Host is\s+(\w+)/);
+          if (hostStateMatch) {
+            result.hostState = hostStateMatch[1];
+          }
+          
+          // Extract ports
+          const portMatch = line.match(/(\d+)\/(\w+)\s+(\w+)\s+(\S+)\s+(.+)/);
+          if (portMatch) {
+            result.ports.push({
+              port: parseInt(portMatch[1]),
+              protocol: portMatch[2],
+              state: portMatch[3],
+              service: portMatch[4],
+              version: portMatch[5] || null
+            });
+          }
+        }
+        
+        return result;
+      };
+      
+      // Run the network scan using Python script with nmap
+      const runNetworkScanAsync = async () => {
+        try {
+          // Ensure path and fs modules are available
+          const pathModule = require('path');
+          const fs = require('fs');
+          
+          // Use local time in the same format (YYYY-MM-DD HH:MM:SS)
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+          const startTimestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          
+          event.sender.send('networkscan:progress', { 
+            stage: 'starting', 
+            message: 'Initializing network scan...',
+            command: '',
+            output: '',
+            consoleLog: `[${startTimestamp}] Starting network scan for ports 1-2000...`
+          });
+          console.log(`[${startTimestamp}] Starting network scan for target:`, target);
+          
+          // Normalize target (remove http/https)
+          const targetDomain = target.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+          
+          // Create temp directory for scan files
+          const tempDir = pathModule.join(process.cwd(), 'temp-network-scans');
+          if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+          }
+          
+          // Generate unique filenames
+          const timestamp = Date.now();
+          const nmapXmlFile = pathModule.join(tempDir, `nmap_${timestamp}.xml`);
+          const jsonOutputFile = pathModule.join(tempDir, `scan_${timestamp}.json`);
+          
+          // Path to Python script - ensure we're using the correct path
+          // __dirname in Electron main process is src/main when in dev, but different when packaged
+          // Use process.cwd() or app.getAppPath() to get the actual application path
+          const appPath = app.isPackaged ? app.getAppPath() : process.cwd();
+          let pythonScriptPath = pathModule.join(appPath, 'backend', 'network_scan_to_json_v_2.py');
+          let absolutePythonPath = pathModule.resolve(pythonScriptPath);
+          
+          // Verify Python script exists, try alternative path if needed
+          if (!fs.existsSync(absolutePythonPath)) {
+            console.warn(`[SCAN] Python script not found at: ${absolutePythonPath}`);
+            console.log(`[SCAN] App path: ${appPath}`);
+            console.log(`[SCAN] __dirname: ${__dirname}`);
+            console.log(`[SCAN] process.cwd(): ${process.cwd()}`);
+            // Try alternative path using __dirname
+            const altPath = pathModule.join(__dirname, '..', '..', 'backend', 'network_scan_to_json_v_2.py');
+            const altAbsolutePath = pathModule.resolve(altPath);
+            console.log(`[SCAN] Trying alternative path: ${altAbsolutePath}`);
+            if (fs.existsSync(altAbsolutePath)) {
+              console.log(`[SCAN] Using alternative path: ${altAbsolutePath}`);
+              absolutePythonPath = altAbsolutePath;
+              pythonScriptPath = altPath;
+            } else {
+              throw new Error(`Python script not found at: ${absolutePythonPath} or ${altAbsolutePath}`);
+            }
+          }
+          
+          console.log(`[SCAN] ✅ Python script found at: ${absolutePythonPath}`);
+          
+          // Convert paths for WSL if on Windows
+          let nmapXmlPathWSL = nmapXmlFile;
+          let pythonScriptPathWSL = absolutePythonPath;
+          let jsonOutputPathWSL = jsonOutputFile;
+          let tempDirWSL = tempDir;
+          
+          if (process.platform === 'win32') {
+            const convertToWSLPath = (winPath) => {
+              const normalized = winPath.replace(/\\/g, '/');
+              const driveMatch = normalized.match(/^([A-Za-z]):/);
+              if (driveMatch) {
+                const driveLetter = driveMatch[1].toLowerCase();
+                // Escape spaces in path for bash
+                return normalized.replace(/^[A-Za-z]:/, `/mnt/${driveLetter}`).replace(/ /g, '\\ ');
+              }
+              return normalized.replace(/ /g, '\\ ');
+            };
+            nmapXmlPathWSL = convertToWSLPath(nmapXmlFile);
+            pythonScriptPathWSL = convertToWSLPath(absolutePythonPath);
+            jsonOutputPathWSL = convertToWSLPath(jsonOutputFile);
+            tempDirWSL = convertToWSLPath(tempDir);
+            
+            // Ensure temp directory exists in WSL
+            try {
+              await execAsync(`wsl bash -c "mkdir -p '${tempDirWSL.replace(/\\ /g, ' ')}'"`, { timeout: 5000 });
+            } catch (e) {
+              console.log('Warning: Could not create temp directory in WSL, continuing anyway');
+            }
+          }
+          
+          // Step 1: Run nmap to scan ports 1-2000 and output XML
+          // Use wsl -u root instead of sudo to avoid password prompts
+          // Also properly escape the path with spaces
+          let nmapCommand;
+          let displayPath = nmapXmlFile; // For display purposes
+          
+          if (process.platform === 'win32') {
+            // Use double quotes for the path to handle spaces, and escape properly
+            const escapedPath = nmapXmlPathWSL.replace(/\\ /g, ' ');
+            const escapedTarget = targetDomain.replace(/'/g, "'\\''");
+            // Use wsl -u root to run as root without sudo
+            nmapCommand = `wsl -u root -- nmap -Pn -p1-2000 -sV -oX "${escapedPath}" "${escapedTarget}"`;
+            displayPath = escapedPath; // Show WSL path in logs
+          } else {
+            nmapCommand = `sudo nmap -Pn -p1-2000 -sV -oX "${nmapXmlFile}" "${targetDomain}"`;
+          }
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: 'Running nmap scan (ports 1-2000)...',
+            command: '',
+            output: '',
+            consoleLog: `\n[${startTimestamp}] 🔍 Running nmap -Pn -p1-2000 -sV -oX ${displayPath} ${targetDomain}\n`
+          });
+          
+          console.log(`[SCAN] Executing nmap: ${nmapCommand}`);
+          console.log(`[SCAN] WSL Path: ${process.platform === 'win32' ? nmapXmlPathWSL.replace(/\\ /g, ' ') : nmapXmlFile}`);
+          
+          try {
+            const { stdout: nmapStdout, stderr: nmapStderr } = await execAsync(nmapCommand, {
+              maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large XML output
+              timeout: 300000, // 5 minutes timeout
+              windowsHide: true
+            });
+            
+            // Send nmap output to UI
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: 'Nmap scan completed, parsing results...',
+              command: '',
+              output: stripAnsiCodes(nmapStdout || ''),
+              consoleLog: stripAnsiCodes(nmapStdout || nmapStderr || '')
+            });
+            
+            // Check if XML file was created
+            if (!fs.existsSync(nmapXmlFile)) {
+              throw new Error('Nmap XML output file not found. Scan may have failed.');
+            }
+            
+          } catch (nmapError) {
+            console.error('Nmap scan error:', nmapError);
+            // Log the full error details for debugging
+            const errorDetails = nmapError.stderr || nmapError.stdout || nmapError.message;
+            console.error('Nmap error details:', errorDetails);
+            
+            event.sender.send('networkscan:progress', {
+              stage: 'error',
+              message: `Nmap scan failed: ${nmapError.message}`,
+              command: '',
+              output: stripAnsiCodes(errorDetails || ''),
+              consoleLog: `\n❌ Nmap scan error: ${nmapError.message}\n${stripAnsiCodes(errorDetails || '')}\n`
+            });
+            throw new Error(`Nmap scan failed: ${nmapError.message}`);
+          }
+          
+          // Step 2: Run Python script to convert XML to JSON
+          // Properly escape paths for Python command
+          let pythonCommand;
+          let displayPythonPath = absolutePythonPath;
+          let displayXmlPath = nmapXmlFile;
+          let displayJsonPath = jsonOutputFile;
+          
+          if (process.platform === 'win32') {
+            // Use double quotes and escape properly for paths with spaces
+            const escapedPythonPath = pythonScriptPathWSL.replace(/\\ /g, ' ');
+            const escapedXmlPath = nmapXmlPathWSL.replace(/\\ /g, ' ');
+            const escapedJsonPath = jsonOutputPathWSL.replace(/\\ /g, ' ');
+            const escapedTarget = targetDomain.replace(/'/g, "'\\''");
+            pythonCommand = `wsl python3 "${escapedPythonPath}" --nmap-xml "${escapedXmlPath}" --domain "${escapedTarget}" --output "${escapedJsonPath}"`;
+            // Show WSL paths in logs
+            displayPythonPath = escapedPythonPath;
+            displayXmlPath = escapedXmlPath;
+            displayJsonPath = escapedJsonPath;
+          } else {
+            pythonCommand = `python3 "${absolutePythonPath}" --nmap-xml "${nmapXmlFile}" --domain "${targetDomain}" --output "${jsonOutputFile}"`;
+          }
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: 'Converting scan results to JSON...',
+            command: '',
+            output: '',
+            consoleLog: `\n[${new Date().toISOString()}] 📊 Converting nmap XML to JSON using: ${displayPythonPath}\n`
+          });
+          
+          console.log(`[SCAN] Executing Python script: ${pythonCommand}`);
+          console.log(`[SCAN] Python Script WSL Path: ${process.platform === 'win32' ? displayPythonPath : absolutePythonPath}`);
+          console.log(`[SCAN] XML Input WSL Path: ${displayXmlPath}`);
+          console.log(`[SCAN] JSON Output WSL Path: ${displayJsonPath}`);
+          
+          try {
+            const { stdout: pythonStdout, stderr: pythonStderr } = await execAsync(pythonCommand, {
+              maxBuffer: 10 * 1024 * 1024,
+              timeout: 60000, // 1 minute timeout for parsing
+              windowsHide: true
+            });
+            
+            // Send Python script output to UI
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: 'Parsing completed...',
+              command: '',
+              output: stripAnsiCodes(pythonStdout || ''),
+              consoleLog: stripAnsiCodes(pythonStdout || pythonStderr || '')
+            });
+            
+            // Read JSON output file
+            if (!fs.existsSync(jsonOutputFile)) {
+              throw new Error('JSON output file not found. Python script may have failed.');
+            }
+            
+            const jsonContent = fs.readFileSync(jsonOutputFile, 'utf-8');
+            const scanData = JSON.parse(jsonContent);
+            
+            // Generate Markdown report
+            const reportGeneratorPath = pathModule.join(__dirname, '..', 'utils', 'scanReportGenerator.js');
+            let markdownReport = '';
+            try {
+              const { generateMarkdownReport } = require(reportGeneratorPath);
+              markdownReport = generateMarkdownReport(scanData);
+            } catch (error) {
+              console.error('Error generating markdown report:', error);
+              markdownReport = `# Network Scan Report\n\nTarget: ${target}\n\nScan completed at: ${new Date().toISOString()}\n\n## Results\n\n\`\`\`json\n${JSON.stringify(scanData, null, 2)}\n\`\`\``;
+            }
+            
+            event.sender.send('networkscan:progress', {
+              stage: 'completed',
+              message: 'Network scan completed successfully',
+              command: '',
+              output: '',
+              consoleLog: `\n✅ [SCAN] Network scan completed successfully!\n`
+            });
+            
+            console.log('Network scan completed, sending results');
+            event.sender.send('networkscan:done', { 
+              success: true, 
+              summary: 'Network scan completed successfully',
+              results: {
+                json: scanData,
+                markdown: markdownReport,
+                raw: jsonContent
+              },
+              target: target,
+              extractedIP: scanData.ip_address || null
+            });
+            
+            // Clean up temp files
+            try {
+              if (fs.existsSync(nmapXmlFile)) fs.unlinkSync(nmapXmlFile);
+              if (fs.existsSync(jsonOutputFile)) fs.unlinkSync(jsonOutputFile);
+              if (fs.existsSync(tempDir) && fs.readdirSync(tempDir).length === 0) {
+                fs.rmdirSync(tempDir);
+              }
+            } catch (cleanupError) {
+              console.log('Cleanup warning:', cleanupError.message);
+            }
+            
+          } catch (pythonError) {
+            console.error('Python script error:', pythonError);
+            event.sender.send('networkscan:done', {
+              success: false,
+              error: `Failed to parse scan results: ${pythonError.message}`,
+              results: null
+            });
+            throw pythonError;
+          }
+          
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            event.sender.send('networkscan:progress', { 
+              stage: 'aborted', 
+              message: 'Network scan aborted by user',
+              command: '',
+              output: '',
+              consoleLog: '\n⚠️ Network scan aborted by user\n'
+            });
+            event.sender.send('networkscan:done', { aborted: true });
+          } else {
+            event.sender.send('networkscan:progress', { 
+              stage: 'error', 
+              message: error.message,
+              command: '',
+              output: '',
+              consoleLog: `\n❌ Network scan error: ${error.message}\n`
+            });
+            console.error('Network scan error:', error);
+            event.sender.send('networkscan:done', { 
+              success: false, 
+              error: error.message,
+              results: null
+            });
+          }
+        } finally {
+          networkScanChild = null;
+          currentNetworkScanTarget = null;
+          networkScanAbortController = null;
+        }
+      };
+      
+      // Run in background
+      runNetworkScanAsync();
+      
+      return { success: true };
+    } catch (error) {
+      return { error: error.message };
+    }
+  });
+
+  ipcMain.handle('networkscan:abort', async (event) => {
+    console.log('[NETWORK-SCAN] Abort requested, networkScanChild:', networkScanChild ? 'exists' : 'null');
+    
+    if (networkScanChild || currentNetworkScanTarget) {
+      try {
+        // Send abort message to UI immediately
+        event.sender.send('networkscan:progress', {
+          stage: 'aborting',
+          message: 'Aborting scan...',
+          command: '',
+          output: '',
+          consoleLog: '\n⚠️ [ABORT] Stopping network scan...\n'
+        });
+        
+        // Kill the child process if it exists (spawn process)
+        if (networkScanChild) {
+          try {
+            networkScanChild.kill('SIGTERM');
+            setTimeout(() => {
+              if (networkScanChild && !networkScanChild.killed) {
+                networkScanChild.kill('SIGKILL');
+              }
+            }, 500);
+          } catch (e) {
+            console.log('[NETWORK-SCAN] Kill failed:', e.message);
+          }
+        }
+        
+        // Kill nmap and Python processes in WSL
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        if (process.platform === 'win32') {
+          try {
+            // Kill nmap processes
+            if (currentNetworkScanTarget) {
+              await execAsync(`wsl -- bash -c "pkill -f 'nmap.*${currentNetworkScanTarget}' || true"`, { timeout: 3000 });
+              await execAsync(`wsl -- bash -c "pkill -9 -f 'nmap.*${currentNetworkScanTarget}' || true"`, { timeout: 3000 });
+            }
+            // Kill all nmap processes
+            await execAsync(`wsl -- bash -c "pkill -f nmap || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f nmap || true"`, { timeout: 3000 });
+            // Kill Python script processes
+            await execAsync(`wsl -- bash -c "pkill -f 'network_scan_to_json_v_2.py' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'network_scan_to_json_v_2.py' || true"`, { timeout: 3000 });
+          } catch (e) {
+            console.log('[NETWORK-SCAN] Some cleanup commands failed:', e.message);
+          }
+        } else {
+          // On Linux/Mac
+          try {
+            if (currentNetworkScanTarget) {
+              await execAsync(`pkill -f 'nmap.*${currentNetworkScanTarget}' || true`, { timeout: 3000 });
+              await execAsync(`pkill -9 -f 'nmap.*${currentNetworkScanTarget}' || true`, { timeout: 3000 });
+            }
+            await execAsync(`pkill -f 'network_scan_to_json_v_2.py' || true`, { timeout: 3000 });
+            await execAsync(`pkill -9 -f 'network_scan_to_json_v_2.py' || true`, { timeout: 3000 });
+          } catch (e) {
+            console.log('[NETWORK-SCAN] Some cleanup commands failed:', e.message);
+          }
+        }
+
+        // Send completion message
+        event.sender.send('networkscan:progress', {
+          stage: 'aborted',
+          message: 'Scan aborted',
+          command: '',
+          output: '',
+          consoleLog: '\n✅ [ABORT] Network scan stopped successfully\n'
+        });
+
+        // Send done event with aborted status
+        event.sender.send('networkscan:done', { aborted: true });
+
+        networkScanChild = null;
+        currentNetworkScanTarget = null;
+        if (networkScanAbortController) {
+          networkScanAbortController.abort();
+          networkScanAbortController = null;
+        }
+
+        console.log('[NETWORK-SCAN] Abort completed');
+        return { success: true };
+      } catch (error) {
+        console.error('[NETWORK-SCAN] Error during abort:', error);
+        event.sender.send('networkscan:done', { aborted: true, error: error.message });
+        networkScanChild = null;
+        currentNetworkScanTarget = null;
+        networkScanAbortController = null;
+        return { success: false, error: error.message };
+      }
+    }
+
+    return { error: 'No network scan running' };
   });
 
   app.whenReady().then(async () => {
@@ -2651,127 +3282,10 @@ async function createMainWindow() {
     }
   });
 
-  // Network scan handlers
-  let networkScanChild = null;
-  let networkScanAbortController = null;
-  
   // Server scan handlers
   let serverScanChild = null;
   let serverScanAbortController = null;
   
-  ipcMain.handle('networkscan:start', async (event, target) => {
-    if (networkScanChild) return { error: 'Network scan already running' };
-    
-    try {
-      // Create abort controller for this scan
-      networkScanAbortController = new AbortController();
-      
-      // Import the network analysis module
-      const networkAnalysisModule = require(path.join(__dirname, '..', 'scanners', 'network-analysis.js'));
-      console.log('Network analysis module loaded:', typeof networkAnalysisModule.runNetworkAnalysis);
-      
-      // Run the network scan asynchronously
-      const runNetworkScanAsync = async () => {
-        try {
-          event.sender.send('networkscan:progress', { stage: 'starting', message: 'Initializing network analysis...' });
-          
-          // Create a unique temporary directory for this scan
-          const timestamp = Date.now();
-          const tempDir = path.join(process.cwd(), 'temp-scans', `network-scan-${timestamp}`)
-          
-          // Ensure the directory exists
-          fs.mkdirSync(tempDir, { recursive: true })
-          
-          // Debug: Log the tempDir path
-          console.log('Network scan tempDir:', tempDir);
-          console.log('Directory exists:', fs.existsSync(tempDir));
-          event.sender.send('networkscan:progress', { stage: 'debug', message: `Using temp directory: ${tempDir}` });
-          
-          const options = {
-            outputDir: tempDir, // Use temporary directory
-            onProgress: (update) => {
-              event.sender.send('networkscan:progress', update);
-            },
-            abortSignal: networkScanAbortController.signal,
-            dryRun: false,
-            captureTime: 30
-          };
-          
-          // Debug: Log the options object
-          console.log('Network scan options:', JSON.stringify(options, null, 2));
-          event.sender.send('networkscan:progress', { stage: 'debug', message: `Options outputDir: ${options.outputDir}` });
-          
-          // Double-check outputDir is valid
-          if (!options.outputDir || options.outputDir === null || options.outputDir === undefined) {
-            throw new Error('outputDir is null or undefined');
-          }
-          
-          // Test the module with a simple call first
-          console.log('About to call runNetworkAnalysis with:', {
-            target,
-            outputDir: options.outputDir,
-            outputDirType: typeof options.outputDir
-          });
-          
-          let result;
-          try {
-            result = await networkAnalysisModule.runNetworkAnalysis(target, options);
-          } catch (networkError) {
-            console.error('Network analysis module error:', networkError);
-            console.error('Error details:', {
-              message: networkError.message,
-              stack: networkError.stack,
-              target,
-              outputDir: options.outputDir
-            });
-            throw networkError;
-          }
-          
-          console.log('Network scan completed, sending result:', JSON.stringify(result, null, 2));
-          event.sender.send('networkscan:done', { success: true, summary: 'Network scan completed successfully', result });
-        } catch (error) {
-          if (error.name === 'AbortError') {
-            event.sender.send('networkscan:progress', { stage: 'aborted', message: 'Network scan aborted by user' });
-            event.sender.send('networkscan:done', { aborted: true });
-          } else {
-            event.sender.send('networkscan:progress', { stage: 'error', message: error.message });
-            event.sender.send('networkscan:done', null);
-          }
-        } finally {
-          networkScanChild = null;
-          networkScanAbortController = null;
-          // Clean up temporary directory
-          try {
-            if (fs.existsSync(tempDir)) {
-              fs.rmSync(tempDir, { recursive: true, force: true });
-              console.log('Cleaned up temp directory:', tempDir);
-            }
-          } catch (cleanupError) {
-            console.log('Cleanup warning:', cleanupError.message);
-          }
-        }
-      };
-      
-      // Run in background
-      runNetworkScanAsync();
-      
-      return { success: true };
-    } catch (error) {
-      return { error: error.message };
-    }
-  });
-
-  ipcMain.handle('networkscan:abort', async () => {
-    if (networkScanAbortController) {
-      networkScanAbortController.abort();
-      networkScanChild = null;
-      networkScanAbortController = null;
-      return { success: true };
-    }
-    return { error: 'No network scan running' };
-  });
-
-  // Server scan handlers
   ipcMain.handle('serverscan:start', async (event, target) => {
     console.log('serverscan:start handler called with target:', target);
     

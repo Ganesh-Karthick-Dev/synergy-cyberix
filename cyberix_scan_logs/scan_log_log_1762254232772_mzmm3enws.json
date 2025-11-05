@@ -1,0 +1,12 @@
+{
+  "id": "log_1762254232772_mzmm3enws",
+  "timestamp": "2025-11-04T11:03:52.772Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "webnox",
+  "status": "failed",
+  "startTime": "2025-11-04T11:01:52.772Z",
+  "endTime": "2025-11-04T11:03:52.772Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}
