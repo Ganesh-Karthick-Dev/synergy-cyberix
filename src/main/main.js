@@ -1181,11 +1181,29 @@ async function createMainWindow() {
       console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
       console.log('\n');
       
-      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
-      const outDir = path.join(process.cwd(), 'temp-api-scans', `api-scan-${Date.now()}`);
-      fs.mkdirSync(outDir, { recursive: true });
+      // Show folder selection dialog for saving PDF and HTML reports
+      const timestamp = Date.now();
+      const defaultPath = path.join(app.getPath('documents'), `api-scan-${timestamp}`);
       
-      const scanner = new APIScanner(targetUrl, outDir, duration);
+      const folderResult = await dialog.showOpenDialog({
+        title: 'Select Folder to Save API Scan Reports',
+        defaultPath: defaultPath,
+        properties: ['openDirectory']
+      });
+      
+      if (folderResult.canceled || !folderResult.filePaths || folderResult.filePaths.length === 0) {
+        return { success: false, error: 'Folder selection cancelled', canceled: true };
+      }
+      
+      const selectedFolder = folderResult.filePaths[0];
+      
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      // Use a temporary directory in project for scan operations, but save reports to selected folder
+      const tempDir = path.join(process.cwd(), 'temp-api-scans', `api-scan-${Date.now()}`);
+      fs.mkdirSync(tempDir, { recursive: true });
+      fs.mkdirSync(selectedFolder, { recursive: true });
+      
+      const scanner = new APIScanner(targetUrl, tempDir, duration);
       
       // Set up progress callback
       scanner.setProgressCallback((update) => {
@@ -1208,11 +1226,12 @@ async function createMainWindow() {
       // Perform the scan
       const results = await scanner.performScan();
       
-      // Generate PDF report
+      // Generate PDF report in selected folder
       if (results.capture_data) {
-        const pdfPath = path.join(outDir, 'api-scan-report.pdf');
+        const pdfPath = path.join(selectedFolder, 'api-scan-report.pdf');
         await scanner.generatePDFReport(results.capture_data, pdfPath);
         results.pdfReport = pdfPath;
+        results.htmlReport = path.join(selectedFolder, 'api-scan-report.html');
       }
       
       // Send completion
@@ -1246,7 +1265,6 @@ async function createMainWindow() {
   // IPC handler for exporting PDF report
   ipcMain.handle('apiscan:export-pdf', async (event, captureData) => {
     try {
-      const { dialog } = require('electron');
       const timestamp = Date.now();
       const defaultPath = path.join(app.getPath('documents'), `api-scan-report-${timestamp}.pdf`);
       
@@ -1267,8 +1285,9 @@ async function createMainWindow() {
       const scanner = new APIScanner('', outDir);
       
       const pdfPath = await scanner.generatePDFReport(captureData, result.filePath);
+      const htmlPath = path.join(outDir, 'api-scan-report.html');
       
-      return { success: true, pdfPath };
+      return { success: true, pdfPath, htmlPath };
     } catch (error) {
       console.error('❌ [API-SCANNER] PDF export error:', error);
       return { success: false, error: error.message };
@@ -1276,6 +1295,42 @@ async function createMainWindow() {
   });
 
   console.log('✅ [MAIN-INIT] All WSL IPC handlers registered successfully');
+
+  // File system operations for logging (register BEFORE app.whenReady() so they're available early)
+  ipcMain.handle('fs:getInstallPath', async () => {
+    try {
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        return config.installPath || null;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting install path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:getDownloadsPath', async () => {
+    try {
+      return app.getPath('downloads');
+    } catch (error) {
+      console.error('Error getting downloads path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+      }
+      return { success: true };
+    } catch (error) {
+      console.error('Error ensuring directory exists:', error);
+      throw error;
+    }
+  });
 
   app.whenReady().then(async () => {
     console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
@@ -1435,41 +1490,8 @@ async function createMainWindow() {
     }
   });
 
-  // File system operations for logging
-  ipcMain.handle('fs:getInstallPath', async () => {
-    try {
-      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
-      if (fs.existsSync(setupConfigPath)) {
-        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
-        return config.installPath || null;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error getting install path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:getDownloadsPath', async () => {
-    try {
-      return app.getPath('downloads');
-    } catch (error) {
-      console.error('Error getting downloads path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
-    try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-      return { success: true };
-    } catch (error) {
-      console.error('Error ensuring directory exists:', error);
-      throw error;
-    }
-  });
+  // File system operations for logging (already registered before app.whenReady())
+  // These handlers are now registered earlier to be available when scanLogger initializes
 
   ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
     try {
