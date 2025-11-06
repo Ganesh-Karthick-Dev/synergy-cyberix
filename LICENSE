@@ -1,21 +1,206 @@
-MIT License
+END USER LICENSE AGREEMENT (EULA)
 
-Copyright (c) 2025 Ganesh Karthick
+Cyberix - Desktop Security Suite
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+IMPORTANT - READ CAREFULLY: This End User License Agreement ("Agreement") is a legal 
+agreement between you (either an individual or a single entity) ("Licensee" or "You") 
+and Webnox ("Licensor") for the software product identified above, which 
+includes computer software and may include associated media, printed materials, and 
+online or electronic documentation ("Software").
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+By installing, copying, or otherwise using the Software, you agree to be bound by the 
+terms of this Agreement. If you do not agree to the terms of this Agreement, do not 
+install or use the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+USE AT YOUR OWN RISK: YOU ACKNOWLEDGE AND AGREE THAT YOUR USE OF THE SOFTWARE IS AT YOUR 
+SOLE RISK. YOU ARE ENTIRELY RESPONSIBLE FOR ALL CONSEQUENCES ARISING FROM YOUR USE OF THE 
+SOFTWARE, INCLUDING BUT NOT LIMITED TO ANY DAMAGE, LOSS, OR LIABILITY THAT MAY RESULT FROM 
+SUCH USE. THE LICENSOR SHALL NOT BE RESPONSIBLE OR LIABLE FOR ANY ADVERSE CONSEQUENCES, 
+DAMAGES, OR LOSSES RESULTING FROM YOUR USE OR MISUSE OF THE SOFTWARE, WHETHER SUCH USE IS 
+AUTHORIZED OR UNAUTHORIZED.
+
+1. GRANT OF LICENSE
+
+1.1. Subject to the terms and conditions of this Agreement, Licensor hereby grants 
+     you a limited, non-exclusive, non-transferable, revocable license to use the 
+     Software solely for your internal business or personal purposes.
+
+1.2. The Software is licensed, not sold. This Agreement grants you certain limited 
+     rights to use the Software. Licensor retains all rights, title, and interest in 
+     and to the Software, including all intellectual property rights therein.
+
+2. RESTRICTIONS
+
+2.1. You may NOT:
+     (a) Copy, modify, adapt, alter, translate, or create derivative works of the 
+         Software;
+     (b) Reverse engineer, decompile, disassemble, or otherwise attempt to derive the 
+         source code of the Software;
+     (c) Remove, alter, or obscure any proprietary notices, labels, or marks on the 
+         Software;
+     (d) Rent, lease, lend, sell, sublicense, assign, distribute, or otherwise 
+         transfer the Software or any rights granted hereunder;
+     (e) Use the Software for any illegal, unauthorized, or unethical purpose;
+     (f) Use the Software to test, scan, or assess systems or networks that you do 
+         not own or have explicit written authorization to test;
+     (g) Use the Software to cause harm, damage, or disruption to any systems, 
+         networks, or services;
+     (h) Share your license or allow others to use the Software under your license.
+
+3. AUTHORIZED USE ONLY
+
+3.1. CRITICAL RESTRICTION: The Software is a cybersecurity and penetration testing 
+     tool. You may ONLY use this Software to:
+     (a) Test systems, networks, or applications that you own;
+     (b) Test systems, networks, or applications for which you have obtained explicit 
+         written authorization from the owner or authorized representative;
+     (c) Conduct security assessments in compliance with applicable laws and 
+         regulations.
+
+3.2. You are STRICTLY PROHIBITED from using the Software to:
+     (a) Test, scan, or assess any system, network, or application without explicit 
+         authorization;
+     (b) Engage in any unauthorized access, hacking, or illegal activities;
+     (c) Violate any local, state, national, or international laws or regulations;
+     (d) Cause damage, disruption, or harm to any systems or networks.
+
+3.3. You acknowledge and agree that unauthorized use of the Software may constitute 
+     a violation of computer fraud and abuse laws, and you may be subject to criminal 
+     and civil penalties.
+
+4. RESPONSIBILITY AND LIABILITY
+
+4.1. USE AT YOUR OWN RISK: YOU EXPRESSLY ACKNOWLEDGE AND AGREE THAT YOUR USE OF THE 
+     SOFTWARE IS ENTIRELY AT YOUR OWN RISK. YOU ARE SOLELY RESPONSIBLE FOR:
+     (a) Ensuring that you have proper authorization before using the Software to test 
+         any system, network, or application;
+     (b) All consequences, damages, losses, or liabilities resulting from your use of 
+         the Software;
+     (c) Any legal, financial, or other consequences arising from your use or misuse of 
+         the Software;
+     (d) Ensuring compliance with all applicable laws and regulations;
+     (e) Any damage or disruption caused to systems, networks, or services as a result 
+         of using the Software.
+
+4.2. You agree to indemnify, defend, and hold harmless Licensor, its officers, 
+     directors, employees, agents, and affiliates from and against any and all claims, 
+     damages, losses, liabilities, costs, and expenses (including reasonable attorneys' 
+     fees) arising out of or relating to:
+     (a) Your use of the Software;
+     (b) Your violation of this Agreement;
+     (c) Your violation of any laws or regulations;
+     (d) Any unauthorized use of the Software;
+     (e) Any consequences, damages, or losses resulting from your use of the Software, 
+         regardless of whether such use was authorized or unauthorized.
+
+5. NO WARRANTIES
+
+5.1. THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY 
+     KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, IMPLIED 
+     WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, 
+     AND ANY WARRANTIES ARISING OUT OF COURSE OF DEALING OR USAGE OF TRADE.
+
+5.2. Licensor does not warrant that:
+     (a) The Software will meet your requirements;
+     (b) The Software will be uninterrupted, timely, secure, or error-free;
+     (c) The results obtained from using the Software will be accurate or reliable;
+     (d) Any defects or errors in the Software will be corrected.
+
+6. LIMITATION OF LIABILITY
+
+6.1. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LICENSOR, 
+     ITS OFFICERS, DIRECTORS, EMPLOYEES, AGENTS, OR AFFILIATES BE LIABLE FOR ANY 
+     INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, INCLUDING, 
+     WITHOUT LIMITATION, LOSS OF PROFITS, DATA, USE, GOODWILL, OR OTHER INTANGIBLE 
+     LOSSES, ARISING OUT OF OR IN CONNECTION WITH:
+     (a) Your use or inability to use the Software;
+     (b) Any unauthorized access to or use of the Software;
+     (c) Any conduct or content of third parties;
+     (d) Any unauthorized testing, scanning, or assessment activities conducted using 
+         the Software.
+
+6.2. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE TOTAL LIABILITY OF 
+     LICENSOR FOR ANY CLAIMS ARISING OUT OF OR RELATING TO THIS AGREEMENT OR THE 
+     SOFTWARE SHALL NOT EXCEED THE AMOUNT PAID BY YOU FOR THE SOFTWARE, IF ANY, OR 
+     ONE HUNDRED DOLLARS ($100), WHICHEVER IS GREATER.
+
+7. THIRD-PARTY COMPONENTS
+
+7.1. The Software may include third-party software components, libraries, or tools 
+     (including but not limited to Kali Linux tools, WSL components, and other 
+     open-source software) that are subject to their own license terms.
+
+7.2. You agree to comply with all applicable third-party license terms. Separate 
+     license terms for third-party components may be included with the Software or 
+     available through the Software documentation.
+
+8. TERMINATION
+
+8.1. This Agreement is effective until terminated. Your rights under this Agreement 
+     will terminate automatically without notice if you fail to comply with any of 
+     its terms.
+
+8.2. Upon termination of this Agreement:
+     (a) All rights granted to you under this Agreement will immediately cease;
+     (b) You must immediately stop using the Software;
+     (c) You must delete or destroy all copies of the Software in your possession or 
+         control.
+
+8.3. Sections 3, 4, 5, 6, 8, 9, 10, and 11 shall survive termination of this 
+     Agreement.
+
+9. EXPORT CONTROL
+
+9.1. The Software may be subject to export control laws and regulations. You agree 
+     to comply with all applicable international and national laws that apply to the 
+     Software, including export control laws and regulations.
+
+10. GOVERNING LAW AND DISPUTE RESOLUTION
+
+10.1. This Agreement shall be governed by and construed in accordance with the laws 
+      of the jurisdiction in which Licensor is located, without regard to its conflict 
+      of law provisions.
+
+10.2. Any disputes arising out of or relating to this Agreement or the Software 
+      shall be resolved through binding arbitration in accordance with the rules of 
+      the applicable arbitration association, or in a court of competent jurisdiction 
+      if arbitration is not available.
+
+11. GENERAL PROVISIONS
+
+11.1. This Agreement constitutes the entire agreement between you and Licensor 
+      regarding the Software and supersedes all prior or contemporaneous 
+      communications, proposals, and agreements.
+
+11.2. If any provision of this Agreement is held to be invalid or unenforceable, 
+      the remaining provisions shall remain in full force and effect.
+
+11.3. Licensor may modify this Agreement at any time by providing notice to you. 
+      Your continued use of the Software after such modification constitutes your 
+      acceptance of the modified Agreement.
+
+11.4. You may not assign or transfer this Agreement or any rights granted hereunder 
+      without the prior written consent of Licensor.
+
+11.5. This Agreement does not create any agency, partnership, joint venture, or 
+      employment relationship between you and Licensor.
+
+12. ACKNOWLEDGMENT
+
+You acknowledge that you have read this Agreement, understand it, and agree to be 
+bound by its terms and conditions. You also acknowledge that:
+(a) You understand the critical importance of using this Software only with proper 
+    authorization and in compliance with all applicable laws;
+(b) YOU USE THE SOFTWARE ENTIRELY AT YOUR OWN RISK;
+(c) You are solely responsible for all consequences, damages, and liabilities arising 
+    from your use of the Software;
+(d) The Licensor shall not be liable for any adverse consequences resulting from your 
+    use or misuse of the Software.
+
+Copyright (c) 2025 Webnox. All rights reserved.
+
+For questions regarding this Agreement, please contact the Licensor.
+
+---
+
+This EULA was last updated: January 2025

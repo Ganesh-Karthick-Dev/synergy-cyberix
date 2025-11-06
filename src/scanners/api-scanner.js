@@ -416,26 +416,59 @@ class APIScanner {
     
     try {
       const domain = await this.extractDomain(targetUrl);
+      
+      // Step 1: Detect environment (WSL vs Windows) - following runbook approach
+      // Since requests will originate from WSL (we use runWSLRaw for curl), capture in WSL
+      this.log(`🔍 Detecting capture environment...`, 20);
+      const useWSL = true; // Always use WSL for now (requests originate from WSL)
+      
+      if (useWSL) {
+        return await this.startCaptureWSL(targetUrl, domain, duration);
+      } else {
+        return await this.startCaptureWindows(targetUrl, domain, duration);
+      }
+    } catch (error) {
+      this.log(`❌ Capture error: ${error.message}`, 50);
+      return { endpoints: [], requests: [], responses: [], summary: {}, error: error.message };
+    }
+  }
+
+  // WSL Capture - following runbook automation-friendly one-liner approach
+  async startCaptureWSL(targetUrl, domain, duration = 120) {
+    this.log(`📡 Starting WSL capture (following runbook approach)...`, 20);
+    
+    try {
       const networkInterface = await this.getNetworkInterface();
       const timestamp = Date.now();
       
-      // Use pcap-based workflow (recommended): capture to pcap first, then convert to JSON
+      // Use pcap-based workflow (as per runbook): capture to pcap first, then convert to JSON
       const pcapFile = `/tmp/api_capture_${timestamp}.pcap`;
       const jsonFile = `/tmp/api_capture_${timestamp}.json`;
       const errorFile = `/tmp/api_capture_${timestamp}_errors.txt`;
+      const keylogFile = `/tmp/api_capture_${timestamp}_sslkeylog.txt`;
       
-      // Resolve domain to IP addresses (use resolved IP for reliability)
+      // Step 0: Set up SSLKEYLOGFILE for HTTPS decryption
+      this.log(`🔐 Setting up SSLKEYLOGFILE for HTTPS decryption...`, 21);
+      const setupKeylogCmd = `touch ${keylogFile} && chmod 666 ${keylogFile} && echo "Keylog file created: ${keylogFile}"`;
+      const setupKeylogResult = await runWSLAsRoot(setupKeylogCmd);
+      if (setupKeylogResult.success) {
+        this.log(`✅ SSLKEYLOGFILE will be set to: ${keylogFile}`, 21);
+      } else {
+        this.log(`⚠️ Failed to create keylog file, HTTPS decryption may not work`, 21);
+      }
+      
+      // Step 1: Preparatory commands (as per runbook section 1)
+      this.log(`🔍 Running preparatory commands...`, 21);
+      
+      // Resolve IPs and list interfaces (helps decide interface)
       const ipAddresses = await this.resolveDomainToIPs(domain);
       
       // Build capture filter - use resolved IP if available (more reliable), otherwise use domain
-      // BPF filter: "host webnox.in" or "host 103.XX.YY.ZZ" (use IP for reliability)
       let captureFilter = '';
       if (ipAddresses.length > 0 && ipAddresses[0]) {
-        // Use first resolved IP address (BPF filters work better with IPs)
         captureFilter = `host ${ipAddresses[0]}`;
         this.log(`📡 Using resolved IP for filter: ${ipAddresses[0]}`, 22);
       } else {
-        // Fallback to domain-based filter
         captureFilter = `host ${domain}`;
         this.log(`📡 Using domain for filter: ${domain}`, 22);
       }
@@ -443,13 +476,12 @@ class APIScanner {
       this.log(`💡 Tip: Make requests to ${targetUrl} during capture to generate traffic!`, 22);
       this.log(`💡 Tip: For HTTPS decryption, set SSLKEYLOGFILE before running client`, 22);
       
-      // Step 1: Verify interface exists before capture
+      // Step 2: Verify interface exists before capture (as per runbook)
       this.log(`🔍 Verifying interface ${networkInterface} exists...`, 25);
-      const verifyIfaceCmd = `bash -c 'ip link show ${networkInterface} 2>&1 | head -1'`;
+      const verifyIfaceCmd = `ip link show ${networkInterface} 2>&1 | head -1`;
       const verifyIfaceResult = await runWSLAsRoot(verifyIfaceCmd);
       if (!verifyIfaceResult.success || verifyIfaceResult.stdout.includes('not found')) {
         this.log(`❌ Interface ${networkInterface} not found!`, 25);
-        this.log(`💡 Finding alternative interface...`, 25);
         const altIface = await this.findAlternativeInterface();
         if (altIface) {
           networkInterface = altIface;
@@ -461,395 +493,166 @@ class APIScanner {
         this.log(`✅ Interface ${networkInterface} verified`, 25);
       }
       
-      // Step 1: Capture to pcap file (following runbook approach)
-      // For WSL: use -i eth0 (or detected interface) with -p flag to disable promiscuous mode
-      // Note: runWSLAsRoot already runs as root, so no need for sudo
-      // This avoids "promiscuous mode not supported" warnings and ensures proper capture
-      const captureCmd = `bash -c 'tshark -i ${networkInterface} -p -f "${captureFilter}" -a duration:${duration} -w ${pcapFile} 2>&1 | tee ${errorFile} || echo "CAPTURE_FAILED:\$?" > ${errorFile}'`;
-      this.log(`🔧 [TSHARK] Step 1: Starting capture on ${networkInterface} (WSL interface with -p flag)...`, 25, `tshark -i ${networkInterface} -p -f "${captureFilter}" -a duration:${duration} -w ${pcapFile}`);
+      // Step 3: Start capture using runbook automation-friendly one-liner approach
+      // Runbook section 5: "start capture for 30s, trigger curl during that time, then convert to JSON"
+      // sudo tshark -i eth0 -p -f "host webnox.in" -a duration:30 -w /tmp/retry.pcap 2>/tmp/retry_errors.txt & sleep 1; curl -v https://webnox.in; wait
+      this.log(`🔧 [TSHARK] Step 2: Starting capture (runbook automation-friendly approach)...`, 25);
+      this.log(`📝 Command: tshark -i ${networkInterface} -p -f "${captureFilter}" -a duration:${duration} -w ${pcapFile} & sleep 1; curl -v ${targetUrl}; wait`, 25);
       
-      // Start capture in background (non-blocking)
-      const capturePromise = runWSLAsRoot(captureCmd);
+      // Build the automation-friendly one-liner (as per runbook section 5)
+      // Start capture in background, wait 1s, trigger curl with SSLKEYLOGFILE, then wait for capture
+      // Export SSLKEYLOGFILE once at the start so all curl commands use it
+      const automationCmd = `export SSLKEYLOGFILE=${keylogFile} && tshark -i ${networkInterface} -p -f "${captureFilter}" -a duration:${duration} -w ${pcapFile} 2>${errorFile} & sleep 1; curl -v ${targetUrl} >/dev/null 2>&1 || true; curl -v ${targetUrl}/api/v1/status >/dev/null 2>&1 || true; curl -v ${targetUrl}/api >/dev/null 2>&1 || true; wait`;
+      this.log(`📡 Triggering requests during capture with SSLKEYLOGFILE (as per runbook)...`, 27);
+      this.log(`🔐 SSLKEYLOGFILE=${keylogFile} will be used for HTTPS decryption`, 27);
       
-      // Step 1.5: Verify capture process started
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds for process to start
-      this.log(`🔍 Verifying capture process is running...`, 27);
-      const checkProcessCmd = `bash -c 'ps aux | grep -E "tshark.*${pcapFile}" | grep -v grep | head -1'`;
-      const processCheck = await runWSLAsRoot(checkProcessCmd);
-      if (processCheck.success && processCheck.stdout && processCheck.stdout.trim()) {
-        this.log(`✅ Capture process is running: ${processCheck.stdout.substring(0, 100)}`, 27);
+      // Execute the automation-friendly one-liner (runWSLAsRoot already runs as root)
+      const captureResult = await runWSLAsRoot(automationCmd);
+      
+      // Verify keylog file was written to after curl commands
+      const verifyKeylogCmd = `test -f "${keylogFile}" && test -s "${keylogFile}" && wc -l < "${keylogFile}" || echo "0"`;
+      const verifyKeylogResult = await runWSLAsRoot(verifyKeylogCmd);
+      const keylogLines = parseInt(verifyKeylogResult.stdout?.trim() || '0') || 0;
+      if (keylogLines > 0) {
+        this.log(`✅ Keylog file has ${keylogLines} entries (HTTPS decryption should work)`, 28);
       } else {
-        this.log(`⚠️ Capture process not found in process list`, 27);
-        this.log(`💡 This may indicate the capture failed to start`, 27);
+        this.log(`⚠️ Keylog file is empty or missing (${keylogFile})`, 28);
+        this.log(`💡 This may mean curl doesn't support SSLKEYLOGFILE or requests failed`, 28);
       }
       
-      // Step 1.6: Trigger requests during capture (as per runbook)
-      this.log(`📡 Triggering test requests to ${targetUrl} during capture...`, 27);
+      // Step 4: Verify pcap has packets (as per runbook section 2C)
+      // Runbook: "ls -lh /tmp/api_capture_wsl.pcap"
+      //          "tshark -r /tmp/api_capture_wsl.pcap -c 10 -V"
+      //          "tshark -r /tmp/api_capture_wsl.pcap -q -z io,stat,0"
+      this.log(`🔍 Verifying captured packets (as per runbook)...`, 40);
       
-      // Trigger multiple requests to generate traffic (as per runbook)
-      const triggerRequests = async () => {
-        try {
-          // Request 1: Root endpoint
-          this.log(`📡 Triggering request 1: ${targetUrl}`, 27);
-          const curlCmd1 = `bash -c 'curl -v -s --max-time 10 ${targetUrl} >/dev/null 2>&1 || true'`;
-          await runWSLRaw(curlCmd1);
-          
-          // Request 2: Common API endpoints (if applicable)
-          this.log(`📡 Triggering request 2: ${targetUrl}/api/v1/status`, 27);
-          const curlCmd2 = `bash -c 'curl -v -s --max-time 10 ${targetUrl}/api/v1/status >/dev/null 2>&1 || true'`;
-          await runWSLRaw(curlCmd2);
-          
-          // Request 3: Another common endpoint
-          this.log(`📡 Triggering request 3: ${targetUrl}/api`, 27);
-          const curlCmd3 = `bash -c 'curl -v -s --max-time 10 ${targetUrl}/api >/dev/null 2>&1 || true'`;
-          await runWSLRaw(curlCmd3);
-          
-          this.log(`✅ Test requests triggered during capture`, 28);
-        } catch (error) {
-          this.log(`⚠️ Error triggering requests: ${error.message}`, 28);
-        }
-      };
-      
-      // Store triggerRequests function for retry
-      const triggerRequestsFn = triggerRequests;
-      
-      // Trigger requests while capture is running
-      await triggerRequestsFn();
-      
-      // Wait for capture to complete
-      const result = await capturePromise;
-      
-      // Check capture result immediately
-      let errorOutput = '';
-      
-      // First, check stderr directly from the result
-      if (result.stderr) {
-        errorOutput = result.stderr;
-        this.log(`⚠️ [TSHARK] STDERR from command:\n${result.stderr.substring(0, 2000)}`, 30);
-      }
-      
-      // Check stdout for errors (tshark sometimes outputs to stdout)
-      if (result.stdout) {
-        const stdoutErrors = result.stdout;
-        if (stdoutErrors.includes('error') || stdoutErrors.includes('Error') || stdoutErrors.includes('failed') || stdoutErrors.includes('Failed')) {
-          if (!errorOutput) errorOutput = stdoutErrors;
-          this.log(`⚠️ [TSHARK] STDOUT (may contain errors):\n${stdoutErrors.substring(0, 2000)}`, 30);
-        }
-      }
-      
-      if (!result.success) {
-        this.log(`❌ [TSHARK] Capture command failed!`, 30);
-        if (result.error) {
-          this.log(`❌ Error: ${result.error}`, 30);
-          if (!errorOutput) errorOutput = result.error;
-        }
-      }
-      
-      // Check for errors in stderr file (try as root first, then regular user)
-      this.log(`🔍 Checking error log file...`, 30);
-      const errorCheckCmdRoot = `bash -c 'cat ${errorFile} 2>/dev/null || echo ""'`;
-      const errorCheckResultRoot = await runWSLAsRoot(errorCheckCmdRoot);
-      
-      if (errorCheckResultRoot.success && errorCheckResultRoot.stdout && errorCheckResultRoot.stdout.trim()) {
-        const fileError = errorCheckResultRoot.stdout.trim();
-        if (fileError && !fileError.includes('CAPTURE_FAILED')) {
-          if (!errorOutput) errorOutput = fileError;
-          else errorOutput += '\n' + fileError;
-        }
-        if (fileError.includes('CAPTURE_FAILED')) {
-          this.log(`❌ Capture failed with exit code: ${fileError}`, 30);
-        }
-      }
-      
-      // If no errors found yet, check if pcap file exists
-      if (!errorOutput) {
-        const checkPcapCmd = `bash -c 'test -f ${pcapFile} && echo "exists" || echo "not found"'`;
-        const pcapCheck = await runWSLAsRoot(checkPcapCmd);
-        if (pcapCheck.success && pcapCheck.stdout.includes('not found')) {
-          errorOutput = 'Pcap file was not created - capture process may have failed silently';
-          this.log(`❌ Pcap file not created - capture likely failed`, 30);
-        }
-      }
-      
-      if (errorOutput) {
-        this.log(`⚠️ [TSHARK] Warnings/Errors from error file:\n${errorOutput.substring(0, 2000)}`, 30);
-        
-        // Check for common errors and provide solutions
-        let shouldRetry = false;
-        let retryPcapFile = pcapFile;
-        let retryNetworkInterface = networkInterface;
-        let retryCaptureFilter = captureFilter;
-        
-        if (errorOutput.includes('permission denied') || errorOutput.includes('Permission denied') || errorOutput.includes("don't have permission")) {
-          this.log(`❌ Permission error detected`, 30);
-          this.log(`💡 Solution: Adding user to wireshark group or setting capabilities...`, 30);
-          const fixed = await this.fixPermissions();
-          if (fixed) {
-            shouldRetry = true;
-            this.log(`✅ Permissions fixed, will retry capture`, 30);
-          }
-        }
-        if (errorOutput.includes('No such device') || errorOutput.includes('interface')) {
-          this.log(`❌ Interface error: ${networkInterface} may not exist or be accessible`, 30);
-          this.log(`💡 Solution: Trying alternative interfaces...`, 30);
-          const altInterface = await this.findAlternativeInterface();
-          if (altInterface) {
-            this.log(`✅ Found alternative interface: ${altInterface}`, 30);
-            retryNetworkInterface = altInterface;
-            shouldRetry = true;
-          }
-        }
-        if (errorOutput.includes('syntax error') || errorOutput.includes('invalid filter')) {
-          this.log(`❌ Filter syntax error detected`, 30);
-          this.log(`💡 Solution: Using simpler filter...`, 30);
-          // Use simpler filter
-          retryCaptureFilter = ipAddresses.length > 0 ? `host ${ipAddresses[0]}` : `host ${domain}`;
-          shouldRetry = true;
-        }
-        if (errorOutput.includes('tshark: command not found')) {
-          this.log(`❌ tshark not found: Please install tshark`, 30);
-          this.log(`💡 Solution: Installing tshark...`, 30);
-          const installed = await this.installTshark();
-          if (installed) {
-            shouldRetry = true;
-          }
-        }
-        if (errorOutput.includes('capabilities') || errorOutput.includes('dumpcap')) {
-          this.log(`❌ Capabilities error detected`, 30);
-          this.log(`💡 Solution: Setting capabilities for dumpcap...`, 30);
-          const fixed = await this.setDumpcapCapabilities();
-          if (fixed) {
-            shouldRetry = true;
-          }
-        }
-        
-        // Retry capture if fixes were applied
-        if (shouldRetry) {
-          this.log(`🔄 Retrying capture after error fixes...`, 30);
-          const retryTimestamp = Date.now();
-          retryPcapFile = `/tmp/api_capture_${retryTimestamp}.pcap`;
-          const retryErrorFile = `/tmp/api_capture_${retryTimestamp}_errors.txt`;
-          
-          // Retry capture with fixed parameters (no sudo needed - runWSLAsRoot already runs as root)
-          const retryCaptureCmd = `bash -c 'tshark -i ${retryNetworkInterface} -p -f "${retryCaptureFilter}" -a duration:${duration} -w ${retryPcapFile} 2>&1 | tee ${retryErrorFile} || echo "CAPTURE_FAILED:\$?" > ${retryErrorFile}'`;
-          this.log(`🔧 Retrying with interface: ${retryNetworkInterface}, filter: ${retryCaptureFilter}`, 30);
-          
-          const retryPromise = runWSLAsRoot(retryCaptureCmd);
-          
-          // Trigger requests again during retry
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          await triggerRequestsFn();
-          
-          // Wait for retry capture to complete
-          const retryResult = await retryPromise;
-          
-          if (retryResult.success) {
-            this.log(`✅ Retry capture completed`, 30);
-            // Update file paths for further processing
-            pcapFile = retryPcapFile;
-            errorFile = retryErrorFile;
-            networkInterface = retryNetworkInterface;
-            captureFilter = retryCaptureFilter;
-          } else {
-            this.log(`❌ Retry capture also failed`, 30);
-            if (retryResult.stderr) {
-              this.log(`❌ Retry STDERR: ${retryResult.stderr.substring(0, 500)}`, 30);
-            }
-          }
-        }
-      } else if (!result.success) {
-        this.log(`⚠️ No error log file found, but capture command failed`, 30);
-        this.log(`💡 Checking if tshark is installed and accessible...`, 30);
-        await this.verifyTsharkInstallation();
-      }
-      
-      // Step 2: Verify pcap file was created and check packet count (improved verification)
-      this.log(`🔍 Verifying captured packets...`, 40);
-      
-      // First check if file exists (try as root first)
-      const fileExistsRootCmd = `bash -c 'sudo test -f ${pcapFile} && echo "exists" || echo "not found"'`;
-      const fileExistsRootResult = await runWSLAsRoot(fileExistsRootCmd);
-      let fileExists = false;
-      
-      if (fileExistsRootResult.success && fileExistsRootResult.stdout && fileExistsRootResult.stdout.trim() === 'exists') {
-        fileExists = true;
-      } else {
-        // Try as regular user
-        const fileExistsCmd = `bash -c 'test -f ${pcapFile} && echo "exists" || echo "not found"'`;
-        const fileExistsResult = await runWSLRaw(fileExistsCmd);
-        if (fileExistsResult.success && fileExistsResult.stdout && fileExistsResult.stdout.trim() === 'exists') {
-          fileExists = true;
-        }
-      }
+      // Check if pcap file exists
+      const fileExistsCmd = `test -f ${pcapFile} && echo "exists" || echo "not found"`;
+      const fileExistsResult = await runWSLAsRoot(fileExistsCmd);
+      const fileExists = fileExistsResult.success && fileExistsResult.stdout && fileExistsResult.stdout.trim() === 'exists';
       
       if (!fileExists) {
         this.log(`❌ Pcap file not found: ${pcapFile}`, 40);
         this.log(`❌ This means the capture command failed or was interrupted`, 40);
+        
+        // Check error file
+        const errorCheckCmd = `cat ${errorFile} 2>/dev/null || echo ""`;
+        const errorCheckResult = await runWSLAsRoot(errorCheckCmd);
+        if (errorCheckResult.success && errorCheckResult.stdout && errorCheckResult.stdout.trim()) {
+          this.log(`⚠️ [TSHARK] Errors: ${errorCheckResult.stdout.trim()}`, 40);
+        }
+        
+        return { endpoints: [], requests: [], responses: [], summary: {}, error: 'Pcap file was not created' };
       }
       
+      // Get file size (as per runbook: ls -lh)
+      const fileSizeCmd = `ls -lh ${pcapFile} 2>&1`;
+      const fileSizeResult = await runWSLAsRoot(fileSizeCmd);
+      let fileInfo = 'Unknown';
+      if (fileSizeResult.success && fileSizeResult.stdout) {
+        fileInfo = fileSizeResult.stdout.trim();
+        this.log(`📄 Pcap file info: ${fileInfo}`, 40);
+      }
+      
+      // Get packet count (as per runbook: tshark -r ... -q -z io,stat,0)
+      const packetCountCmd = `tshark -r ${pcapFile} -q -z io,stat,0 2>&1 | head -1 || echo "0"`;
+      const packetCountResult = await runWSLAsRoot(packetCountCmd);
       let packetCount = 0;
       
-      if (fileExists) {
-        // Method 1: Check packet count using tshark (try as root if needed)
-        const pcapCountCmd = `bash -c 'tshark -r ${pcapFile} -T fields -e frame.number 2>/dev/null | tail -1 || echo "0"'`;
-        const pcapCountResult = await runWSLRaw(pcapCountCmd);
-        
-        if (pcapCountResult.success && pcapCountResult.stdout) {
-          const countStr = pcapCountResult.stdout.trim();
-          packetCount = parseInt(countStr) || 0;
-        }
-        
-        // Check pcap file size (try as root first)
-        const fileSizeRootCmd = `bash -c 'sudo ls -lh ${pcapFile} 2>/dev/null || echo "Cannot access file"'`;
-        const fileSizeRootResult = await runWSLAsRoot(fileSizeRootCmd);
-        let fileInfo = 'Unknown';
-        
-        if (fileSizeRootResult.success && fileSizeRootResult.stdout) {
-          fileInfo = fileSizeRootResult.stdout.trim();
+      if (packetCountResult.success && packetCountResult.stdout) {
+        // Parse packet count from output like "IO Statistics: 123 packets"
+        const match = packetCountResult.stdout.match(/(\d+)\s+packets?/i);
+        if (match) {
+          packetCount = parseInt(match[1]) || 0;
         } else {
-          // Try as regular user
-          const fileSizeCmd = `bash -c 'ls -lh ${pcapFile} 2>/dev/null || echo "Cannot access file"'`;
-          const fileSizeResult = await runWSLRaw(fileSizeCmd);
-          if (fileSizeResult.success && fileSizeResult.stdout) {
-            fileInfo = fileSizeResult.stdout.trim();
-          }
+          // Fallback: count frames
+          const countCmd = `tshark -r ${pcapFile} -T fields -e frame.number 2>/dev/null | tail -1 || echo "0"`;
+          const countResult = await runWSLAsRoot(countCmd);
+          packetCount = parseInt(countResult.stdout?.trim() || '0') || 0;
         }
-        
-        this.log(`📦 Captured ${packetCount} packets to pcap file`, 40);
-        this.log(`📄 Pcap file info: ${fileInfo}`, 40);
-      } else {
-        this.log(`📦 Captured 0 packets (file not found)`, 40);
       }
+      
+      this.log(`📦 Captured ${packetCount} packets to pcap file`, 40);
       
       if (packetCount === 0) {
         this.log(`⚠️ No packets captured in pcap file!`, 40);
         this.log(`💡 This means the filter "${captureFilter}" didn't match any traffic`, 40);
-        this.log(`💡 Possible reasons:`, 40);
-        this.log(`   1. Traffic to ${targetUrl} is not going through ${networkInterface}`, 40);
-        this.log(`   2. Requests were made before capture started or after it ended`, 40);
-        this.log(`   3. Traffic is encrypted (HTTPS) and filter can't match encrypted packets`, 40);
-        this.log(`   4. WSL network routing may be different from expected`, 40);
-        this.log(`💡 Running diagnostic commands...`, 40);
+        this.log(`💡 Running diagnostics (as per runbook)...`, 40);
         
-        // Try capturing without filter to see if interface is working
-        this.log(`🔍 Testing capture without filter (to verify interface works)...`, 40);
-        const testPcapFile = `/tmp/test_capture_${Date.now()}.pcap`;
-        const testCaptureCmd = `bash -c 'timeout 5 tshark -i ${networkInterface} -p -w ${testPcapFile} 2>&1 || echo "TEST_FAILED"'`;
-        const testResult = await runWSLAsRoot(testCaptureCmd);
-        
-        if (testResult.success) {
-          const testCountCmd = `bash -c 'tshark -r ${testPcapFile} -T fields -e frame.number 2>/dev/null | tail -1 || echo "0"'`;
-          const testCountResult = await runWSLAsRoot(testCountCmd);
-          const testCount = parseInt(testCountResult.stdout?.trim() || '0') || 0;
-          
-          if (testCount > 0) {
-            this.log(`✅ Interface ${networkInterface} is working - captured ${testCount} packets without filter`, 40);
-            this.log(`💡 The filter "${captureFilter}" is too restrictive or traffic doesn't match`, 40);
-            this.log(`💡 Suggestion: Try capturing all traffic and filtering in post-processing`, 40);
-          } else {
-            this.log(`⚠️ Interface ${networkInterface} captured 0 packets even without filter`, 40);
-            this.log(`💡 This suggests the interface may not be receiving traffic`, 40);
-          }
-          
-          // Clean up test file
-          await runWSLAsRoot(`bash -c 'rm -f ${testPcapFile}'`);
-        }
-        
-        // Run comprehensive diagnostics as per runbook (all commands run in WSL)
-        // Note: Commands are passed directly to WSL - no bash -c wrapper needed
+        // Run diagnostics as per runbook error handling section
         const diagnostics = [
           { label: 'List interfaces', cmd: `tshark -D 2>&1 | head -10 || echo "Cannot list interfaces"`, useRoot: false },
           { label: 'List IP addresses', cmd: `ip a 2>&1 | head -20 || echo "Cannot list IP addresses"`, useRoot: false },
           { label: 'Resolve domain', cmd: `dig +short ${domain} 2>&1 || getent hosts ${domain} 2>&1 | head -3 || echo "Cannot resolve domain"`, useRoot: false },
           { label: 'Check pcap file', cmd: `ls -la ${pcapFile} 2>&1 || echo "File not found"`, useRoot: true },
-          { label: 'Check tshark version', cmd: `tshark --version 2>&1 | head -3 || echo "tshark not found"`, useRoot: false },
-          { label: 'Check interface exists', cmd: `ip link show ${networkInterface} 2>&1 || echo "Interface ${networkInterface} not found"`, useRoot: false },
-          { label: 'Check traffic on interface', cmd: `timeout 3 tcpdump -i ${networkInterface} -c 5 -n 2>&1 || echo "Cannot capture on interface"`, useRoot: true }
+          { label: 'Check error log', cmd: `cat ${errorFile} 2>&1 || echo "No error log"`, useRoot: true }
         ];
         
         for (const diag of diagnostics) {
           this.log(`📋 Running diagnostic: ${diag.label}...`, 40);
-          // Use runWSLAsRoot or runWSL (which properly wrap in bash -lc) instead of runWSLRaw
-          // This ensures commands with pipes are executed in WSL bash, not Windows PowerShell
           const diagResult = diag.useRoot ? await runWSLAsRoot(diag.cmd) : await runWSL(diag.cmd);
           if (diagResult.success && diagResult.stdout) {
             const output = diagResult.stdout.trim();
-            if (output && !output.includes('Cannot') && !output.includes('not found') && !output.includes('not recognized')) {
+            if (output && !output.includes('Cannot') && !output.includes('not found')) {
               this.log(`📋 ${diag.label}:\n${output.substring(0, 500)}${output.length > 500 ? '...' : ''}`, 40);
-            } else {
-              this.log(`⚠️ ${diag.label}: ${output || 'No output'}`, 40);
-            }
-          } else if (diagResult.stderr) {
-            const stderr = diagResult.stderr.trim();
-            // Filter out Windows PowerShell errors
-            if (!stderr.includes('not recognized') && !stderr.includes('operable program')) {
-              this.log(`⚠️ ${diag.label} error: ${stderr.substring(0, 200)}`, 40);
             }
           }
         }
         
-        this.log(`💡 Suggestions (as per runbook):`, 40);
-        this.log(`   1. Verify interface ${networkInterface} is correct (run: tshark -D)`, 40);
-        this.log(`   2. Requests were automatically triggered during capture`, 40);
-        this.log(`   3. Check if domain resolves: dig +short ${domain}`, 40);
-        this.log(`   4. Verify interface ${networkInterface} is the WSL network adapter (not Windows host)`, 40);
-        this.log(`   5. Verify tshark has proper permissions (sudo required)`, 40);
-        this.log(`   6. Check error log: ${errorFile}`, 40);
-        this.log(`   7. Try running: sudo tshark -i ${networkInterface} -p -f "host ${domain}" -a duration:10 -w /tmp/test.pcap`, 40);
-      } else {
-        // Quick verification: show first few packets
-        const verifyCmd = `bash -c 'tshark -r ${pcapFile} -c 5 -V 2>/dev/null | head -30 || echo "Cannot read packets"'`;
-        const verifyResult = await runWSLRaw(verifyCmd);
-        if (verifyResult.success && verifyResult.stdout) {
-          this.log(`✅ Packet verification (first 5 packets):\n${verifyResult.stdout.substring(0, 500)}...`, 42);
-        }
+        return { endpoints: [], requests: [], responses: [], summary: {}, error: 'No packets captured' };
       }
       
-      // Step 3: Convert pcap to JSON (machine readable)
-      // Following runbook: tshark -r file.pcap -T json > file.json
-      this.log(`🔧 [TSHARK] Step 3: Converting pcap to JSON (machine readable)...`, 45);
+      // Quick verification: show first few packets (as per runbook: tshark -r ... -c 10 -V)
+      const verifyCmd = `tshark -r ${pcapFile} -c 5 -V 2>&1 | head -30 || echo "Cannot read packets"`;
+      const verifyResult = await runWSLAsRoot(verifyCmd);
+      if (verifyResult.success && verifyResult.stdout) {
+        this.log(`✅ Packet verification (first 5 packets):\n${verifyResult.stdout.substring(0, 500)}...`, 42);
+      }
       
-      // Check if TLS keylog file exists (for HTTPS decryption)
-      // If SSLKEYLOGFILE was set before running the client, tshark can decrypt TLS
-      // Following runbook: tshark -r file.pcap -o tls.keylog_file:$HOME/.sslkeys -T json
-      const keylogFileCmd = `bash -c 'echo $SSLKEYLOGFILE || echo ""'`;
-      const keylogFileResult = await runWSLRaw(keylogFileCmd);
-      const keylogFile = (keylogFileResult.success && keylogFileResult.stdout.trim()) || null;
+      // Step 5: Convert pcap to JSON (as per runbook section 2D)
+      // Runbook: "tshark -r /tmp/api_capture_wsl.pcap -T json > /tmp/api_capture_wsl.json"
+      this.log(`🔧 [TSHARK] Step 3: Converting pcap to JSON (as per runbook)...`, 45);
       
-      if (keylogFile && keylogFile.length > 0) {
-        // Verify keylog file exists
-        const keylogCheckCmd = `bash -c 'test -f "${keylogFile}" && echo "exists" || echo "missing"'`;
-        const keylogCheckResult = await runWSLRaw(keylogCheckCmd);
+      // Check if TLS keylog file exists and has content (for HTTPS decryption)
+      const keylogCheckCmd = `test -f "${keylogFile}" && test -s "${keylogFile}" && echo "exists" || echo "missing"`;
+      const keylogCheckResult = await runWSLAsRoot(keylogCheckCmd);
+      const keylogExists = keylogCheckResult.success && keylogCheckResult.stdout.trim() === 'exists';
+      
+      // Convert pcap to JSON with TLS decryption if keylog file exists
+      if (keylogExists) {
+        this.log(`🔐 Using TLS keylog file for HTTPS decryption: ${keylogFile}`, 45);
         
-        if (keylogCheckResult.success && keylogCheckResult.stdout.trim() === 'exists') {
-          this.log(`🔐 Using TLS keylog file for decryption: ${keylogFile}`, 45);
-          // Convert with TLS decryption (as per runbook)
-          const convertCmdWithKeylog = `bash -c 'tshark -r ${pcapFile} -o tls.keylog_file:"${keylogFile}" -T json 2>/dev/null > ${jsonFile} || echo "[]"'`;
-          this.log(`📄 Converting pcap to JSON with TLS decryption...`, 45, `tshark -r ${pcapFile} -o tls.keylog_file:"${keylogFile}" -T json > ${jsonFile}`);
-          const convertResult = await runWSLRaw(convertCmdWithKeylog);
-          
-          if (!convertResult.success || (convertResult.stderr && convertResult.stderr.includes('error'))) {
-            this.log(`⚠️ Failed to convert with TLS keylog, trying without...`, 45);
-            // Fallback: convert without TLS keylog
-            const fallbackConvertCmd = `bash -c 'tshark -r ${pcapFile} -T json 2>/dev/null > ${jsonFile} || echo "[]"'`;
-            await runWSLRaw(fallbackConvertCmd);
-          }
+        // Check keylog file size
+        const keylogSizeCmd = `wc -l < "${keylogFile}" 2>/dev/null || echo "0"`;
+        const keylogSizeResult = await runWSLAsRoot(keylogSizeCmd);
+        const keylogLines = parseInt(keylogSizeResult.stdout?.trim() || '0') || 0;
+        this.log(`📊 Keylog file contains ${keylogLines} entries`, 45);
+        
+        // Convert with TLS decryption (as per runbook section 4)
+        const convertCmd = `tshark -r ${pcapFile} -o tls.keylog_file:"${keylogFile}" -T json 2>/dev/null > ${jsonFile} || echo "[]"`;
+        this.log(`📄 Converting pcap to JSON with TLS decryption...`, 45, `tshark -r ${pcapFile} -o tls.keylog_file:"${keylogFile}" -T json > ${jsonFile}`);
+        const convertResult = await runWSLAsRoot(convertCmd);
+        
+        if (!convertResult.success || (convertResult.stderr && convertResult.stderr.includes('error'))) {
+          this.log(`⚠️ Failed to convert with TLS keylog, trying without...`, 45);
+          // Fallback: convert without TLS keylog
+          const fallbackCmd = `tshark -r ${pcapFile} -T json 2>/dev/null > ${jsonFile} || echo "[]"`;
+          await runWSLAsRoot(fallbackCmd);
         } else {
-          this.log(`⚠️ TLS keylog file not found: ${keylogFile}, converting without decryption...`, 45);
-          const convertCmd = `bash -c 'tshark -r ${pcapFile} -T json 2>/dev/null > ${jsonFile} || echo "[]"'`;
-          this.log(`📄 Converting pcap to JSON...`, 45, `tshark -r ${pcapFile} -T json > ${jsonFile}`);
-          await runWSLRaw(convertCmd);
+          this.log(`✅ Successfully converted with TLS decryption`, 45);
         }
       } else {
-        // Convert pcap to JSON (as per runbook - no display filters, just all packets)
-        const convertCmd = `bash -c 'tshark -r ${pcapFile} -T json 2>/dev/null > ${jsonFile} || echo "[]"'`;
-        this.log(`📄 Converting pcap to JSON...`, 45, `tshark -r ${pcapFile} -T json > ${jsonFile}`);
-        await runWSLRaw(convertCmd);
+        this.log(`⚠️ TLS keylog file not found or empty: ${keylogFile}`, 45);
+        this.log(`💡 HTTPS traffic will not be decrypted. Only HTTP and TLS handshake will be visible.`, 45);
+        // Convert pcap to JSON without TLS decryption
+        const convertCmd = `tshark -r ${pcapFile} -T json 2>/dev/null > ${jsonFile} || echo "[]"`;
+        this.log(`📄 Converting pcap to JSON (without TLS decryption)...`, 45, `tshark -r ${pcapFile} -T json > ${jsonFile}`);
+        await runWSLAsRoot(convertCmd);
       }
       
-      // Read the converted JSON file
-      const readCmd = `bash -c 'cat ${jsonFile} 2>/dev/null || echo "[]"'`;
-      const readResult = await runWSLRaw(readCmd);
+      // Read the converted JSON file (as per runbook: jq 'length, .[0:3]' file.json)
+      const readCmd = `cat ${jsonFile} 2>/dev/null || echo "[]"`;
+      const readResult = await runWSLAsRoot(readCmd);
       
       if (readResult.success && readResult.stdout) {
         try {
@@ -909,7 +712,9 @@ class APIScanner {
             total_packets_in_json: jsonPacketCount,
             interface: networkInterface,
             filter: captureFilter,
-            duration: duration
+            duration: duration,
+            keylog_file: keylogFile,
+            https_decryption_enabled: keylogExists
           };
           
           // Log JSON results (only if packets were captured)
@@ -962,6 +767,14 @@ class APIScanner {
       this.log(`❌ Capture error: ${error.message}`, 50);
       return { endpoints: [], requests: [], responses: [], summary: {}, error: error.message };
     }
+  }
+
+  // Windows Capture - following runbook approach (for future implementation)
+  async startCaptureWindows(targetUrl, domain, duration = 120) {
+    this.log(`📡 Starting Windows capture (following runbook approach)...`, 20);
+    this.log(`⚠️ Windows capture not yet implemented - using WSL capture instead`, 20);
+    // For now, fall back to WSL capture
+    return await this.startCaptureWSL(targetUrl, domain, duration);
   }
 
   // Error fixing methods

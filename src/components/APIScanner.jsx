@@ -10,7 +10,7 @@ function EndpointCard({ endpoint, index }) {
         <div className="flex items-center space-x-3">
           <span className={`px-2 py-1 rounded text-xs font-medium ${
             endpoint.method === 'GET' ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' :
-            endpoint.method === 'POST' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' :
+            endpoint.method === 'POST' ? 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200' :
             endpoint.method === 'PUT' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200' :
             endpoint.method === 'DELETE' ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' :
             'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
@@ -23,21 +23,21 @@ function EndpointCard({ endpoint, index }) {
           <div className="text-sm text-gray-600 dark:text-gray-400">
             {endpoint.request_count} requests
             {endpoint.avg_response_time > 0 && (
-              <span className="ml-2 text-blue-600 dark:text-blue-400">
+              <span className="ml-2 text-orange-600 dark:text-orange-400">
                 • {(endpoint.avg_response_time * 1000).toFixed(2)} ms avg
               </span>
             )}
           </div>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
+            className="text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 text-sm"
           >
             {expanded ? '▼ Less' : '▶ More'}
           </button>
         </div>
       </div>
       <div className="text-sm text-gray-600 dark:text-gray-400">
-        <div>URL: <code className="text-blue-600 dark:text-blue-400">{endpoint.url}</code></div>
+        <div>URL: <code className="text-orange-600 dark:text-orange-400">{endpoint.url}</code></div>
         {endpoint.status_code_distribution && Object.keys(endpoint.status_code_distribution).length > 0 && (
           <div className="mt-1">
             Status Codes: {Object.entries(endpoint.status_code_distribution).map(([code, count]) => (
@@ -55,7 +55,7 @@ function EndpointCard({ endpoint, index }) {
             {endpoint.avg_response_time > 0 && (
               <div>
                 <span className="font-semibold text-gray-700 dark:text-gray-300">Avg Response Time:</span>
-                <span className="ml-2 text-blue-600 dark:text-blue-400">{(endpoint.avg_response_time * 1000).toFixed(2)} ms</span>
+                <span className="ml-2 text-orange-600 dark:text-orange-400">{(endpoint.avg_response_time * 1000).toFixed(2)} ms</span>
               </div>
             )}
             {endpoint.avg_request_size > 0 && (
@@ -85,7 +85,7 @@ function EndpointCard({ endpoint, index }) {
             {endpoint.query_params && endpoint.query_params.length > 0 && (
               <div className="md:col-span-2">
                 <span className="font-semibold text-gray-700 dark:text-gray-300">Query Parameters:</span>
-                <code className="ml-2 text-blue-600 dark:text-blue-400">{endpoint.query_params.join(', ')}</code>
+                <code className="ml-2 text-orange-600 dark:text-orange-400">{endpoint.query_params.join(', ')}</code>
               </div>
             )}
             {endpoint.headers_analysis && (
@@ -96,7 +96,7 @@ function EndpointCard({ endpoint, index }) {
                     <span className="inline-block px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs mr-2">✓ Authentication</span>
                   )}
                   {endpoint.headers_analysis.has_cookies && (
-                    <span className="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs mr-2">✓ Cookies</span>
+                    <span className="inline-block px-2 py-1 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-xs mr-2">✓ Cookies</span>
                   )}
                   {endpoint.headers_analysis.user_agent && (
                     <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
@@ -492,9 +492,9 @@ function APIScanner() {
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl shadow-lg p-6 text-white">
+      <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg p-6 text-white">
         <h1 className="text-3xl font-bold mb-2">API & Endpoint Exposure Scanner</h1>
-        <p className="text-blue-100">Advanced discovery and security analysis for API endpoints</p>
+        <p className="text-orange-100">Advanced discovery and security analysis for API endpoints</p>
       </div>
 
 
@@ -526,8 +526,8 @@ function APIScanner() {
             disabled={isScanning || !url.trim()}
             className={`px-8 py-3 rounded-lg font-medium flex items-center space-x-2 transition-all ${
               isScanning
-                ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-wait'
-                : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                ? 'bg-orange-600 hover:bg-orange-700 text-white cursor-wait'
+                : 'bg-orange-600 hover:bg-orange-700 text-white cursor-pointer'
             } ${!url.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isScanning ? (
@@ -599,7 +599,7 @@ function APIScanner() {
                                 navigator.clipboard.writeText(log.command || '');
                                 alert('Command copied to clipboard!');
                               }}
-                              className="text-[10px] text-blue-400 hover:text-blue-300 mb-2"
+                              className="text-[10px] text-orange-400 hover:text-orange-300 mb-2"
                             >
                               Copy Command
                             </button>
@@ -627,7 +627,7 @@ function APIScanner() {
                             navigator.clipboard.writeText(log.command || '');
                             alert('Command copied to clipboard!');
                           }}
-                          className="text-[10px] text-blue-400 hover:text-blue-300 mt-1"
+                          className="text-[10px] text-orange-400 hover:text-orange-300 mt-1"
                         >
                           Copy
                         </button>
@@ -648,40 +648,40 @@ function APIScanner() {
 
       {/* Progress Section */}
       {isScanning && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-6">
           <div className="flex items-center space-x-3 mb-4">
-            <div className="p-2 bg-blue-100 dark:bg-blue-800 rounded-lg">
-              <svg className="w-6 h-6 text-blue-600 dark:text-blue-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="p-2 bg-orange-100 dark:bg-orange-800 rounded-lg">
+              <svg className="w-6 h-6 text-orange-600 dark:text-orange-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100">API Discovery in Progress</h3>
-              <p className="text-sm text-blue-700 dark:text-blue-300 whitespace-pre-wrap">{progressMessage}</p>
+              <h3 className="text-lg font-semibold text-orange-900 dark:text-orange-100">API Discovery in Progress</h3>
+              <p className="text-sm text-orange-700 dark:text-orange-300 whitespace-pre-wrap">{progressMessage}</p>
             </div>
           </div>
           
           {/* Enhanced Progress Bar with Percentage */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-blue-800 dark:text-blue-200">Scan Progress</span>
+              <span className="text-sm font-medium text-orange-800 dark:text-orange-200">Scan Progress</span>
               <div className="flex items-center space-x-2">
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{progress}%</div>
-                <span className="text-xs text-blue-600 dark:text-blue-400">Complete</span>
+                <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{progress}%</div>
+                <span className="text-xs text-orange-600 dark:text-orange-400">Complete</span>
               </div>
             </div>
-            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-4 relative overflow-hidden">
+            <div className="w-full bg-orange-200 dark:bg-orange-800 rounded-full h-4 relative overflow-hidden">
               <div
-                className="bg-gradient-to-r from-blue-500 to-blue-600 h-4 rounded-full transition-all duration-500 ease-out relative"
+                className="bg-gradient-to-r from-orange-500 to-orange-600 h-4 rounded-full transition-all duration-500 ease-out relative"
                 style={{ width: `${progress}%` }}
               >
                 <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
               </div>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xs font-semibold text-blue-900 dark:text-blue-100">{progress}%</span>
+                <span className="text-xs font-semibold text-orange-900 dark:text-orange-100">{progress}%</span>
               </div>
             </div>
-            <div className="flex items-center justify-between text-xs text-blue-700 dark:text-blue-300">
+            <div className="flex items-center justify-between text-xs text-orange-700 dark:text-orange-300">
               <span>Capturing network traffic...</span>
               <span>{progress >= 100 ? 'Completed!' : 'Processing...'}</span>
             </div>
@@ -714,7 +714,7 @@ function APIScanner() {
             <div className="flex justify-center">
               <button
                 onClick={downloadPDF}
-                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all text-lg font-semibold flex items-center space-x-2 shadow-lg"
+                className="px-8 py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all text-lg font-semibold flex items-center space-x-2 shadow-lg"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -728,9 +728,9 @@ function APIScanner() {
           {scanResults.capture_data && scanResults.capture_data.summary ? (
             <>
               <div className="grid md:grid-cols-4 gap-4 mb-6">
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{scanResults.capture_data.summary.total_packets || 0}</div>
-                  <div className="text-sm text-blue-800 dark:text-blue-200">Total Packets</div>
+                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{scanResults.capture_data.summary.total_packets || 0}</div>
+                  <div className="text-sm text-orange-800 dark:text-orange-200">Total Packets</div>
                 </div>
                 <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400">{scanResults.capture_data.summary.total_requests || 0}</div>
@@ -821,9 +821,9 @@ function APIScanner() {
             // Fallback for old data structure
             <>
               <div className="grid md:grid-cols-4 gap-4 mb-6">
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{scanResults.scan_summary?.total_endpoints || 0}</div>
-                  <div className="text-sm text-blue-800 dark:text-blue-200">Total Endpoints</div>
+                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{scanResults.scan_summary?.total_endpoints || 0}</div>
+                  <div className="text-sm text-orange-800 dark:text-orange-200">Total Endpoints</div>
                 </div>
                 <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400">{scanResults.scan_summary?.authenticated_endpoints || 0}</div>
@@ -861,7 +861,7 @@ function APIScanner() {
                       <div className="flex items-center space-x-3">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           endpoint.method === 'GET' ? 'bg-green-100 text-green-800' :
-                          endpoint.method === 'POST' ? 'bg-blue-100 text-blue-800' :
+                          endpoint.method === 'POST' ? 'bg-orange-100 text-orange-800' :
                           endpoint.method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
                           endpoint.method === 'DELETE' ? 'bg-red-100 text-red-800' :
                           'bg-gray-100 text-gray-800'
@@ -924,13 +924,13 @@ function APIScanner() {
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                      <strong>Endpoint:</strong> <code className="text-blue-600 dark:text-blue-400">{finding.endpoint}</code>
+                      <strong>Endpoint:</strong> <code className="text-orange-600 dark:text-orange-400">{finding.endpoint}</code>
                     </p>
                     <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                       <strong>Finding:</strong> {finding.finding || finding.evidence}
                     </p>
                     {finding.recommendation && (
-                      <p className="text-sm text-gray-700 dark:text-gray-300 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                      <p className="text-sm text-gray-700 dark:text-gray-300 bg-orange-50 dark:bg-orange-900/20 p-2 rounded">
                         <strong>Recommendation:</strong> {finding.recommendation}
                       </p>
                     )}
@@ -967,7 +967,7 @@ function APIScanner() {
                       navigator.clipboard.writeText(jsonString);
                       alert('JSON copied to clipboard!');
                     }}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
+                    className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm transition-colors"
                   >
                     Copy JSON
                   </button>

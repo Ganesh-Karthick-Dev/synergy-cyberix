@@ -566,25 +566,25 @@ async function createMainWindow() {
   return mainWindow;
 }
 
-  // Allow renderer to request opening a URL explicitly (register early)
-  ipcMain.handle('app:openExternal', async (_e, u) => {
-    try {
-      const nu = new URL(u.startsWith('http') ? u : `https://${u}`)
-      if (nu.protocol === 'http:' || nu.protocol === 'https:') {
-        await shell.openExternal(nu.toString())
-        return { ok: true }
-      }
-      return { error: 'Invalid URL' }
-    } catch (e) {
-      return { error: e?.message || String(e) }
+// Allow renderer to request opening a URL explicitly (register early)
+ipcMain.handle('app:openExternal', async (_e, u) => {
+  try {
+    const nu = new URL(u.startsWith('http') ? u : `https://${u}`)
+    if (nu.protocol === 'http:' || nu.protocol === 'https:') {
+      await shell.openExternal(nu.toString())
+      return { ok: true }
     }
-  })
+    return { error: 'Invalid URL' }
+  } catch (e) {
+    return { error: e?.message || String(e) }
+  }
+})
 
-  // Kali Security Scanner handlers (registered early)
-  let kaliScanChild = null;
-  
-  // Test handler to verify registration
-  ipcMain.handle('kali:test', async () => {
+// Kali Security Scanner handlers (registered early)
+let kaliScanChild = null;
+
+// Test handler to verify registration
+ipcMain.handle('kali:test', async () => {
     console.log('🔍 [KALI-TEST] Test handler called successfully');
     return { success: true, message: 'Kali handlers are working' };
   });
@@ -1457,6 +1457,141 @@ async function createMainWindow() {
     }
 
     return { error: 'No network scan running' };
+  });
+
+  // API Scanner (tshark/Wireshark-based) - register early, before app.whenReady
+  let apiScanChild = null;
+  console.log('[API-SCAN] Registering apiscan:start handler...');
+  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 120) => {
+    console.log('[API-SCAN] Starting API scan for:', targetUrl, 'duration:', duration);
+    
+    if (apiScanChild) {
+      console.log('[API-SCAN] Scan already running');
+      return { error: 'API scan already running' };
+    }
+
+    try {
+      // Import the API scanner module
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      
+      // Create output directory
+      const outputDir = path.join(process.cwd(), 'temp-api-scans');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // Create scanner instance
+      const scanner = new APIScanner(targetUrl, outputDir, duration);
+      
+      // Set up progress callback
+      scanner.setProgressCallback((progress) => {
+        event.sender.send('apiscan:progress', progress);
+      });
+
+      // Run scan asynchronously
+      const runScanAsync = async () => {
+        try {
+          console.log('[API-SCAN] Starting scan asynchronously...');
+          const results = await scanner.performScan();
+          console.log('[API-SCAN] Scan completed successfully');
+          event.sender.send('apiscan:complete', { success: true, results });
+        } catch (error) {
+          console.error('[API-SCAN] Scan error:', error);
+          event.sender.send('apiscan:progress', {
+            progress: 0,
+            message: `❌ API scan error: ${error.message}`,
+            type: 'error'
+          });
+          event.sender.send('apiscan:complete', {
+            success: false,
+            error: error.message
+          });
+        } finally {
+          apiScanChild = null;
+        }
+      };
+
+      // Start scan in background
+      runScanAsync();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[API-SCAN] Failed to start scan:', error);
+      apiScanChild = null;
+      return { error: error.message };
+    }
+  });
+
+  // API Scanner PDF Export
+  ipcMain.handle('apiscan:export-pdf', async (event, captureData) => {
+    try {
+      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      const scanner = new APIScanner('', path.join(process.cwd(), 'temp-api-scans'));
+      
+      // Show save dialog
+      const { dialog } = require('electron');
+      const result = await dialog.showSaveDialog({
+        title: 'Save API Scan Report',
+        defaultPath: 'api-scan-report.pdf',
+        filters: [
+          { name: 'PDF Files', extensions: ['pdf'] }
+        ]
+      });
+
+      if (result.canceled) {
+        return { success: false, canceled: true };
+      }
+
+      // Generate PDF
+      await scanner.generatePDFReport(captureData, result.filePath);
+      
+      return { success: true, filePath: result.filePath };
+    } catch (error) {
+      console.error('[API-SCAN] PDF export error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // File system handlers (register early, before app.whenReady)
+  ipcMain.handle('fs:getInstallPath', async () => {
+    try {
+      // Check setup config for install path
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        if (config.installPath) {
+          return config.installPath;
+        }
+      }
+      // Fallback to app directory if no setup config
+      return app.getAppPath();
+    } catch (error) {
+      console.error('Error getting install path:', error);
+      // Fallback to app directory
+      return app.getAppPath();
+    }
+  });
+
+  ipcMain.handle('fs:getDownloadsPath', async () => {
+    try {
+      return app.getPath('downloads');
+    } catch (error) {
+      console.error('Error getting downloads path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        return { success: true, created: true };
+      }
+      return { success: true, created: false };
+    } catch (error) {
+      console.error('Error ensuring directory exists:', error);
+      throw error;
+    }
   });
 
   app.whenReady().then(async () => {
@@ -4243,6 +4378,7 @@ async function createMainWindow() {
       return { error: e?.message || String(e) }
     }
   })
+
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

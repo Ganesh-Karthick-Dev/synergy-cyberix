@@ -884,11 +884,11 @@ function PhishingDetection() {
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-r from-red-600 to-red-700 rounded-xl shadow-lg p-6 text-white relative">
+      <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg p-6 text-white relative">
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-3xl font-bold mb-2">Phishing & Brand Abuse Detection</h1>
-            <p className="text-red-100">Advanced analysis for phishing, typosquatting, and brand impersonation</p>
+            <p className="text-orange-100">Advanced analysis for phishing, typosquatting, and brand impersonation</p>
           </div>
           <div className="flex gap-2">
             <button
@@ -911,7 +911,7 @@ function PhishingDetection() {
       {showHelp && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-t-xl flex items-center justify-between">
+            <div className="sticky top-0 bg-gradient-to-r from-orange-600 to-orange-600 text-white p-6 rounded-t-xl flex items-center justify-between">
               <h2 className="text-2xl font-bold">📖 Phishing Detection Process Guide</h2>
               <button
                 onClick={() => setShowHelp(false)}
@@ -925,7 +925,7 @@ function PhishingDetection() {
             <div className="p-6 space-y-6">
               <div>
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3">🔍 How It Works</h3>
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 space-y-3">
+                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 space-y-3">
                   <p className="text-gray-700 dark:text-gray-300">
                     This system uses <strong>dnstwist</strong>, an advanced domain name permutation engine that generates 
                     typosquatting variations of a target domain to identify potential phishing threats.
@@ -988,7 +988,7 @@ function PhishingDetection() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start space-x-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
                     <span className="text-2xl">📸</span>
                     <div>
                       <h4 className="font-semibold text-gray-900 dark:text-gray-100">Visual Similarity (phash)</h4>
@@ -1056,7 +1056,7 @@ function PhishingDetection() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 mb-6">
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg p-4">
+            <div className="bg-gradient-to-br from-orange-50 to-orange-50 dark:from-orange-900/20 dark:to-orange-900/20 rounded-lg p-4">
               <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">🔍 Detection Status</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -1177,7 +1177,7 @@ function PhishingDetection() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
-              className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               disabled={isScanning}
             />
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
@@ -1226,7 +1226,7 @@ function PhishingDetection() {
             className={`px-8 py-3 rounded-lg font-medium flex items-center space-x-2 transition-all ${
               isScanning
                 ? 'bg-orange-600 hover:bg-orange-700 text-white cursor-wait'
-                : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                : 'bg-orange-600 hover:bg-orange-700 text-white cursor-pointer'
             } ${!url.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isScanning ? (
@@ -1329,7 +1329,7 @@ function PhishingDetection() {
                 setProgress(0);
                 setProgressMessage('');
               }}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm flex items-center space-x-2"
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm flex items-center space-x-2"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1348,7 +1348,7 @@ function PhishingDetection() {
             <div className="flex justify-center">
               <button
                 onClick={() => downloadResults('pdf')}
-                className="px-8 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all text-lg font-semibold flex items-center space-x-2 shadow-lg"
+                className="px-8 py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all text-lg font-semibold flex items-center space-x-2 shadow-lg"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1359,9 +1359,9 @@ function PhishingDetection() {
           </div>
 
           {/* Executive Summary - User Friendly */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-300 dark:border-blue-700 rounded-xl p-6 mb-6">
+          <div className="bg-gradient-to-r from-orange-50 to-orange-50 dark:from-orange-900/20 dark:to-orange-900/20 border-2 border-orange-300 dark:border-orange-700 rounded-xl p-6 mb-6">
             <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
-              <svg className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-6 h-6 mr-2 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Scan Summary
@@ -1433,7 +1433,7 @@ function PhishingDetection() {
                 className={`h-2 rounded-full transition-all duration-500 ${
                   scanResults.threat_score <= 30 ? 'bg-green-600' :
                   scanResults.threat_score <= 60 ? 'bg-yellow-600' :
-                  'bg-red-600'
+                  'bg-orange-600'
                 }`}
                 style={{ width: `${scanResults.threat_score}%` }}
               ></div>
@@ -1477,9 +1477,9 @@ function PhishingDetection() {
           {/* Screenshots Section - Enhanced */}
           {scanResults.screenshots && Array.isArray(scanResults.screenshots) && scanResults.screenshots.length > 0 && (
             <div className="mb-6">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+              <div className="bg-gradient-to-r from-orange-50 to-orange-50 dark:from-orange-900/20 dark:to-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4 mb-4">
                 <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
-                  <svg className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-6 h-6 mr-2 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   Visual Similarity Analysis - Captured Screenshots
@@ -1540,7 +1540,7 @@ function PhishingDetection() {
                           <img
                             src={`data:image/png;base64,${screenshot.base64}`}
                             alt={`Screenshot of ${screenshot.domain}`}
-                            className="w-full h-auto rounded-lg border-2 border-gray-200 dark:border-slate-700 cursor-pointer hover:border-blue-500 transition-all"
+                            className="w-full h-auto rounded-lg border-2 border-gray-200 dark:border-slate-700 cursor-pointer hover:border-orange-500 transition-all"
                             style={{ maxHeight: '300px', objectFit: 'contain', minHeight: '150px' }}
                             onClick={() => {
                               // Open image in new window for full view
@@ -1587,7 +1587,7 @@ function PhishingDetection() {
                 </h3>
                 <button
                   onClick={() => downloadResults('csv')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm flex items-center space-x-2"
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm flex items-center space-x-2"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1721,7 +1721,7 @@ function PhishingDetection() {
                                 <img
                                   src={`data:image/png;base64,${matchingScreenshot.base64}`}
                                   alt={`Screenshot of ${v.domain || v.domain_name}`}
-                                  className="w-16 h-12 object-cover rounded border border-gray-300 dark:border-slate-600 cursor-pointer hover:border-blue-500 transition-all"
+                                  className="w-16 h-12 object-cover rounded border border-gray-300 dark:border-slate-600 cursor-pointer hover:border-orange-500 transition-all"
                                   onClick={() => {
                                     const newWindow = window.open();
                                     if (newWindow) {
@@ -1777,7 +1777,7 @@ function PhishingDetection() {
                     setLogs((l)=>[...l,'🔐 Root password stored for this session']);
                   } catch {}
                 }}
-                className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+                className="px-3 py-2 text-sm rounded bg-orange-600 text-white hover:bg-orange-700"
               >Continue</button>
             </div>
           </div>
@@ -1786,14 +1786,14 @@ function PhishingDetection() {
 
       {/* Missing dnstwist helper */}
       {!isScanning && !scanResults && dnstwistInstall.installing === false && dnstwistInstall.done === false && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+        <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="text-blue-900 dark:text-blue-100 font-semibold mb-1">dnstwist is required</h3>
-              <p className="text-sm text-blue-800 dark:text-blue-200">If your last scan failed due to missing dnstwist, click install to add it inside WSL.</p>
+              <h3 className="text-orange-900 dark:text-orange-100 font-semibold mb-1">dnstwist is required</h3>
+              <p className="text-sm text-orange-800 dark:text-orange-200">If your last scan failed due to missing dnstwist, click install to add it inside WSL.</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={installDnstwist} className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700">Install dnstwist</button>
+              <button onClick={installDnstwist} className="px-3 py-2 text-sm rounded bg-orange-600 text-white hover:bg-orange-700">Install dnstwist</button>
             </div>
           </div>
           {dnstwistInstall.error && (
@@ -1801,10 +1801,10 @@ function PhishingDetection() {
           )}
           {dnstwistInstall.progress > 0 && (
             <div className="mt-3">
-              <div className="w-full bg-blue-200 h-2 rounded">
-                <div className="bg-blue-600 h-2 rounded" style={{ width: `${dnstwistInstall.progress}%` }} />
+              <div className="w-full bg-orange-200 h-2 rounded">
+                <div className="bg-orange-600 h-2 rounded" style={{ width: `${dnstwistInstall.progress}%` }} />
               </div>
-              <div className="mt-1 text-xs text-blue-800">{Math.round(dnstwistInstall.progress)}%</div>
+              <div className="mt-1 text-xs text-orange-800">{Math.round(dnstwistInstall.progress)}%</div>
             </div>
           )}
         </div>
