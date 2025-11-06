@@ -282,7 +282,7 @@ async function generateHTMLReport(summary, outputDir) {
 <head>
     <title>Server Security Scan Report</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        body { font-family: 'Poppins', sans-serif; margin: 20px; line-height: 1.6; }
         .header { background: #f0f0f0; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
         .section { margin: 20px 0; }
         table { border-collapse: collapse; width: 100%; margin: 10px 0; }

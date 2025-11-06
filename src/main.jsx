@@ -21,7 +21,7 @@ try {
 } catch (error) {
   console.error('React mounting error:', error)
   document.getElementById('root').innerHTML = `
-    <div style="padding: 20px; color: red; font-family: Arial;">
+    <div style="padding: 20px; color: red; font-family: 'Poppins', sans-serif;">
       <h1>React Error</h1>
       <p>${error.message}</p>
       <pre>${error.stack}</pre>

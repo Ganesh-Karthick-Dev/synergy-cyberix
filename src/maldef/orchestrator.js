@@ -248,7 +248,7 @@ async function runMaldefScan(targetUrl, options = {}) {
   try {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Malware & Defacement Report - ${report.target}</title>
     <style>
-      body{font-family:system-ui,Segoe UI,Arial,sans-serif;padding:24px;background:#0b1020;color:#e6e6e6;line-height:1.6}
+      body{font-family:'Poppins',system-ui,Segoe UI,sans-serif;padding:24px;background:#0b1020;color:#e6e6e6;line-height:1.6}
       .header{background:linear-gradient(135deg,#1e293b,#334155);padding:24px;border-radius:12px;margin-bottom:24px;text-align:center}
       .header h1{color:#f8fafc;margin:0;font-size:2.5rem;font-weight:700}
       .header .subtitle{color:#cbd5e1;margin-top:8px;font-size:1.1rem}

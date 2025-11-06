@@ -344,7 +344,7 @@ function ServerScanning() {
             .no-print { display: none; }
         }
         body { 
-            font-family: Arial, sans-serif; 
+            font-family: 'Poppins', sans-serif; 
             margin: 20px; 
             line-height: 1.6; 
             color: #333;

@@ -977,7 +977,7 @@ const WordPressAuditOrchestrator = ({ siteUrl, adminProvided, adminCreds }) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WordPress Security Audit Report</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; color: #333; }
+        body { font-family: 'Poppins', sans-serif; margin: 40px; line-height: 1.6; color: #333; }
         .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #e5e7eb; }
         .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin: 30px 0; }
         .summary-card { padding: 20px; border-radius: 8px; text-align: center; border: 1px solid; }

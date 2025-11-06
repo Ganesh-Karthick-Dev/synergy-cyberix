@@ -1,0 +1,12 @@
+{
+  "id": "log_1762247089242_ex62gdkcc",
+  "timestamp": "2025-11-04T09:04:49.242Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "https:",
+  "status": "failed",
+  "startTime": "2025-11-04T09:02:49.242Z",
+  "endTime": "2025-11-04T09:04:49.242Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}

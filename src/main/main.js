@@ -526,7 +526,7 @@ async function createMainWindow() {
       mainWindow.loadURL(`data:text/html,
         <html>
           <head><title>Cyberix - Loading Error</title></head>
-          <body style="font-family: Arial, sans-serif; padding: 20px; background: #1a1a1a; color: white;">
+          <body style="font-family: 'Poppins', sans-serif; padding: 20px; background: #1a1a1a; color: white;">
             <h1>🚨 Cyberix Loading Error</h1>
             <p>The development server could not be found. Please ensure:</p>
             <ul>
@@ -828,508 +828,635 @@ async function createMainWindow() {
     }
   });
 
-  // WSL Installation and User Management handlers (registered early, before app.whenReady)
-  // WSL Installation handler (executes wsl.exe --install)
-  console.log('📝 [MAIN-INIT] Registering WSL IPC handlers BEFORE app.whenReady()...');
-  ipcMain.handle('wsl:install', async (event) => {
-    console.log('🚀 [WSL-INSTALL] Handler invoked! Starting WSL installation with admin privileges...');
-    
-    if (process.platform !== 'win32') {
-      return { success: false, error: 'WSL installation is only supported on Windows' };
-    }
+  // Network scan handlers (register early, before app.whenReady)
+  let networkScanChild = null;
+  let networkScanAbortController = null;
+  let currentNetworkScanTarget = null;
+  
+  console.log('[NETWORK-SCAN] Registering networkscan:start handler...');
+  ipcMain.handle('networkscan:start', async (event, target) => {
+    console.log('[NETWORK-SCAN] Handler called for target:', target);
+    if (networkScanChild) return { error: 'Network scan already running' };
     
     try {
+      // Create abort controller for this scan
+      networkScanAbortController = new AbortController();
       const { exec } = require('child_process');
       const { promisify } = require('util');
       const execAsync = promisify(exec);
       
-      // Send progress updates
-      if (event.sender && !event.sender.isDestroyed()) {
-        event.sender.send('wsl:installProgress', 'Requesting administrator privileges... Please accept the UAC prompt.');
-      }
+      // Helper function to strip ANSI escape codes
+      const stripAnsiCodes = (text) => {
+        if (!text || typeof text !== 'string') return text;
+        return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[[0-9;]*m/g, '').replace(/\[\d+[m[]?/g, '').trim();
+      };
       
-      // Use PowerShell to request elevation and run wsl --install
-      // Start-Process with -Verb RunAs will show UAC prompt and run with admin privileges
-      const powershellCommand = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -ArgumentList '-NoProfile -ExecutionPolicy Bypass -Command \\\"wsl.exe --install; Write-Host \\\"WSL_INSTALL_COMPLETED\\\"\\\"' -Verb RunAs -Wait -NoNewWindow"`;
-      
-      console.log('🚀 [WSL-INSTALL] Executing with admin privileges via PowerShell...');
-      console.log('🚀 [WSL-INSTALL] Command (masked):', powershellCommand.substring(0, 100) + '...');
-      
-      // Send progress update
-      if (event.sender && !event.sender.isDestroyed()) {
-        event.sender.send('wsl:installProgress', 'Installing WSL with administrator privileges... This may take a few minutes.');
-      }
-      
-      try {
-        const { stdout, stderr } = await execAsync(powershellCommand, {
-          maxBuffer: 10 * 1024 * 1024,
-          timeout: 600000, // 10 minutes timeout (installation can take time)
-          shell: true
-        });
-        
-        const output = (stdout || '').toLowerCase();
-        const errorOutput = (stderr || '').toLowerCase();
-        const combinedOutput = output + ' ' + errorOutput;
-        
-        console.log('🚀 [WSL-INSTALL] Installation command executed');
-        console.log('🚀 [WSL-INSTALL] STDOUT:', stdout);
-        if (stderr) console.log('🚀 [WSL-INSTALL] STDERR:', stderr);
-        
-        // Check if installation completed or requires restart
-        if (combinedOutput.includes('wsl_install_completed') || 
-            combinedOutput.includes('restart') || 
-            combinedOutput.includes('reboot') ||
-            combinedOutput.includes('installation') ||
-            combinedOutput.includes('installed')) {
-          console.log('✅ [WSL-INSTALL] Installation initiated successfully');
-          if (event.sender && !event.sender.isDestroyed()) {
-            event.sender.send('wsl:installProgress', 'WSL installation completed. A restart is required.');
-          }
+      // Helper function to execute command and parse output
+      const executeCommand = async (command, timeout = 30000) => {
+        try {
+          const { stdout, stderr } = await execAsync(command, {
+            maxBuffer: 10 * 1024 * 1024,
+            timeout: timeout,
+            windowsHide: true
+          });
+          // Strip ANSI codes from output
           return { 
             success: true, 
-            message: 'WSL installation completed successfully. Please restart your computer to complete the setup, then log in again.' 
+            stdout: stripAnsiCodes(stdout || ''), 
+            stderr: stripAnsiCodes(stderr || ''), 
+            error: null 
           };
-        }
-        
-        // Even if no specific message, if we got output, consider it success
-        if (stdout || stderr) {
-          console.log('✅ [WSL-INSTALL] Installation process completed (may require restart)');
-          if (event.sender && !event.sender.isDestroyed()) {
-            event.sender.send('wsl:installProgress', 'WSL installation process completed.');
-          }
-          return { 
-            success: true, 
-            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
-          };
-        }
-        
-        // No output but no error either - treat as success
-        if (event.sender && !event.sender.isDestroyed()) {
-          event.sender.send('wsl:installProgress', 'WSL installation process completed.');
-        }
-        return { 
-          success: true, 
-          message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
-        };
-        
-      } catch (execError) {
-        console.log('⚠️ [WSL-INSTALL] Command execution details:', {
-          message: execError.message,
-          code: execError.code,
-          signal: execError.signal,
-          stdout: execError.stdout ? execError.stdout.substring(0, 500) : 'none',
-          stderr: execError.stderr ? execError.stderr.substring(0, 500) : 'none'
-        });
-        
-        // Check if user cancelled UAC prompt (exit code 1223 = user cancelled elevation)
-        if (execError.code === 1223 || execError.message.includes('1223') || 
-            execError.message.includes('user canceled') || execError.message.includes('cancelled')) {
-          console.log('⚠️ [WSL-INSTALL] User cancelled UAC prompt');
+        } catch (error) {
+          // Sanitize error message to remove "wsl" references
+          let errorMessage = error.message || '';
+          errorMessage = errorMessage.replace(/Command failed: wsl\s+/gi, 'Command failed: ');
+          errorMessage = errorMessage.replace(/wsl\s+/gi, '');
+          
+          // Strip ANSI codes from output
           return { 
             success: false, 
-            error: 'Administrator privileges are required. Please accept the UAC prompt or run the application as Administrator.' 
+            stdout: stripAnsiCodes(error.stdout || ''), 
+            stderr: stripAnsiCodes(error.stderr || ''), 
+            error: errorMessage,
+            code: error.code
           };
         }
-        
-        // Even if error occurred, check output for success indicators
-        const errorOutput = (execError.stderr || execError.stdout || execError.message || '').toLowerCase();
-        const hasRestartMessage = errorOutput.includes('restart') || errorOutput.includes('reboot');
-        const hasInstallMessage = errorOutput.includes('installed') || errorOutput.includes('installation');
-        const hasWslMessage = errorOutput.includes('wsl');
-        
-        // If output indicates installation was initiated, treat as success
-        if (hasRestartMessage || (hasInstallMessage && hasWslMessage)) {
-          console.log('✅ [WSL-INSTALL] Installation likely succeeded despite error code');
-          if (event.sender && !event.sender.isDestroyed()) {
-            event.sender.send('wsl:installProgress', 'WSL installation appears to have been initiated.');
-          }
-          return { 
-            success: true, 
-            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
-          };
-        }
-        
-        // If exit code is 1 but we have some output, it might still be success
-        // (wsl --install often exits with code 1 after initiating installation)
-        if (execError.code === 1 && (execError.stdout || execError.stderr)) {
-          console.log('⚠️ [WSL-INSTALL] Exit code 1 with output - treating as potential success');
-          if (event.sender && !event.sender.isDestroyed()) {
-            event.sender.send('wsl:installProgress', 'WSL installation process completed.');
-          }
-          return { 
-            success: true, 
-            message: 'WSL installation has been initiated. Please restart your computer to complete the installation.' 
-          };
-        }
-        
-        // Real failure - provide helpful error
-        console.error('❌ [WSL-INSTALL] Installation failed:', execError.message);
-        return { 
-          success: false, 
-          error: `WSL installation failed. Error: ${execError.message || 'Unknown error'}. Exit code: ${execError.code || 'unknown'}. Please try installing WSL manually: Open PowerShell as Administrator and run "wsl --install", then restart your computer.` 
-        };
-      }
-    } catch (error) {
-      console.error('❌ [WSL-INSTALL] Unexpected error:', error);
-      return { 
-        success: false, 
-        error: `Unexpected error during WSL installation: ${error.message}. Please install WSL manually: Open PowerShell as Administrator and run "wsl --install", then restart your computer.` 
       };
-    }
-  });
-
-  // WSL User Creation handler
-  ipcMain.handle('wsl:createUser', async (event, username, password) => {
-    console.log('👤 [WSL-USER-CREATE] Starting WSL user creation...');
-    console.log('👤 [WSL-USER-CREATE] Username:', username);
-    console.log('👤 [WSL-USER-CREATE] Password length:', password ? password.length : 0);
-    
-    try {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
       
-      // First, check if user already exists
-      const checkUserCommand = `wsl -e bash -c "id -u ${username} 2>/dev/null || echo 'notfound'"`;
-      console.log('👤 [WSL-USER-CREATE] Checking if user exists:', checkUserCommand);
-      
-      let checkResult;
-      try {
-        checkResult = await execAsync(checkUserCommand);
-        console.log('👤 [WSL-USER-CREATE] Check result:', checkResult.stdout.trim());
+      // Parser functions for different command outputs
+      const parsePingOutput = (output) => {
+        const result = {
+          target: null,
+          ip: null,
+          packetsTransmitted: 0,
+          packetsReceived: 0,
+          packetLoss: 0,
+          time: null,
+          rtt: null,
+          raw: output
+        };
         
-        if (checkResult.stdout.trim() !== 'notfound' && checkResult.stdout.trim() !== '') {
-          const errorMsg = `User "${username}" already exists`;
-          console.error('❌ [WSL-USER-CREATE]', errorMsg);
-          return { success: false, error: errorMsg };
+        // Extract target and IP
+        const pingMatch = output.match(/PING\s+(\S+)\s+\(([^)]+)\)/);
+        if (pingMatch) {
+          result.target = pingMatch[1];
+          result.ip = pingMatch[2];
         }
-      } catch (checkError) {
-        // If check fails, user might not exist - continue with creation
-        console.log('👤 [WSL-USER-CREATE] User check failed, proceeding with creation:', checkError.message);
-      }
-      
-      // Create user using adduser or useradd with proper root access
-      const createUserScript = `
-        if id "${username}" &>/dev/null 2>&1; then
-          echo "USER_EXISTS"
-          exit 1
-        fi
         
-        if command -v adduser >/dev/null 2>&1; then
-          adduser --disabled-password --gecos "" "${username}" 2>&1
-          echo "${username}:${password}" | chpasswd 2>&1
-        elif command -v useradd >/dev/null 2>&1; then
-          useradd -m "${username}" 2>&1
-          echo "${username}:${password}" | chpasswd 2>&1
-        else
-          echo "NO_USERADD_COMMAND"
-          exit 1
-        fi
-        
-        if id "${username}" &>/dev/null 2>&1; then
-          echo "USER_CREATED"
-        else
-          echo "USER_CREATION_FAILED"
-          exit 1
-        fi
-      `;
-      
-      // Try with root access first, then fall back to default user
-      let createCommand = `wsl -u root -e bash -c ${JSON.stringify(createUserScript)}`;
-      
-      // Alternative: If root access fails, we can try with sudo
-      const createCommandSudo = `wsl -e bash -c "echo 'root' | sudo -S bash -c ${JSON.stringify(createUserScript)}"`;
-      console.log('👤 [WSL-USER-CREATE] Create command (masked):', createCommand.replace(password, '***'));
-      
-      if (event.sender && !event.sender.isDestroyed()) {
-        event.sender.send('wsl:userCreateProgress', `Creating user "${username}"...`);
-      }
-      
-      let stdout, stderr;
-      try {
-        const result = await execAsync(createCommand, {
-          maxBuffer: 10 * 1024 * 1024,
-          timeout: 60000 // 1 minute timeout
-        });
-        stdout = result.stdout;
-        stderr = result.stderr;
-      } catch (firstError) {
-        // If root access failed, try with sudo
-        console.log('👤 [WSL-USER-CREATE] Root access failed, trying with sudo...');
-        try {
-          const sudoResult = await execAsync(createCommandSudo, {
-            maxBuffer: 10 * 1024 * 1024,
-            timeout: 60000
-          });
-          stdout = sudoResult.stdout;
-          stderr = sudoResult.stderr;
-        } catch (sudoError) {
-          // Both failed, throw the original error
-          throw firstError;
+        // Extract statistics
+        const statsMatch = output.match(/(\d+)\s+packets\s+transmitted[,\s]+(\d+)\s+received[,\s]+(\d+)%\s+packet\s+loss[,\s]+time\s+(\d+)ms/);
+        if (statsMatch) {
+          result.packetsTransmitted = parseInt(statsMatch[1]);
+          result.packetsReceived = parseInt(statsMatch[2]);
+          result.packetLoss = parseInt(statsMatch[3]);
+          result.time = parseInt(statsMatch[4]);
         }
-      }
-      
-      console.log('👤 [WSL-USER-CREATE] STDOUT:', stdout);
-      if (stderr) console.log('👤 [WSL-USER-CREATE] STDERR:', stderr);
-      
-      // Check if user already exists in output
-      if (stdout.includes('USER_EXISTS') || stderr.includes('already exists') || 
-          stderr.includes('user exists') || stdout.includes('already exists')) {
-        const errorMsg = `User "${username}" already exists`;
-        console.error('❌ [WSL-USER-CREATE]', errorMsg);
-        return { success: false, error: errorMsg };
-      }
-      
-      // Check if creation was successful
-      if (stdout.includes('USER_CREATED') || stdout.includes('useradd:') === false) {
-        console.log('✅ [WSL-USER-CREATE] User created successfully');
         
-        // Verify the user can authenticate
-        const verifyCommand = `wsl -u ${username} -e bash -c "whoami"`;
-        try {
-          const verifyResult = await execAsync(verifyCommand);
-          if (verifyResult.stdout.trim() === username) {
-            console.log('✅ [WSL-USER-CREATE] User verification successful');
-            return { success: true, message: `User "${username}" created successfully` };
+        // Extract RTT statistics
+        const rttMatch = output.match(/rtt\s+min\/avg\/max\/mdev\s*=\s*([\d.]+)\/([\d.]+)\/([\d.]+)\/([\d.]+)\s*ms/);
+        if (rttMatch) {
+          result.rtt = {
+            min: parseFloat(rttMatch[1]),
+            avg: parseFloat(rttMatch[2]),
+            max: parseFloat(rttMatch[3]),
+            mdev: parseFloat(rttMatch[4])
+          };
+        }
+        
+        return result;
+      };
+      
+      const parseHostOutput = (output) => {
+        const result = {
+          domain: null,
+          ip: null,
+          mxRecords: [],
+          txtRecords: [],
+          raw: output
+        };
+        
+        const lines = output.split('\n');
+        for (const line of lines) {
+          // Extract IP address
+          const ipMatch = line.match(/has\s+address\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+          if (ipMatch) {
+            result.ip = ipMatch[1];
           }
-        } catch (verifyError) {
-          console.log('⚠️ [WSL-USER-CREATE] User verification failed, but user was created:', verifyError.message);
-          // Still return success since user was created
-          return { success: true, message: `User "${username}" created successfully` };
-        }
-      }
-      
-      // If we get here, something went wrong
-      const errorMsg = stderr || stdout || 'Unknown error occurred';
-      console.error('❌ [WSL-USER-CREATE] User creation failed:', errorMsg);
-      return { success: false, error: errorMsg };
-      
-    } catch (error) {
-      console.error('❌ [WSL-USER-CREATE] Error:', error);
-      
-      // Check if error indicates user already exists
-      const errorMsg = error.message || error.stderr || 'Unknown error';
-      if (errorMsg.includes('already exists') || errorMsg.includes('user exists') || 
-          errorMsg.includes('USER_EXISTS')) {
-        return { success: false, error: `User "${username}" already exists` };
-      }
-      
-      return { success: false, error: errorMsg };
-    }
-  });
-
-  // Validate WSL credentials handler
-  console.log('📝 [MAIN] Registering wsl:validateCredentials handler...');
-  ipcMain.handle('wsl:validateCredentials', async (event, username, password) => {
-    console.log('🔐 [WSL-VALIDATE] Validating WSL credentials...');
-    console.log('🔐 [WSL-VALIDATE] Username:', username);
-    console.log('🔐 [WSL-VALIDATE] Password length:', password ? password.length : 0);
-    
-    try {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-      
-      // Test credentials by trying to run a command as the user
-      const testCommand = `wsl -u ${username} -e bash -c "whoami"`;
-      console.log('🔐 [WSL-VALIDATE] Test command:', testCommand);
-      
-      // First, test if user exists and can run commands
-      try {
-        const result = await execAsync(testCommand, { timeout: 10000 });
-        if (result.stdout.trim() === username) {
-          console.log('✅ [WSL-VALIDATE] User exists and can execute commands');
           
-          // Now test password by trying sudo or su
-          const passwordTestCommand = `wsl -u ${username} -e bash -c "echo '${password}' | su -c 'whoami' - 2>/dev/null || echo '${password}' | sudo -S whoami 2>/dev/null || echo 'invalid'"`;
-          try {
-            const passwordResult = await execAsync(passwordTestCommand, { timeout: 10000 });
-            if (passwordResult.stdout.includes('root') || passwordResult.stdout.trim() === username) {
-              console.log('✅ [WSL-VALIDATE] Credentials are valid');
-              return { success: true, message: 'Credentials validated successfully' };
-            } else {
-              console.log('❌ [WSL-VALIDATE] Password validation failed');
-              return { success: false, error: 'Invalid password' };
-            }
-          } catch (pwdError) {
-            // Password test failed, but user exists - return partial success
-            console.log('⚠️ [WSL-VALIDATE] Password test inconclusive, but user exists');
-            return { success: true, message: 'User exists and credentials may be valid' };
+          // Extract MX records
+          const mxMatch = line.match(/mail\s+is\s+handled\s+by\s+(\d+)\s+(\S+)/);
+          if (mxMatch) {
+            result.mxRecords.push({ priority: parseInt(mxMatch[1]), host: mxMatch[2] });
           }
-        } else {
-          console.log('❌ [WSL-VALIDATE] User test failed - wrong username returned');
-          return { success: false, error: 'User authentication failed' };
-        }
-      } catch (testError) {
-        console.error('❌ [WSL-VALIDATE] User test failed:', testError.message);
-        return { success: false, error: `User "${username}" not found or authentication failed` };
-      }
-    } catch (error) {
-      console.error('❌ [WSL-VALIDATE] Validation error:', error);
-      return { success: false, error: error.message || 'Failed to validate credentials' };
-    }
-  });
-
-  // API Scanner - Real scanning with WSL/Kali tools
-  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 120) => {
-    try {
-      console.log('\n\n');
-      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
-      console.log('🔍 [API-SCANNER] Starting Wireshark-based API scan for:', targetUrl);
-      console.log('🔍 [API-SCANNER] Duration:', duration, 'seconds');
-      console.log('🔍 [API-SCANNER] Timestamp:', new Date().toISOString());
-      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
-      console.log('\n');
-      
-      // Show folder selection dialog for saving PDF and HTML reports
-      const timestamp = Date.now();
-      const defaultPath = path.join(app.getPath('documents'), `api-scan-${timestamp}`);
-      
-      const folderResult = await dialog.showOpenDialog({
-        title: 'Select Folder to Save API Scan Reports',
-        defaultPath: defaultPath,
-        properties: ['openDirectory']
-      });
-      
-      if (folderResult.canceled || !folderResult.filePaths || folderResult.filePaths.length === 0) {
-        return { success: false, error: 'Folder selection cancelled', canceled: true };
-      }
-      
-      const selectedFolder = folderResult.filePaths[0];
-      
-      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
-      // Use a temporary directory in project for scan operations, but save reports to selected folder
-      const tempDir = path.join(process.cwd(), 'temp-api-scans', `api-scan-${Date.now()}`);
-      fs.mkdirSync(tempDir, { recursive: true });
-      fs.mkdirSync(selectedFolder, { recursive: true });
-      
-      const scanner = new APIScanner(targetUrl, tempDir, duration);
-      
-      // Set up progress callback
-      scanner.setProgressCallback((update) => {
-        // Log to console with command if present
-        if (update.command) {
-          console.log(`\n[API-SCANNER-UI] ${update.message || ''}`);
-          console.log(`[API-SCANNER-UI] Command: ${update.command}\n`);
         }
         
-        if (event && event.sender && !event.sender.isDestroyed()) {
-          event.sender.send('apiscan:progress', {
-            progress: update.progress || 0,
-            message: update.message || '',
-            command: update.command || null,
-            type: update.type || 'info'
-          });
+        return result;
+      };
+      
+      const parseWhatwebOutput = (output) => {
+        const result = {
+          url: null,
+          status: null,
+          country: null,
+          server: null,
+          title: null,
+          technologies: [],
+          raw: output
+        };
+        
+        // Parse whatweb output (format: URL [Status] [Country] [Server] [Title] [Technologies...])
+        const lines = output.split('\n');
+        for (const line of lines) {
+          if (line.trim()) {
+            // Extract URL
+            const urlMatch = line.match(/^(\S+)/);
+            if (urlMatch) result.url = urlMatch[1];
+            
+            // Extract status
+            const statusMatch = line.match(/\[(\d{3})\s+(\w+)\]/);
+            if (statusMatch) {
+              result.status = { code: parseInt(statusMatch[1]), text: statusMatch[2] };
+            }
+            
+            // Extract country
+            const countryMatch = line.match(/Country\[([^\]]+)\]/);
+            if (countryMatch) result.country = countryMatch[1];
+            
+            // Extract server
+            const serverMatch = line.match(/HTTPServer\[([^\]]+)\]/);
+            if (serverMatch) result.server = serverMatch[1];
+            
+            // Extract title
+            const titleMatch = line.match(/Title\[([^\]]+)\]/);
+            if (titleMatch) result.title = titleMatch[1];
+            
+            // Extract technologies
+            const techMatches = line.matchAll(/(\w+)\[([^\]]+)\]/g);
+            for (const match of techMatches) {
+              if (!['Country', 'HTTPServer', 'Title', 'IP'].includes(match[1])) {
+                result.technologies.push({ name: match[1], value: match[2] });
+              }
+            }
+          }
         }
-      });
+        
+        return result;
+      };
       
-      // Perform the scan
-      const results = await scanner.performScan();
+      const parseNmapOutput = (output) => {
+        const result = {
+          host: null,
+          hostState: null,
+          ports: [],
+          services: [],
+          os: null,
+          raw: output
+        };
+        
+        const lines = output.split('\n');
+        let currentHost = null;
+        
+        for (const line of lines) {
+          // Extract host
+          const hostMatch = line.match(/Nmap scan report for\s+(.+)/);
+          if (hostMatch) {
+            currentHost = hostMatch[1].trim();
+            result.host = currentHost;
+          }
+          
+          // Extract host state
+          const hostStateMatch = line.match(/Host is\s+(\w+)/);
+          if (hostStateMatch) {
+            result.hostState = hostStateMatch[1];
+          }
+          
+          // Extract ports
+          const portMatch = line.match(/(\d+)\/(\w+)\s+(\w+)\s+(\S+)\s+(.+)/);
+          if (portMatch) {
+            result.ports.push({
+              port: parseInt(portMatch[1]),
+              protocol: portMatch[2],
+              state: portMatch[3],
+              service: portMatch[4],
+              version: portMatch[5] || null
+            });
+          }
+        }
+        
+        return result;
+      };
       
-      // Generate PDF report in selected folder
-      if (results.capture_data) {
-        const pdfPath = path.join(selectedFolder, 'api-scan-report.pdf');
-        await scanner.generatePDFReport(results.capture_data, pdfPath);
-        results.pdfReport = pdfPath;
-        results.htmlReport = path.join(selectedFolder, 'api-scan-report.html');
-      }
+      // Run the network scan using Python script with nmap
+      const runNetworkScanAsync = async () => {
+        try {
+          // Ensure path and fs modules are available
+          const pathModule = require('path');
+          const fs = require('fs');
+          
+          // Use local time in the same format (YYYY-MM-DD HH:MM:SS)
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+          const startTimestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          
+          event.sender.send('networkscan:progress', { 
+            stage: 'starting', 
+            message: 'Initializing network scan...',
+            command: '',
+            output: '',
+            consoleLog: `[${startTimestamp}] Starting network scan for ports 1-2000...`
+          });
+          console.log(`[${startTimestamp}] Starting network scan for target:`, target);
+          
+          // Normalize target (remove http/https)
+          const targetDomain = target.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+          
+          // Create temp directory for scan files
+          const tempDir = pathModule.join(process.cwd(), 'temp-network-scans');
+          if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+          }
+          
+          // Generate unique filenames
+          const timestamp = Date.now();
+          const nmapXmlFile = pathModule.join(tempDir, `nmap_${timestamp}.xml`);
+          const jsonOutputFile = pathModule.join(tempDir, `scan_${timestamp}.json`);
+          
+          // Path to Python script - ensure we're using the correct path
+          // __dirname in Electron main process is src/main when in dev, but different when packaged
+          // Use process.cwd() or app.getAppPath() to get the actual application path
+          const appPath = app.isPackaged ? app.getAppPath() : process.cwd();
+          let pythonScriptPath = pathModule.join(appPath, 'backend', 'network_scan_to_json_v_2.py');
+          let absolutePythonPath = pathModule.resolve(pythonScriptPath);
+          
+          // Verify Python script exists, try alternative path if needed
+          if (!fs.existsSync(absolutePythonPath)) {
+            console.warn(`[SCAN] Python script not found at: ${absolutePythonPath}`);
+            console.log(`[SCAN] App path: ${appPath}`);
+            console.log(`[SCAN] __dirname: ${__dirname}`);
+            console.log(`[SCAN] process.cwd(): ${process.cwd()}`);
+            // Try alternative path using __dirname
+            const altPath = pathModule.join(__dirname, '..', '..', 'backend', 'network_scan_to_json_v_2.py');
+            const altAbsolutePath = pathModule.resolve(altPath);
+            console.log(`[SCAN] Trying alternative path: ${altAbsolutePath}`);
+            if (fs.existsSync(altAbsolutePath)) {
+              console.log(`[SCAN] Using alternative path: ${altAbsolutePath}`);
+              absolutePythonPath = altAbsolutePath;
+              pythonScriptPath = altPath;
+            } else {
+              throw new Error(`Python script not found at: ${absolutePythonPath} or ${altAbsolutePath}`);
+            }
+          }
+          
+          console.log(`[SCAN] ✅ Python script found at: ${absolutePythonPath}`);
+          
+          // Convert paths for WSL if on Windows
+          let nmapXmlPathWSL = nmapXmlFile;
+          let pythonScriptPathWSL = absolutePythonPath;
+          let jsonOutputPathWSL = jsonOutputFile;
+          let tempDirWSL = tempDir;
+          
+          if (process.platform === 'win32') {
+            const convertToWSLPath = (winPath) => {
+              const normalized = winPath.replace(/\\/g, '/');
+              const driveMatch = normalized.match(/^([A-Za-z]):/);
+              if (driveMatch) {
+                const driveLetter = driveMatch[1].toLowerCase();
+                // Escape spaces in path for bash
+                return normalized.replace(/^[A-Za-z]:/, `/mnt/${driveLetter}`).replace(/ /g, '\\ ');
+              }
+              return normalized.replace(/ /g, '\\ ');
+            };
+            nmapXmlPathWSL = convertToWSLPath(nmapXmlFile);
+            pythonScriptPathWSL = convertToWSLPath(absolutePythonPath);
+            jsonOutputPathWSL = convertToWSLPath(jsonOutputFile);
+            tempDirWSL = convertToWSLPath(tempDir);
+            
+            // Ensure temp directory exists in WSL
+            try {
+              await execAsync(`wsl bash -c "mkdir -p '${tempDirWSL.replace(/\\ /g, ' ')}'"`, { timeout: 5000 });
+            } catch (e) {
+              console.log('Warning: Could not create temp directory in WSL, continuing anyway');
+            }
+          }
+          
+          // Step 1: Run nmap to scan ports 1-2000 and output XML
+          // Use wsl -u root instead of sudo to avoid password prompts
+          // Also properly escape the path with spaces
+          let nmapCommand;
+          let displayPath = nmapXmlFile; // For display purposes
+          
+          if (process.platform === 'win32') {
+            // Use double quotes for the path to handle spaces, and escape properly
+            const escapedPath = nmapXmlPathWSL.replace(/\\ /g, ' ');
+            const escapedTarget = targetDomain.replace(/'/g, "'\\''");
+            // Use wsl -u root to run as root without sudo
+            nmapCommand = `wsl -u root -- nmap -Pn -p1-2000 -sV -oX "${escapedPath}" "${escapedTarget}"`;
+            displayPath = escapedPath; // Show WSL path in logs
+          } else {
+            nmapCommand = `sudo nmap -Pn -p1-2000 -sV -oX "${nmapXmlFile}" "${targetDomain}"`;
+          }
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: 'Running nmap scan (ports 1-2000)...',
+            command: '',
+            output: '',
+            consoleLog: `\n[${startTimestamp}] 🔍 Running nmap -Pn -p1-2000 -sV -oX ${displayPath} ${targetDomain}\n`
+          });
+          
+          console.log(`[SCAN] Executing nmap: ${nmapCommand}`);
+          console.log(`[SCAN] WSL Path: ${process.platform === 'win32' ? nmapXmlPathWSL.replace(/\\ /g, ' ') : nmapXmlFile}`);
+          
+          try {
+            const { stdout: nmapStdout, stderr: nmapStderr } = await execAsync(nmapCommand, {
+              maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large XML output
+              timeout: 300000, // 5 minutes timeout
+              windowsHide: true
+            });
+            
+            // Send nmap output to UI
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: 'Nmap scan completed, parsing results...',
+              command: '',
+              output: stripAnsiCodes(nmapStdout || ''),
+              consoleLog: stripAnsiCodes(nmapStdout || nmapStderr || '')
+            });
+            
+            // Check if XML file was created
+            if (!fs.existsSync(nmapXmlFile)) {
+              throw new Error('Nmap XML output file not found. Scan may have failed.');
+            }
+            
+          } catch (nmapError) {
+            console.error('Nmap scan error:', nmapError);
+            // Log the full error details for debugging
+            const errorDetails = nmapError.stderr || nmapError.stdout || nmapError.message;
+            console.error('Nmap error details:', errorDetails);
+            
+            event.sender.send('networkscan:progress', {
+              stage: 'error',
+              message: `Nmap scan failed: ${nmapError.message}`,
+              command: '',
+              output: stripAnsiCodes(errorDetails || ''),
+              consoleLog: `\n❌ Nmap scan error: ${nmapError.message}\n${stripAnsiCodes(errorDetails || '')}\n`
+            });
+            throw new Error(`Nmap scan failed: ${nmapError.message}`);
+          }
+          
+          // Step 2: Run Python script to convert XML to JSON
+          // Properly escape paths for Python command
+          let pythonCommand;
+          let displayPythonPath = absolutePythonPath;
+          let displayXmlPath = nmapXmlFile;
+          let displayJsonPath = jsonOutputFile;
+          
+          if (process.platform === 'win32') {
+            // Use double quotes and escape properly for paths with spaces
+            const escapedPythonPath = pythonScriptPathWSL.replace(/\\ /g, ' ');
+            const escapedXmlPath = nmapXmlPathWSL.replace(/\\ /g, ' ');
+            const escapedJsonPath = jsonOutputPathWSL.replace(/\\ /g, ' ');
+            const escapedTarget = targetDomain.replace(/'/g, "'\\''");
+            pythonCommand = `wsl python3 "${escapedPythonPath}" --nmap-xml "${escapedXmlPath}" --domain "${escapedTarget}" --output "${escapedJsonPath}"`;
+            // Show WSL paths in logs
+            displayPythonPath = escapedPythonPath;
+            displayXmlPath = escapedXmlPath;
+            displayJsonPath = escapedJsonPath;
+          } else {
+            pythonCommand = `python3 "${absolutePythonPath}" --nmap-xml "${nmapXmlFile}" --domain "${targetDomain}" --output "${jsonOutputFile}"`;
+          }
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: 'Converting scan results to JSON...',
+            command: '',
+            output: '',
+            consoleLog: `\n[${new Date().toISOString()}] 📊 Converting nmap XML to JSON using: ${displayPythonPath}\n`
+          });
+          
+          console.log(`[SCAN] Executing Python script: ${pythonCommand}`);
+          console.log(`[SCAN] Python Script WSL Path: ${process.platform === 'win32' ? displayPythonPath : absolutePythonPath}`);
+          console.log(`[SCAN] XML Input WSL Path: ${displayXmlPath}`);
+          console.log(`[SCAN] JSON Output WSL Path: ${displayJsonPath}`);
+          
+          try {
+            const { stdout: pythonStdout, stderr: pythonStderr } = await execAsync(pythonCommand, {
+              maxBuffer: 10 * 1024 * 1024,
+              timeout: 60000, // 1 minute timeout for parsing
+              windowsHide: true
+            });
+            
+            // Send Python script output to UI
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: 'Parsing completed...',
+              command: '',
+              output: stripAnsiCodes(pythonStdout || ''),
+              consoleLog: stripAnsiCodes(pythonStdout || pythonStderr || '')
+            });
+            
+            // Read JSON output file
+            if (!fs.existsSync(jsonOutputFile)) {
+              throw new Error('JSON output file not found. Python script may have failed.');
+            }
+            
+            const jsonContent = fs.readFileSync(jsonOutputFile, 'utf-8');
+            const scanData = JSON.parse(jsonContent);
+            
+            // Generate Markdown report
+            const reportGeneratorPath = pathModule.join(__dirname, '..', 'utils', 'scanReportGenerator.js');
+            let markdownReport = '';
+            try {
+              const { generateMarkdownReport } = require(reportGeneratorPath);
+              markdownReport = generateMarkdownReport(scanData);
+            } catch (error) {
+              console.error('Error generating markdown report:', error);
+              markdownReport = `# Network Scan Report\n\nTarget: ${target}\n\nScan completed at: ${new Date().toISOString()}\n\n## Results\n\n\`\`\`json\n${JSON.stringify(scanData, null, 2)}\n\`\`\``;
+            }
+            
+            event.sender.send('networkscan:progress', {
+              stage: 'completed',
+              message: 'Network scan completed successfully',
+              command: '',
+              output: '',
+              consoleLog: `\n✅ [SCAN] Network scan completed successfully!\n`
+            });
+            
+            console.log('Network scan completed, sending results');
+            event.sender.send('networkscan:done', { 
+              success: true, 
+              summary: 'Network scan completed successfully',
+              results: {
+                json: scanData,
+                markdown: markdownReport,
+                raw: jsonContent
+              },
+              target: target,
+              extractedIP: scanData.ip_address || null
+            });
+            
+            // Clean up temp files
+            try {
+              if (fs.existsSync(nmapXmlFile)) fs.unlinkSync(nmapXmlFile);
+              if (fs.existsSync(jsonOutputFile)) fs.unlinkSync(jsonOutputFile);
+              if (fs.existsSync(tempDir) && fs.readdirSync(tempDir).length === 0) {
+                fs.rmdirSync(tempDir);
+              }
+            } catch (cleanupError) {
+              console.log('Cleanup warning:', cleanupError.message);
+            }
+            
+          } catch (pythonError) {
+            console.error('Python script error:', pythonError);
+            event.sender.send('networkscan:done', {
+              success: false,
+              error: `Failed to parse scan results: ${pythonError.message}`,
+              results: null
+            });
+            throw pythonError;
+          }
+          
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            event.sender.send('networkscan:progress', { 
+              stage: 'aborted', 
+              message: 'Network scan aborted by user',
+              command: '',
+              output: '',
+              consoleLog: '\n⚠️ Network scan aborted by user\n'
+            });
+            event.sender.send('networkscan:done', { aborted: true });
+          } else {
+            event.sender.send('networkscan:progress', { 
+              stage: 'error', 
+              message: error.message,
+              command: '',
+              output: '',
+              consoleLog: `\n❌ Network scan error: ${error.message}\n`
+            });
+            console.error('Network scan error:', error);
+            event.sender.send('networkscan:done', { 
+              success: false, 
+              error: error.message,
+              results: null
+            });
+          }
+        } finally {
+          networkScanChild = null;
+          currentNetworkScanTarget = null;
+          networkScanAbortController = null;
+        }
+      };
       
-      // Send completion
-      if (event && event.sender && !event.sender.isDestroyed()) {
-        event.sender.send('apiscan:complete', {
-          success: true,
-          results: results
-        });
-      }
+      // Run in background
+      runNetworkScanAsync();
       
-      return { success: true, results: results };
-    } catch (error) {
-      console.error('❌ [API-SCANNER] Scan error:', error);
-      
-      if (event && event.sender && !event.sender.isDestroyed()) {
-        event.sender.send('apiscan:progress', {
-          progress: 0,
-          message: `Error: ${error.message || 'Unknown error'}`,
-          type: 'error'
-        });
-        event.sender.send('apiscan:complete', {
-          success: false,
-          error: error.message || 'Unknown error'
-        });
-      }
-      
-      return { success: false, error: error.message || 'Unknown error' };
-    }
-  });
-
-  // IPC handler for exporting PDF report
-  ipcMain.handle('apiscan:export-pdf', async (event, captureData) => {
-    try {
-      const timestamp = Date.now();
-      const defaultPath = path.join(app.getPath('documents'), `api-scan-report-${timestamp}.pdf`);
-      
-      const result = await dialog.showSaveDialog({
-        title: 'Save PDF Report',
-        defaultPath: defaultPath,
-        filters: [
-          { name: 'PDF Files', extensions: ['pdf'] }
-        ]
-      });
-      
-      if (result.canceled) {
-        return { success: false, canceled: true };
-      }
-      
-      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
-      const outDir = path.dirname(result.filePath);
-      const scanner = new APIScanner('', outDir);
-      
-      const pdfPath = await scanner.generatePDFReport(captureData, result.filePath);
-      const htmlPath = path.join(outDir, 'api-scan-report.html');
-      
-      return { success: true, pdfPath, htmlPath };
-    } catch (error) {
-      console.error('❌ [API-SCANNER] PDF export error:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  console.log('✅ [MAIN-INIT] All WSL IPC handlers registered successfully');
-
-  // File system operations for logging (register BEFORE app.whenReady() so they're available early)
-  ipcMain.handle('fs:getInstallPath', async () => {
-    try {
-      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
-      if (fs.existsSync(setupConfigPath)) {
-        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
-        return config.installPath || null;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error getting install path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:getDownloadsPath', async () => {
-    try {
-      return app.getPath('downloads');
-    } catch (error) {
-      console.error('Error getting downloads path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
-    try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
       return { success: true };
     } catch (error) {
-      console.error('Error ensuring directory exists:', error);
-      throw error;
+      return { error: error.message };
     }
+  });
+
+  ipcMain.handle('networkscan:abort', async (event) => {
+    console.log('[NETWORK-SCAN] Abort requested, networkScanChild:', networkScanChild ? 'exists' : 'null');
+    
+    if (networkScanChild || currentNetworkScanTarget) {
+      try {
+        // Send abort message to UI immediately
+        event.sender.send('networkscan:progress', {
+          stage: 'aborting',
+          message: 'Aborting scan...',
+          command: '',
+          output: '',
+          consoleLog: '\n⚠️ [ABORT] Stopping network scan...\n'
+        });
+        
+        // Kill the child process if it exists (spawn process)
+        if (networkScanChild) {
+          try {
+            networkScanChild.kill('SIGTERM');
+            setTimeout(() => {
+              if (networkScanChild && !networkScanChild.killed) {
+                networkScanChild.kill('SIGKILL');
+              }
+            }, 500);
+          } catch (e) {
+            console.log('[NETWORK-SCAN] Kill failed:', e.message);
+          }
+        }
+        
+        // Kill nmap and Python processes in WSL
+        const { exec } = require('child_process');
+        const { promisify } = require('util');
+        const execAsync = promisify(exec);
+        
+        if (process.platform === 'win32') {
+          try {
+            // Kill nmap processes
+            if (currentNetworkScanTarget) {
+              await execAsync(`wsl -- bash -c "pkill -f 'nmap.*${currentNetworkScanTarget}' || true"`, { timeout: 3000 });
+              await execAsync(`wsl -- bash -c "pkill -9 -f 'nmap.*${currentNetworkScanTarget}' || true"`, { timeout: 3000 });
+            }
+            // Kill all nmap processes
+            await execAsync(`wsl -- bash -c "pkill -f nmap || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f nmap || true"`, { timeout: 3000 });
+            // Kill Python script processes
+            await execAsync(`wsl -- bash -c "pkill -f 'network_scan_to_json_v_2.py' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'network_scan_to_json_v_2.py' || true"`, { timeout: 3000 });
+          } catch (e) {
+            console.log('[NETWORK-SCAN] Some cleanup commands failed:', e.message);
+          }
+        } else {
+          // On Linux/Mac
+          try {
+            if (currentNetworkScanTarget) {
+              await execAsync(`pkill -f 'nmap.*${currentNetworkScanTarget}' || true`, { timeout: 3000 });
+              await execAsync(`pkill -9 -f 'nmap.*${currentNetworkScanTarget}' || true`, { timeout: 3000 });
+            }
+            await execAsync(`pkill -f 'network_scan_to_json_v_2.py' || true`, { timeout: 3000 });
+            await execAsync(`pkill -9 -f 'network_scan_to_json_v_2.py' || true`, { timeout: 3000 });
+          } catch (e) {
+            console.log('[NETWORK-SCAN] Some cleanup commands failed:', e.message);
+          }
+        }
+
+        // Send completion message
+        event.sender.send('networkscan:progress', {
+          stage: 'aborted',
+          message: 'Scan aborted',
+          command: '',
+          output: '',
+          consoleLog: '\n✅ [ABORT] Network scan stopped successfully\n'
+        });
+
+        // Send done event with aborted status
+        event.sender.send('networkscan:done', { aborted: true });
+
+        networkScanChild = null;
+        currentNetworkScanTarget = null;
+        if (networkScanAbortController) {
+          networkScanAbortController.abort();
+          networkScanAbortController = null;
+        }
+
+        console.log('[NETWORK-SCAN] Abort completed');
+        return { success: true };
+      } catch (error) {
+        console.error('[NETWORK-SCAN] Error during abort:', error);
+        event.sender.send('networkscan:done', { aborted: true, error: error.message });
+        networkScanChild = null;
+        currentNetworkScanTarget = null;
+        networkScanAbortController = null;
+        return { success: false, error: error.message };
+      }
+    }
+
+    return { error: 'No network scan running' };
   });
 
   app.whenReady().then(async () => {
@@ -3662,127 +3789,10 @@ async function createMainWindow() {
     }
   });
 
-  // Network scan handlers
-  let networkScanChild = null;
-  let networkScanAbortController = null;
-  
   // Server scan handlers
   let serverScanChild = null;
   let serverScanAbortController = null;
   
-  ipcMain.handle('networkscan:start', async (event, target) => {
-    if (networkScanChild) return { error: 'Network scan already running' };
-    
-    try {
-      // Create abort controller for this scan
-      networkScanAbortController = new AbortController();
-      
-      // Import the network analysis module
-      const networkAnalysisModule = require(path.join(__dirname, '..', 'scanners', 'network-analysis.js'));
-      console.log('Network analysis module loaded:', typeof networkAnalysisModule.runNetworkAnalysis);
-      
-      // Run the network scan asynchronously
-      const runNetworkScanAsync = async () => {
-        try {
-          event.sender.send('networkscan:progress', { stage: 'starting', message: 'Initializing network analysis...' });
-          
-          // Create a unique temporary directory for this scan
-          const timestamp = Date.now();
-          const tempDir = path.join(process.cwd(), 'temp-scans', `network-scan-${timestamp}`)
-          
-          // Ensure the directory exists
-          fs.mkdirSync(tempDir, { recursive: true })
-          
-          // Debug: Log the tempDir path
-          console.log('Network scan tempDir:', tempDir);
-          console.log('Directory exists:', fs.existsSync(tempDir));
-          event.sender.send('networkscan:progress', { stage: 'debug', message: `Using temp directory: ${tempDir}` });
-          
-          const options = {
-            outputDir: tempDir, // Use temporary directory
-            onProgress: (update) => {
-              event.sender.send('networkscan:progress', update);
-            },
-            abortSignal: networkScanAbortController.signal,
-            dryRun: false,
-            captureTime: 30
-          };
-          
-          // Debug: Log the options object
-          console.log('Network scan options:', JSON.stringify(options, null, 2));
-          event.sender.send('networkscan:progress', { stage: 'debug', message: `Options outputDir: ${options.outputDir}` });
-          
-          // Double-check outputDir is valid
-          if (!options.outputDir || options.outputDir === null || options.outputDir === undefined) {
-            throw new Error('outputDir is null or undefined');
-          }
-          
-          // Test the module with a simple call first
-          console.log('About to call runNetworkAnalysis with:', {
-            target,
-            outputDir: options.outputDir,
-            outputDirType: typeof options.outputDir
-          });
-          
-          let result;
-          try {
-            result = await networkAnalysisModule.runNetworkAnalysis(target, options);
-          } catch (networkError) {
-            console.error('Network analysis module error:', networkError);
-            console.error('Error details:', {
-              message: networkError.message,
-              stack: networkError.stack,
-              target,
-              outputDir: options.outputDir
-            });
-            throw networkError;
-          }
-          
-          console.log('Network scan completed, sending result:', JSON.stringify(result, null, 2));
-          event.sender.send('networkscan:done', { success: true, summary: 'Network scan completed successfully', result });
-        } catch (error) {
-          if (error.name === 'AbortError') {
-            event.sender.send('networkscan:progress', { stage: 'aborted', message: 'Network scan aborted by user' });
-            event.sender.send('networkscan:done', { aborted: true });
-          } else {
-            event.sender.send('networkscan:progress', { stage: 'error', message: error.message });
-            event.sender.send('networkscan:done', null);
-          }
-        } finally {
-          networkScanChild = null;
-          networkScanAbortController = null;
-          // Clean up temporary directory
-          try {
-            if (fs.existsSync(tempDir)) {
-              fs.rmSync(tempDir, { recursive: true, force: true });
-              console.log('Cleaned up temp directory:', tempDir);
-            }
-          } catch (cleanupError) {
-            console.log('Cleanup warning:', cleanupError.message);
-          }
-        }
-      };
-      
-      // Run in background
-      runNetworkScanAsync();
-      
-      return { success: true };
-    } catch (error) {
-      return { error: error.message };
-    }
-  });
-
-  ipcMain.handle('networkscan:abort', async () => {
-    if (networkScanAbortController) {
-      networkScanAbortController.abort();
-      networkScanChild = null;
-      networkScanAbortController = null;
-      return { success: true };
-    }
-    return { error: 'No network scan running' };
-  });
-
-  // Server scan handlers
   ipcMain.handle('serverscan:start', async (event, target) => {
     console.log('serverscan:start handler called with target:', target);
     

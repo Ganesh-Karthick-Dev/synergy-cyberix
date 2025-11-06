@@ -1,0 +1,12 @@
+{
+  "id": "log_1762232336356_4ns6c1rgz",
+  "timestamp": "2025-11-04T04:58:56.356Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "ht",
+  "status": "completed",
+  "startTime": "2025-11-04T04:56:56.356Z",
+  "endTime": "2025-11-04T04:58:56.356Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

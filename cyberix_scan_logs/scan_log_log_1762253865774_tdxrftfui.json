@@ -1,0 +1,12 @@
+{
+  "id": "log_1762253865774_tdxrftfui",
+  "timestamp": "2025-11-04T10:57:45.774Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "",
+  "status": "failed",
+  "startTime": "2025-11-04T10:55:45.774Z",
+  "endTime": "2025-11-04T10:57:45.774Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}

@@ -185,7 +185,7 @@ function generateReportHTML(data){
 <html><head><meta charset="utf-8"/>
 <title>Website Security Audit</title>
 <style>
-  body{font-family:system-ui,Segoe UI,Arial;margin:32px;color:#1f2937}
+  body{font-family:'Poppins',system-ui,Segoe UI,sans-serif;margin:32px;color:#1f2937}
   .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
   .pill{padding:4px 10px;border-radius:9999px;background:#f3f4f6;margin-left:6px}
   .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin:10px 0}

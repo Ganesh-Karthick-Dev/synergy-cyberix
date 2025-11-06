@@ -1,0 +1,12 @@
+{
+  "id": "log_1762232791102_evjz4mz5v",
+  "timestamp": "2025-11-04T05:06:31.102Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "",
+  "status": "completed",
+  "startTime": "2025-11-04T05:04:31.102Z",
+  "endTime": "2025-11-04T05:06:31.102Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

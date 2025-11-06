@@ -1,0 +1,12 @@
+{
+  "id": "log_1762192490226_ntpv4hdds",
+  "timestamp": "2025-11-03T17:54:50.226Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "https",
+  "status": "completed",
+  "startTime": "2025-11-03T17:52:50.226Z",
+  "endTime": "2025-11-03T17:54:50.226Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

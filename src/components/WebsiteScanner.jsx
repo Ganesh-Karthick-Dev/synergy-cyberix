@@ -634,7 +634,7 @@ const WebsiteScanner = () => {
 <head>
     <title>Cyberix Security Scan Report</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
+        body { font-family: 'Poppins', sans-serif; margin: 20px; }
         .header { background: #f5f5f5; padding: 20px; border-radius: 5px; }
         .section { margin: 20px 0; }
         .finding { background: #fff3cd; padding: 10px; margin: 10px 0; border-left: 4px solid #ffc107; }
@@ -716,7 +716,7 @@ const WebsiteScanner = () => {
 <head>
   <title>Cyberix Full Scan Report</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
+    body { font-family: 'Poppins', sans-serif; margin: 20px; }
     .header { background: #eef2ff; padding: 20px; border-radius: 8px; border-left: 4px solid #4f46e5; }
     .section { margin: 20px 0; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
     .grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
@@ -1047,7 +1047,7 @@ const WebsiteScanner = () => {
 <head>
   <title>Cyberix ${level.charAt(0).toUpperCase() + level.slice(1)} Scan Report</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background:#f9fafb; }
+    body { font-family: 'Poppins', sans-serif; margin: 20px; background:#f9fafb; }
     .header { background:${colors.bg}; padding:20px; border-radius:8px; border-left:4px solid ${colors.border}; }
     .section { margin:20px 0; background:#fff; padding:20px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
     .card { margin:14px 0; padding:14px; background:#f8fafc; border-left:4px solid ${colors.border}; border-radius:6px; }

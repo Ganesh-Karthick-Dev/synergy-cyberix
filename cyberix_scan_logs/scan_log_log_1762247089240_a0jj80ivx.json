@@ -1,0 +1,12 @@
+{
+  "id": "log_1762247089240_a0jj80ivx",
+  "timestamp": "2025-11-04T09:04:49.240Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "",
+  "status": "failed",
+  "startTime": "2025-11-04T09:02:49.239Z",
+  "endTime": "2025-11-04T09:04:49.239Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}

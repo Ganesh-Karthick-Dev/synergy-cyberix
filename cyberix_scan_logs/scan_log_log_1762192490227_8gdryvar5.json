@@ -1,0 +1,12 @@
+{
+  "id": "log_1762192490227_8gdryvar5",
+  "timestamp": "2025-11-03T17:54:50.227Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "https://webno",
+  "status": "completed",
+  "startTime": "2025-11-03T17:52:50.227Z",
+  "endTime": "2025-11-03T17:54:50.227Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

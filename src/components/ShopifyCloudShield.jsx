@@ -1055,7 +1055,7 @@ function ShopifyCloudShield() {
         <head>
           <title>Shopify Security Audit Report</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 40px; }
+            body { font-family: 'Poppins', sans-serif; margin: 40px; }
             .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
             .module { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
             .log-entry { background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px; font-family: monospace; }
@@ -1134,7 +1134,7 @@ function ShopifyCloudShield() {
         <head>
           <title>Shopify Security Audit Report</title>
           <style>
-            body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+            body { font-family: 'Poppins', sans-serif; margin: 40px; color: #333; }
             .header { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 30px; border: 1px solid #ddd; }
             .module { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
             .log-entry { background: #f8f9fa; padding: 10px; margin: 5px 0; border-radius: 4px; font-family: monospace; font-size: 10px; }
