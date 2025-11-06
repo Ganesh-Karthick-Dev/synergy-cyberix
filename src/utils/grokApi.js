@@ -3,8 +3,9 @@
  * Handles API calls to Grok (xAI) for generating security scan suggestions
  */
 
-// Get API key from environment variable (Vite uses import.meta.env, Node.js uses process.env)
-const GROK_API_KEY = import.meta.env.VITE_GROK_API_KEY || process.env.GROK_API_KEY
+// Get API key from environment variable (Vite uses import.meta.env in renderer process)
+// Note: process.env is not available in browser/Vite renderer context
+const GROK_API_KEY = import.meta.env.VITE_GROK_API_KEY || import.meta.env.GROK_API_KEY
 const GROK_API_URL = 'https://api.x.ai/v1/chat/completions'
 
 // Validate API key is present
