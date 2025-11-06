@@ -1,9 +1,121 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// Component for expandable endpoint details
+function EndpointCard({ endpoint, index }) {
+  const [expanded, setExpanded] = useState(false);
+  
+  return (
+    <div className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-3">
+          <span className={`px-2 py-1 rounded text-xs font-medium ${
+            endpoint.method === 'GET' ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' :
+            endpoint.method === 'POST' ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200' :
+            endpoint.method === 'PUT' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200' :
+            endpoint.method === 'DELETE' ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' :
+            'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200'
+          }`}>
+            {endpoint.method}
+          </span>
+          <span className="font-mono text-sm text-gray-900 dark:text-gray-100">{endpoint.path}</span>
+        </div>
+        <div className="flex items-center space-x-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            {endpoint.request_count} requests
+            {endpoint.avg_response_time > 0 && (
+              <span className="ml-2 text-blue-600 dark:text-blue-400">
+                • {(endpoint.avg_response_time * 1000).toFixed(2)} ms avg
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm"
+          >
+            {expanded ? '▼ Less' : '▶ More'}
+          </button>
+        </div>
+      </div>
+      <div className="text-sm text-gray-600 dark:text-gray-400">
+        <div>URL: <code className="text-blue-600 dark:text-blue-400">{endpoint.url}</code></div>
+        {endpoint.status_code_distribution && Object.keys(endpoint.status_code_distribution).length > 0 && (
+          <div className="mt-1">
+            Status Codes: {Object.entries(endpoint.status_code_distribution).map(([code, count]) => (
+              <span key={code} className="ml-2">
+                <span className="font-semibold">{code}</span> ({count})
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {expanded && (
+        <div className="mt-4 pt-4 border-t border-gray-300 dark:border-slate-600 space-y-2">
+          <div className="grid md:grid-cols-2 gap-4 text-sm">
+            {endpoint.avg_response_time > 0 && (
+              <div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Avg Response Time:</span>
+                <span className="ml-2 text-blue-600 dark:text-blue-400">{(endpoint.avg_response_time * 1000).toFixed(2)} ms</span>
+              </div>
+            )}
+            {endpoint.avg_request_size > 0 && (
+              <div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Avg Request Size:</span>
+                <span className="ml-2">{(endpoint.avg_request_size / 1024).toFixed(2)} KB</span>
+              </div>
+            )}
+            {endpoint.avg_response_size > 0 && (
+              <div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Avg Response Size:</span>
+                <span className="ml-2">{(endpoint.avg_response_size / 1024).toFixed(2)} KB</span>
+              </div>
+            )}
+            {endpoint.response_count > 0 && (
+              <div>
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Responses:</span>
+                <span className="ml-2">{endpoint.response_count}</span>
+              </div>
+            )}
+            {endpoint.content_types && endpoint.content_types.length > 0 && (
+              <div className="md:col-span-2">
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Content Types:</span>
+                <span className="ml-2">{endpoint.content_types.join(', ')}</span>
+              </div>
+            )}
+            {endpoint.query_params && endpoint.query_params.length > 0 && (
+              <div className="md:col-span-2">
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Query Parameters:</span>
+                <code className="ml-2 text-blue-600 dark:text-blue-400">{endpoint.query_params.join(', ')}</code>
+              </div>
+            )}
+            {endpoint.headers_analysis && (
+              <div className="md:col-span-2">
+                <span className="font-semibold text-gray-700 dark:text-gray-300">Headers Analysis:</span>
+                <div className="ml-4 mt-1 space-y-1">
+                  {endpoint.headers_analysis.has_authentication && (
+                    <span className="inline-block px-2 py-1 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs mr-2">✓ Authentication</span>
+                  )}
+                  {endpoint.headers_analysis.has_cookies && (
+                    <span className="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs mr-2">✓ Cookies</span>
+                  )}
+                  {endpoint.headers_analysis.user_agent && (
+                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      User-Agent: {endpoint.headers_analysis.user_agent.substring(0, 80)}...
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function APIScanner() {
   // State management
   const [url, setUrl] = useState('https://example.com');
-  const [duration, setDuration] = useState(30);
   const [scanResults, setScanResults] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -134,8 +246,8 @@ function APIScanner() {
         type: 'info'
       }]);
       
-      // Start the scan with duration
-      await window.cyberGuard.startAPIScan(url, duration);
+      // Start the scan with fixed duration (120 seconds)
+      await window.cyberGuard.startAPIScan(url, 120);
 
     } catch (error) {
       console.error('API scan error:', error);
@@ -409,25 +521,6 @@ function APIScanner() {
             </p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Capture Duration (seconds)
-            </label>
-            <input
-              type="number"
-              value={duration}
-              onChange={(e) => setDuration(parseInt(e.target.value) || 30)}
-              min="10"
-              max="300"
-              placeholder="30"
-              className="w-full px-4 py-3 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isScanning}
-            />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Duration for network traffic capture (10-300 seconds)
-            </p>
-          </div>
-
           <button
             onClick={handleStartScan}
             disabled={isScanning || !url.trim()}
@@ -568,17 +661,29 @@ function APIScanner() {
             </div>
           </div>
           
-          {/* Progress Bar */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-blue-800 dark:text-blue-200">Progress</span>
-              <span className="text-blue-600 dark:text-blue-400 font-medium">{progress}%</span>
+          {/* Enhanced Progress Bar with Percentage */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-blue-800 dark:text-blue-200">Scan Progress</span>
+              <div className="flex items-center space-x-2">
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{progress}%</div>
+                <span className="text-xs text-blue-600 dark:text-blue-400">Complete</span>
+              </div>
             </div>
-            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
+            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-4 relative overflow-hidden">
               <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                className="bg-gradient-to-r from-blue-500 to-blue-600 h-4 rounded-full transition-all duration-500 ease-out relative"
                 style={{ width: `${progress}%` }}
-              ></div>
+              >
+                <div className="absolute inset-0 bg-white opacity-20 animate-pulse"></div>
+              </div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs font-semibold text-blue-900 dark:text-blue-100">{progress}%</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between text-xs text-blue-700 dark:text-blue-300">
+              <span>Capturing network traffic...</span>
+              <span>{progress >= 100 ? 'Completed!' : 'Processing...'}</span>
             </div>
           </div>
 
@@ -641,6 +746,47 @@ function APIScanner() {
                 </div>
               </div>
               
+              {/* Enhanced Summary Stats */}
+              {scanResults.capture_data.summary && (
+                <div className="mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Performance Metrics</h3>
+                  <div className="grid md:grid-cols-4 gap-4 mb-4">
+                    {scanResults.capture_data.summary.avg_response_time > 0 && (
+                      <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                          {(scanResults.capture_data.summary.avg_response_time * 1000).toFixed(2)} ms
+                        </div>
+                        <div className="text-sm text-indigo-800 dark:text-indigo-200">Avg Response Time</div>
+                      </div>
+                    )}
+                    {scanResults.capture_data.summary.avg_request_size > 0 && (
+                      <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                          {(scanResults.capture_data.summary.avg_request_size / 1024).toFixed(2)} KB
+                        </div>
+                        <div className="text-sm text-purple-800 dark:text-purple-200">Avg Request Size</div>
+                      </div>
+                    )}
+                    {scanResults.capture_data.summary.avg_response_size > 0 && (
+                      <div className="p-4 bg-pink-50 dark:bg-pink-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-pink-600 dark:text-pink-400">
+                          {(scanResults.capture_data.summary.avg_response_size / 1024).toFixed(2)} KB
+                        </div>
+                        <div className="text-sm text-pink-800 dark:text-pink-200">Avg Response Size</div>
+                      </div>
+                    )}
+                    {scanResults.capture_data.summary.matched_pairs > 0 && (
+                      <div className="p-4 bg-teal-50 dark:bg-teal-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-teal-600 dark:text-teal-400">
+                          {scanResults.capture_data.summary.matched_pairs}
+                        </div>
+                        <div className="text-sm text-teal-800 dark:text-teal-200">Matched Pairs</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               {/* Status Code Distribution */}
               {scanResults.capture_data.summary.status_codes && Object.keys(scanResults.capture_data.summary.status_codes).length > 0 && (
                 <div className="mb-6">
@@ -701,28 +847,7 @@ function APIScanner() {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Discovered API Endpoints</h3>
               <div className="space-y-3">
                 {scanResults.capture_data.endpoints.map((endpoint, index) => (
-                  <div key={index} className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center space-x-3">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          endpoint.method === 'GET' ? 'bg-green-100 text-green-800' :
-                          endpoint.method === 'POST' ? 'bg-blue-100 text-blue-800' :
-                          endpoint.method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
-                          endpoint.method === 'DELETE' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {endpoint.method}
-                        </span>
-                        <span className="font-mono text-sm text-gray-900 dark:text-gray-100">{endpoint.path}</span>
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {endpoint.request_count} requests
-                      </div>
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      <div>URL: <code className="text-blue-600 dark:text-blue-400">{endpoint.url}</code></div>
-                    </div>
-                  </div>
+                  <EndpointCard key={index} endpoint={endpoint} index={index} />
                 ))}
               </div>
             </div>
@@ -779,24 +904,41 @@ function APIScanner() {
           ) : null}
 
           {/* Security Findings */}
-          {scanResults.findings && scanResults.findings.length > 0 && (
+          {(scanResults.findings && scanResults.findings.length > 0) || 
+           (scanResults.capture_data && scanResults.capture_data.summary && 
+            scanResults.capture_data.summary.security_findings && 
+            scanResults.capture_data.summary.security_findings.length > 0) ? (
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Security Findings</h3>
               <div className="space-y-3">
-                {scanResults.findings.map((finding, index) => (
-                  <div key={index} className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg">
+                {(scanResults.capture_data?.summary?.security_findings || scanResults.findings || []).map((finding, index) => (
+                  <div key={index} className="p-4 bg-gray-50 dark:bg-slate-700 rounded-lg border-l-4 border-red-500">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-medium text-gray-900 dark:text-gray-100">{finding.type}</h4>
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${getSeverityColor(finding.severity)}`}>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        finding.severity === 'High' ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' :
+                        finding.severity === 'Medium' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200' :
+                        'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                      }`}>
                         {finding.severity}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{finding.evidence}</p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      <strong>Endpoint:</strong> <code className="text-blue-600 dark:text-blue-400">{finding.endpoint}</code>
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                      <strong>Finding:</strong> {finding.finding || finding.evidence}
+                    </p>
+                    {finding.recommendation && (
+                      <p className="text-sm text-gray-700 dark:text-gray-300 bg-blue-50 dark:bg-blue-900/20 p-2 rounded">
+                        <strong>Recommendation:</strong> {finding.recommendation}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Recommendations */}
           {scanResults.recommendations && scanResults.recommendations.length > 0 && (
@@ -809,6 +951,31 @@ function APIScanner() {
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {/* JSON Results Display */}
+          {scanResults && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Raw JSON Results</h3>
+              <div className="bg-gray-900 dark:bg-black rounded-lg border border-gray-700 dark:border-slate-600 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-gray-400">Complete scan results in JSON format</span>
+                  <button
+                    onClick={() => {
+                      const jsonString = JSON.stringify(scanResults, null, 2);
+                      navigator.clipboard.writeText(jsonString);
+                      alert('JSON copied to clipboard!');
+                    }}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors"
+                  >
+                    Copy JSON
+                  </button>
+                </div>
+                <pre className="text-xs text-gray-300 overflow-auto max-h-96 font-mono p-4 bg-black rounded border border-gray-800">
+                  {JSON.stringify(scanResults, null, 2)}
+                </pre>
+              </div>
             </div>
           )}
         </div>

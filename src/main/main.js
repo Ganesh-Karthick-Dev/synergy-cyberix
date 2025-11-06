@@ -1171,7 +1171,7 @@ async function createMainWindow() {
   });
 
   // API Scanner - Real scanning with WSL/Kali tools
-  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 30) => {
+  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 120) => {
     try {
       console.log('\n\n');
       console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍');
@@ -1185,7 +1185,7 @@ async function createMainWindow() {
       const outDir = path.join(process.cwd(), 'temp-api-scans', `api-scan-${Date.now()}`);
       fs.mkdirSync(outDir, { recursive: true });
       
-      const scanner = new APIScanner(targetUrl, outDir);
+      const scanner = new APIScanner(targetUrl, outDir, duration);
       
       // Set up progress callback
       scanner.setProgressCallback((update) => {

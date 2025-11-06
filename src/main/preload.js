@@ -131,7 +131,7 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   installAllToolsRootless: () => ipcRenderer.invoke('install-tools'),
   onInstallProgress: (listener) => ipcRenderer.on('install-progress', (_e, progress) => listener(progress)),
   // API Scanner (Wireshark-based)
-  startAPIScan: (targetUrl, duration = 30) => ipcRenderer.invoke('apiscan:start', targetUrl, duration),
+  startAPIScan: (targetUrl, duration = 120) => ipcRenderer.invoke('apiscan:start', targetUrl, duration),
   onAPIScanProgress: (listener) => {
     const handler = (_e, progress) => listener(progress);
     ipcRenderer.on('apiscan:progress', handler);
