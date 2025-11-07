@@ -1,0 +1,83 @@
+{
+  "metadata": {
+    "target": "http://webnox.in/",
+    "timestamp": "2025-11-07T09:13:10.482Z",
+    "scanDuration": 140620,
+    "toolsUsed": [
+      "target",
+      "timestamp",
+      "malware"
+    ],
+    "executedCommands": [
+      {
+        "tool": "clamav",
+        "command": "clamscan -r -i \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762506649862/webnox.in\" --log=\"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762506649862/clamav_scan.log\" || true",
+        "exitCode": 0,
+        "description": "ClamAV signature-based malware scan"
+      },
+      {
+        "tool": "yara",
+        "command": "yara -r \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar\" \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762506649862/webnox.in\" || echo \"yara_not_installed\"",
+        "exitCode": 0,
+        "description": "YARA pattern-based malware detection"
+      }
+    ]
+  },
+  "summary": {
+    "status": "clean",
+    "riskScore": 0,
+    "severity": "LOW",
+    "totalFindings": 0,
+    "malwareStatus": "clean",
+    "defacementStatus": "normal"
+  },
+  "findings": {
+    "malware": {
+      "count": 0,
+      "findings": [],
+      "tools": {
+        "clamav": "completed",
+        "yara": "completed"
+      }
+    },
+    "defacement": {
+      "changed": false,
+      "message": "New baseline created"
+    }
+  },
+  "detailed": {
+    "malware": {
+      "clamav": {
+        "tool": "clamav",
+        "command": "clamscan -r -i \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762506649862/webnox.in\" --log=\"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762506649862/clamav_scan.log\" || true",
+        "exitCode": 0,
+        "stdout": "\n----------- SCAN SUMMARY -----------\nKnown viruses: 8708688\nEngine version: 1.4.3\nScanned directories: 2\nScanned files: 6\nInfected files: 0\nData scanned: 8.63 MB\nData read: 7.00 MB (ratio 1.23:1)\nTime: 33.661 sec (0 m 33 s)\nStart Date: 2025:11:07 14:42:36\nEnd Date:   2025:11:07 14:43:09\n",
+        "stderr": "",
+        "infectedCount": 0,
+        "infectedFiles": [],
+        "logFile": "D:\\WEBNOX\\cybrix\\synergy-cyberix\\temp-scans\\maldef-1762506649862\\clamav_scan.log"
+      },
+      "yara": {
+        "tool": "yara",
+        "command": "yara -r \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar\" \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762506649862/webnox.in\" || echo \"yara_not_installed\"",
+        "exitCode": 0,
+        "stdout": "yara_not_installed\n",
+        "stderr": "warning: rule \"Base64_Obfuscation\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(33): string \"$base64_4\" may slow down scanning\nwarning: rule \"Crypto_Mining\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(119): $mining3 contains .*, .+ or .{x,} consider using .{,N}, .{1,N} or {x,N} with a reasonable value for N\nwarning: rule \"Crypto_Mining\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(120): $mining4 contains .*, .+ or .{x,} consider using .{,N}, .{1,N} or {x,N} with a reasonable value for N\nwarning: rule \"Malicious_Script_Injection\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(154): $script2 contains .*, .+ or .{x,} consider using .{,N}, .{1,N} or {x,N} with a reasonable value for N\nerror: rule \"PHP_Shell_Indicators\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(170): invalid regular expression \"$php_shell1\": syntax error\nwarning: rule \"XSS_Payload_Patterns\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(210): $xss1 contains .*, .+ or .{x,} consider using .{,N}, .{1,N} or {x,N} with a reasonable value for N\nwarning: rule \"Obfuscated_String_Patterns\" in /mnt/d/WEBNOX/cybrix/synergy-cyberix/src/maldef/rules/web_malware.yar(246): string \"$obf1\" may slow down scanning\n",
+        "matches": [],
+        "matchCount": 0
+      }
+    },
+    "defacement": {
+      "changed": false,
+      "message": "New baseline created"
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "low",
+      "category": "maintenance",
+      "action": "System appears clean. Continue regular monitoring",
+      "details": "No significant threats detected"
+    }
+  ]
+}

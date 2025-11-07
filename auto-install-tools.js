@@ -76,6 +76,15 @@ const TOOLS = [
       { type: 'winget', cmd: 'winget install --id ShiningLight.OpenSSL -e --source winget --accept-package-agreements --accept-source-agreements' },
       { type: 'choco', cmd: 'choco install openssl -y' }
     ]
+  },
+  {
+    name: 'tgpt',
+    methods: [
+      { type: 'pip', cmd: 'pip install tgpt' },
+      { type: 'pip3', cmd: 'pip3 install tgpt' },
+      { type: 'python', cmd: 'python -m pip install tgpt' },
+      { type: 'python3', cmd: 'python3 -m pip install tgpt' }
+    ]
   }
 ];
 
@@ -107,6 +116,27 @@ async function runCommand(cmd, useWsl = false) {
 
 async function checkToolExists(toolName) {
   try {
+    // Special handling for Python packages
+    if (toolName === 'tgpt') {
+      try {
+        // Check if tgpt is available as a Python module
+        const result = await execa('python', ['-m', 'tgpt', '--version'], { shell: true, timeout: 5000 });
+        return true;
+      } catch (e1) {
+        try {
+          const result = await execa('python3', ['-m', 'tgpt', '--version'], { shell: true, timeout: 5000 });
+          return true;
+        } catch (e2) {
+          try {
+            const result = await execa('tgpt', ['--version'], { shell: true, timeout: 5000 });
+            return true;
+          } catch (e3) {
+            return false;
+          }
+        }
+      }
+    }
+    
     if (isWindows) {
       // Try where command first
       const result = await execa('where', [toolName], { shell: true });

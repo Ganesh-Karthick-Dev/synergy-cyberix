@@ -1459,47 +1459,186 @@ ipcMain.handle('kali:test', async () => {
     return { error: 'No network scan running' };
   });
 
-  // API Scanner (tshark/Wireshark-based) - register early, before app.whenReady
-  let apiScanChild = null;
-  console.log('[API-SCAN] Registering apiscan:start handler...');
-  ipcMain.handle('apiscan:start', async (event, targetUrl, duration = 120) => {
-    console.log('[API-SCAN] Starting API scan for:', targetUrl, 'duration:', duration);
+  // GitHub OAuth and Repository Scanner - register early, before app.whenReady
+  let githubScanChild = null;
+  let storedAccessToken = null;
+  
+  console.log('[GITHUB-SCAN] Registering GitHub scanner handlers...');
+  
+  // GitHub OAuth Device Flow - Initiate
+  ipcMain.handle('github:initiate-auth', async (event) => {
+    try {
+      const GitHubOAuth = require(path.join(__dirname, '..', 'scanners', 'github-oauth.js'));
+      const oauth = new GitHubOAuth();
+      
+      const deviceFlow = await oauth.initiateDeviceFlow();
+      
+      return {
+        success: true,
+        userCode: deviceFlow.userCode,
+        verificationUri: deviceFlow.verificationUri,
+        verificationUriComplete: deviceFlow.verificationUriComplete,
+        expiresIn: deviceFlow.expiresIn
+      };
+    } catch (error) {
+      console.error('[GITHUB-AUTH] Failed to initiate auth:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // GitHub OAuth Device Flow - Poll for token
+  ipcMain.handle('github:poll-token', async (event, deviceCode, userCode) => {
+    try {
+      const GitHubOAuth = require(path.join(__dirname, '..', 'scanners', 'github-oauth.js'));
+      const oauth = new GitHubOAuth();
+      oauth.deviceCode = deviceCode;
+      oauth.userCode = userCode;
+      
+      const progressCallback = (progress) => {
+        event.sender.send('github:auth-progress', progress);
+      };
+      
+      const tokenResult = await oauth.pollForToken(deviceCode, userCode, progressCallback);
+      
+      if (tokenResult.access_token) {
+        storedAccessToken = tokenResult.access_token;
+        
+        // Get user info
+        const userInfo = await oauth.getUserInfo(tokenResult.access_token);
+        
+        return {
+          success: true,
+          accessToken: tokenResult.access_token,
+          user: userInfo
+        };
+      }
+      
+      return { success: false, error: 'No access token received' };
+    } catch (error) {
+      console.error('[GITHUB-AUTH] Failed to poll for token:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Get GitHub repositories
+  ipcMain.handle('github:get-repositories', async (event, accessToken) => {
+    try {
+      const token = accessToken || storedAccessToken;
+      if (!token) {
+        return { success: false, error: 'No access token available' };
+      }
+      
+      const GitHubOAuth = require(path.join(__dirname, '..', 'scanners', 'github-oauth.js'));
+      const oauth = new GitHubOAuth();
+      
+      const progressCallback = (progress) => {
+        event.sender.send('github:repos-progress', progress);
+      };
+      
+      const repositories = await oauth.getAllRepositories(token, progressCallback);
+      
+      return {
+        success: true,
+        repositories: repositories.map(repo => ({
+          id: repo.id,
+          name: repo.name,
+          fullName: repo.full_name,
+          url: repo.html_url,
+          cloneUrl: repo.clone_url,
+          sshUrl: repo.ssh_url,
+          description: repo.description,
+          language: repo.language,
+          private: repo.private,
+          defaultBranch: repo.default_branch,
+          updatedAt: repo.updated_at,
+          stars: repo.stargazers_count,
+          forks: repo.forks_count
+        }))
+      };
+    } catch (error) {
+      console.error('[GITHUB-REPOS] Failed to get repositories:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Start GitHub repository scan
+  ipcMain.handle('apiscan:start', async (event, repositories, accessToken) => {
+    console.log('[GITHUB-SCAN] Starting GitHub repository scan for:', repositories.length, 'repositories');
     
-    if (apiScanChild) {
-      console.log('[API-SCAN] Scan already running');
-      return { error: 'API scan already running' };
+    if (githubScanChild) {
+      console.log('[GITHUB-SCAN] Scan already running');
+      return { error: 'GitHub scan already running' };
     }
 
     try {
-      // Import the API scanner module
-      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
+      const token = accessToken || storedAccessToken;
+      if (!token) {
+        return { error: 'No access token available. Please authenticate first.' };
+      }
+
+      const GitHubRepoScanner = require(path.join(__dirname, '..', 'scanners', 'github-repo-scanner.js'));
       
       // Create output directory
-      const outputDir = path.join(process.cwd(), 'temp-api-scans');
+      const outputDir = path.join(process.cwd(), 'temp-github-scans');
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
 
-      // Create scanner instance
-      const scanner = new APIScanner(targetUrl, outputDir, duration);
-      
-      // Set up progress callback
-      scanner.setProgressCallback((progress) => {
-        event.sender.send('apiscan:progress', progress);
-      });
-
-      // Run scan asynchronously
-      const runScanAsync = async () => {
+      // Run scans for all selected repositories
+      const runScansAsync = async () => {
         try {
-          console.log('[API-SCAN] Starting scan asynchronously...');
-          const results = await scanner.performScan();
-          console.log('[API-SCAN] Scan completed successfully');
-          event.sender.send('apiscan:complete', { success: true, results });
+          const allResults = [];
+          
+          for (let i = 0; i < repositories.length; i++) {
+            const repo = repositories[i];
+            const repoProgress = Math.floor((i / repositories.length) * 100);
+            
+            event.sender.send('apiscan:progress', {
+              progress: repoProgress,
+              message: `Scanning repository ${i + 1}/${repositories.length}: ${repo.name}`,
+              type: 'info',
+              repository: repo.name
+            });
+            
+            const scanner = new GitHubRepoScanner(repo.cloneUrl, repo.fullName, token, outputDir);
+            
+            scanner.setProgressCallback((progress) => {
+              // Calculate overall progress
+              const overallProgress = repoProgress + Math.floor((progress.progress / 100) * (100 / repositories.length));
+              event.sender.send('apiscan:progress', {
+                ...progress,
+                progress: overallProgress,
+                repository: repo.name
+              });
+            });
+            
+            try {
+              const results = await scanner.performScan();
+              allResults.push(results);
+            } catch (error) {
+              console.error(`[GITHUB-SCAN] Error scanning ${repo.name}:`, error);
+              allResults.push({
+                repository: repo.name,
+                error: error.message,
+                success: false
+              });
+            }
+          }
+          
+          console.log('[GITHUB-SCAN] All scans completed successfully');
+          event.sender.send('apiscan:complete', { 
+            success: true, 
+            results: {
+              repositories: allResults,
+              totalScanned: allResults.length,
+              timestamp: new Date().toISOString()
+            }
+          });
         } catch (error) {
-          console.error('[API-SCAN] Scan error:', error);
+          console.error('[GITHUB-SCAN] Scan error:', error);
           event.sender.send('apiscan:progress', {
             progress: 0,
-            message: `❌ API scan error: ${error.message}`,
+            message: `❌ GitHub scan error: ${error.message}`,
             type: 'error'
           });
           event.sender.send('apiscan:complete', {
@@ -1507,48 +1646,19 @@ ipcMain.handle('kali:test', async () => {
             error: error.message
           });
         } finally {
-          apiScanChild = null;
+          githubScanChild = null;
         }
       };
 
-      // Start scan in background
-      runScanAsync();
+      // Start scans in background
+      githubScanChild = true;
+      runScansAsync();
       
       return { success: true };
     } catch (error) {
-      console.error('[API-SCAN] Failed to start scan:', error);
-      apiScanChild = null;
+      console.error('[GITHUB-SCAN] Failed to start scan:', error);
+      githubScanChild = null;
       return { error: error.message };
-    }
-  });
-
-  // API Scanner PDF Export
-  ipcMain.handle('apiscan:export-pdf', async (event, captureData) => {
-    try {
-      const APIScanner = require(path.join(__dirname, '..', 'scanners', 'api-scanner.js'));
-      const scanner = new APIScanner('', path.join(process.cwd(), 'temp-api-scans'));
-      
-      // Show save dialog
-      const { dialog } = require('electron');
-      const result = await dialog.showSaveDialog({
-        title: 'Save API Scan Report',
-        defaultPath: 'api-scan-report.pdf',
-        filters: [
-          { name: 'PDF Files', extensions: ['pdf'] }
-        ]
-      });
-
-      if (result.canceled) {
-        return { success: false, canceled: true };
-      }
-
-      // Generate PDF
-      await scanner.generatePDFReport(captureData, result.filePath);
-      
-      return { success: true, filePath: result.filePath };
-    } catch (error) {
-      console.error('[API-SCAN] PDF export error:', error);
-      return { success: false, error: error.message };
     }
   });
 
@@ -1593,6 +1703,435 @@ ipcMain.handle('kali:test', async () => {
       throw error;
     }
   });
+
+  // Security Analyzer (comprehensive defensive analysis) - register early, before app.whenReady
+  console.log('[SECURITY-ANALYZER] Registering securityAnalysis:start handler...');
+  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
+    console.log('[SECURITY-ANALYZER] Handler called with payload:', payload);
+    try {
+      const { url, credentials, options } = payload
+      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
+      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
+      fs.mkdirSync(outDir, { recursive: true })
+      
+      // Launch target site in default browser for transparency
+      try {
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+          } catch {}
+          return null
+        })()
+        if (safeUrl) shell.openExternal(safeUrl)
+      } catch {}
+      
+      const scanOptions = {
+        outputDir: outDir,
+        onProgress: (update) => event.sender.send('securityAnalysis:progress', update),
+        ...options
+      }
+      
+      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
+      event.sender.send('securityAnalysis:complete', { success: true, result })
+      return { success: true }
+    } catch (e) {
+      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Malware & Defacement orchestrated scan (comprehensive with real-time streaming)
+  console.log('[MALDEF] ===== REGISTERING HANDLER =====')
+  
+  // Pre-load orchestrators to catch errors early
+  let comprehensiveOrchestrator = null
+  let oldOrchestrator = null
+  
+  // Track current maldef scan for cancellation
+  let currentMaldefScan = null
+  let maldefScanAbortController = null
+  
+  try {
+    const orchestratorPath = path.join(__dirname, '..', 'maldef', 'comprehensiveOrchestrator.js')
+    console.log('[MALDEF] Checking comprehensive orchestrator at:', orchestratorPath)
+    if (fs.existsSync(orchestratorPath)) {
+      try {
+        console.log('[MALDEF] Attempting to pre-load comprehensive orchestrator...')
+        comprehensiveOrchestrator = require(orchestratorPath)
+        console.log('[MALDEF] ✓ Comprehensive orchestrator pre-loaded successfully')
+      } catch (e) {
+        console.error('[MALDEF] ✗ Failed to pre-load comprehensive orchestrator')
+        console.error('[MALDEF] Error:', e.message)
+        console.error('[MALDEF] Stack:', e.stack)
+      }
+    } else {
+      console.log('[MALDEF] Comprehensive orchestrator file not found at:', orchestratorPath)
+    }
+  } catch (e) {
+    console.error('[MALDEF] Error checking comprehensive orchestrator:', e.message)
+  }
+  
+  try {
+    const oldOrchestratorPath = path.join(__dirname, '..', 'maldef', 'orchestrator.js')
+    console.log('[MALDEF] Checking old orchestrator at:', oldOrchestratorPath)
+    if (fs.existsSync(oldOrchestratorPath)) {
+      try {
+        console.log('[MALDEF] Attempting to pre-load old orchestrator...')
+        oldOrchestrator = require(oldOrchestratorPath)
+        console.log('[MALDEF] ✓ Old orchestrator pre-loaded successfully')
+      } catch (e) {
+        console.error('[MALDEF] ✗ Failed to pre-load old orchestrator')
+        console.error('[MALDEF] Error:', e.message)
+      }
+    } else {
+      console.log('[MALDEF] Old orchestrator file not found at:', oldOrchestratorPath)
+    }
+  } catch (e) {
+    console.error('[MALDEF] Error checking old orchestrator:', e.message)
+  }
+  
+  // Register handler - this MUST succeed even if pre-loading failed
+  // Malware & Defacement Tools Checker
+  ipcMain.handle('maldef:checkTools', async (event) => {
+    try {
+      // Try multiple path resolutions
+      let toolInstaller
+      try {
+        toolInstaller = require(path.join(__dirname, '..', 'maldef', 'toolInstaller'))
+      } catch (e1) {
+        try {
+          toolInstaller = require(path.join(process.cwd(), 'src', 'maldef', 'toolInstaller'))
+        } catch (e2) {
+          toolInstaller = require('../maldef/toolInstaller')
+        }
+      }
+      const { checkAllTools } = toolInstaller
+      const distro = 'kali-linux'
+      
+      const result = await checkAllTools(distro, (update) => {
+        event.sender.send('maldef:toolsProgress', update)
+      })
+      
+      return {
+        success: true,
+        allInstalled: result.allInstalled,
+        missingTools: result.missingTools,
+        toolStatus: result.toolStatus
+      }
+    } catch (e) {
+      console.error('[MALDEF] Failed to check tools:', e)
+      return {
+        success: false,
+        error: e.message,
+        allInstalled: false,
+        missingTools: [],
+        toolStatus: {}
+      }
+    }
+  })
+
+  // Malware & Defacement Tools Installer
+  ipcMain.handle('maldef:installTools', async (event, password) => {
+    try {
+      // Try multiple path resolutions
+      let toolInstaller
+      try {
+        toolInstaller = require(path.join(__dirname, '..', 'maldef', 'toolInstaller'))
+      } catch (e1) {
+        try {
+          toolInstaller = require(path.join(process.cwd(), 'src', 'maldef', 'toolInstaller'))
+        } catch (e2) {
+          toolInstaller = require('../maldef/toolInstaller')
+        }
+      }
+      const { installAllMissingTools } = toolInstaller
+      const distro = 'kali-linux'
+      
+      const result = await installAllMissingTools(distro, password, (update) => {
+        event.sender.send('maldef:toolsProgress', update)
+      })
+      
+      return {
+        success: result.success,
+        installed: result.installed,
+        failed: result.failed,
+        stdout: result.stdout,
+        stderr: result.stderr
+      }
+    } catch (e) {
+      console.error('[MALDEF] Failed to install tools:', e)
+      return {
+        success: false,
+        error: e.message,
+        installed: [],
+        failed: []
+      }
+    }
+  })
+
+  try {
+    console.log('[MALDEF] Registering ipcMain.handle("maldef:start")...')
+    ipcMain.handle('maldef:start', async (event, url, options = {}) => {
+    console.log('[MALDEF] ===== HANDLER CALLED =====')
+    console.log('[MALDEF] Handler called with URL:', url)
+    console.log('[MALDEF] Options:', JSON.stringify(options))
+    
+    // Check if scan is already running
+    if (currentMaldefScan) {
+      return { error: 'Scan already running' }
+    }
+    
+    // Create abort controller for this scan
+    maldefScanAbortController = new AbortController()
+    const abortSignal = maldefScanAbortController.signal
+    
+    try {
+      let runScan = null
+      let orchestratorType = 'unknown'
+      
+      // Try to use pre-loaded orchestrators first
+      if (comprehensiveOrchestrator && comprehensiveOrchestrator.runComprehensiveScan) {
+        runScan = comprehensiveOrchestrator.runComprehensiveScan
+        orchestratorType = 'comprehensive (pre-loaded)'
+        console.log('[MALDEF] Using comprehensive orchestrator (pre-loaded)')
+      } else if (oldOrchestrator && oldOrchestrator.runMaldefScan) {
+        runScan = oldOrchestrator.runMaldefScan
+        orchestratorType = 'old (pre-loaded)'
+        console.log('[MALDEF] Using old orchestrator as fallback (pre-loaded)')
+      } else {
+        // Try to load on-demand as last resort
+        console.log('[MALDEF] No pre-loaded orchestrators, trying on-demand load...')
+        const orchestratorPath = path.join(__dirname, '..', 'maldef', 'comprehensiveOrchestrator.js')
+        const oldOrchestratorPath = path.join(__dirname, '..', 'maldef', 'orchestrator.js')
+        
+        if (fs.existsSync(orchestratorPath)) {
+          try {
+            console.log('[MALDEF] Attempting to load comprehensive orchestrator from:', orchestratorPath)
+            const { runComprehensiveScan } = require(orchestratorPath)
+            runScan = runComprehensiveScan
+            orchestratorType = 'comprehensive (on-demand)'
+            console.log('[MALDEF] Successfully loaded comprehensive orchestrator on-demand')
+          } catch (e) {
+            console.error('[MALDEF] Failed to load comprehensive orchestrator on-demand')
+            console.error('[MALDEF] Error:', e.message)
+            console.error('[MALDEF] Stack:', e.stack)
+            
+            if (fs.existsSync(oldOrchestratorPath)) {
+              try {
+                console.log('[MALDEF] Attempting to load old orchestrator from:', oldOrchestratorPath)
+                const { runMaldefScan } = require(oldOrchestratorPath)
+                runScan = runMaldefScan
+                orchestratorType = 'old (on-demand)'
+                console.log('[MALDEF] Successfully loaded old orchestrator on-demand')
+              } catch (e2) {
+                console.error('[MALDEF] Failed to load old orchestrator on-demand')
+                console.error('[MALDEF] Error:', e2.message)
+                throw new Error(`Failed to load any orchestrator. Comprehensive error: ${e.message}. Old error: ${e2.message}`)
+              }
+            } else {
+              throw new Error(`Comprehensive orchestrator failed to load: ${e.message}. Old orchestrator file not found at ${oldOrchestratorPath}`)
+            }
+          }
+        } else if (fs.existsSync(oldOrchestratorPath)) {
+          try {
+            console.log('[MALDEF] Loading old orchestrator from:', oldOrchestratorPath)
+            const { runMaldefScan } = require(oldOrchestratorPath)
+            runScan = runMaldefScan
+            orchestratorType = 'old (on-demand)'
+            console.log('[MALDEF] Successfully loaded old orchestrator on-demand')
+          } catch (e) {
+            console.error('[MALDEF] Failed to load old orchestrator')
+            console.error('[MALDEF] Error:', e.message)
+            throw new Error(`Failed to load old orchestrator: ${e.message}`)
+          }
+        } else {
+          throw new Error(`No orchestrator files found. Checked: ${orchestratorPath} and ${oldOrchestratorPath}`)
+        }
+      }
+      
+      if (!runScan) {
+        throw new Error('Failed to get a valid scan function')
+      }
+      
+      console.log('[MALDEF] Using orchestrator type:', orchestratorType)
+      
+      const outRoot = path.join(process.cwd(), 'temp-scans')
+      
+      // Real-time progress streaming with console output
+      // Build options compatible with both orchestrators
+      const scanOptions = {
+        outRoot,
+        onProgress: (update) => {
+          // Send real-time console output to frontend
+          // All stdout/stderr from scanners is streamed here
+          event.sender.send('maldef:progress', {
+            ...update,
+            // Include raw console output for terminal display
+            console: update.raw || update.message,
+            timestamp: new Date().toISOString()
+          })
+        }
+      }
+      
+      // Add comprehensive orchestrator-specific options if using new orchestrator
+      const isComprehensiveOrchestrator = comprehensiveOrchestrator && comprehensiveOrchestrator.runComprehensiveScan
+      if (isComprehensiveOrchestrator || (runScan && runScan.name === 'runComprehensiveScan')) {
+        scanOptions.distro = options.distro || 'kali-linux'
+        // Simplified 3-step scan: Malware Detection, Defacement Detection, Report Generation
+        scanOptions.scanTypes = options.scanTypes || {
+          malware: true,
+          defacement: true
+        }
+        // Disable auto-installation during scan - tools should be installed manually from Settings
+        // Force disable to prevent any installation during scanning
+        scanOptions.autoInstallTools = false
+        scanOptions.updateClamav = false
+        // Explicitly remove any installation-related options
+        delete scanOptions.checkTools
+        delete scanOptions.installTools
+      } else {
+        // Old orchestrator options
+        scanOptions.maxDepth = options.maxDepth || 1
+        scanOptions.distro = options.distro || 'kali-linux'
+      }
+      
+      // Store scan reference
+      currentMaldefScan = { url, event, startTime: Date.now() }
+      
+      // Check for abort signal before starting scan
+      if (abortSignal.aborted) {
+        throw new Error('Scan was cancelled before starting')
+      }
+      
+      const report = await runScan(url, scanOptions)
+      
+      // Check if scan was aborted
+      if (abortSignal.aborted) {
+        event.sender.send('maldef:progress', { 
+          stage: 'aborted', 
+          message: 'Scan was cancelled',
+          console: 'Scan was cancelled by user',
+          timestamp: new Date().toISOString()
+        })
+        event.sender.send('maldef:done', { aborted: true })
+        return { aborted: true }
+      }
+      
+      // Send report to UI - ensure it includes all necessary data
+      const reportData = {
+        ...report,
+        reportFile: report.reportFile || report.report?.reportFile,
+        reportPdfPath: report.reportFile || report.report?.reportFile,
+        reportHtmlPath: report.reportFile || report.report?.reportFile
+      }
+      event.sender.send('maldef:done', reportData)
+      return { ok: true, reportFile: report.reportFile || report.report?.reportFile }
+    } catch (e) {
+      // Don't send error if scan was aborted
+      if (abortSignal.aborted) {
+        event.sender.send('maldef:progress', { 
+          stage: 'aborted', 
+          message: 'Scan was cancelled',
+          console: 'Scan was cancelled by user',
+          timestamp: new Date().toISOString()
+        })
+        event.sender.send('maldef:done', { aborted: true })
+        return { aborted: true }
+      }
+      
+      event.sender.send('maldef:progress', { 
+        stage: 'error', 
+        message: e?.message || String(e),
+        console: `ERROR: ${e?.message || String(e)}`,
+        timestamp: new Date().toISOString()
+      })
+      event.sender.send('maldef:done', null)
+      return { error: e?.message || String(e) }
+    } finally {
+      // Clear scan reference
+      currentMaldefScan = null
+      maldefScanAbortController = null
+    }
+    })
+    
+    // Register cancel handler
+    ipcMain.handle('maldef:cancel', async (event) => {
+      console.log('[MALDEF] Cancel requested')
+      
+      if (!currentMaldefScan && !maldefScanAbortController) {
+        return { error: 'No scan running' }
+      }
+      
+      try {
+        // Abort the scan
+        if (maldefScanAbortController) {
+          maldefScanAbortController.abort()
+        }
+        
+        // Send abort message to UI
+        if (currentMaldefScan && currentMaldefScan.event) {
+          currentMaldefScan.event.sender.send('maldef:progress', {
+            stage: 'aborting',
+            message: 'Cancelling scan...',
+            console: '⚠️ [ABORT] Stopping scan...',
+            timestamp: new Date().toISOString()
+          })
+        }
+        
+        // Kill any running processes in WSL
+        const { exec } = require('child_process')
+        const { promisify } = require('util')
+        const execAsync = promisify(exec)
+        
+        if (process.platform === 'win32') {
+          try {
+            // Kill scanner processes
+            await execAsync(`wsl -- bash -c "pkill -f 'nikto\\|wapiti\\|wpscan\\|clamav\\|yara\\|rkhunter\\|chkrootkit\\|lynis' || true"`, { timeout: 3000 })
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'nikto\\|wapiti\\|wpscan\\|clamav\\|yara\\|rkhunter\\|chkrootkit\\|lynis' || true"`, { timeout: 3000 })
+          } catch (e) {
+            console.log('[MALDEF] Some cleanup commands failed:', e.message)
+          }
+        }
+        
+        // Send completion message
+        if (currentMaldefScan && currentMaldefScan.event) {
+          currentMaldefScan.event.sender.send('maldef:progress', {
+            stage: 'aborted',
+            message: 'Scan cancelled',
+            console: 'Scan was cancelled by user',
+            timestamp: new Date().toISOString()
+          })
+          currentMaldefScan.event.sender.send('maldef:done', { aborted: true })
+        }
+        
+        // Clear references
+        currentMaldefScan = null
+        maldefScanAbortController = null
+        
+        console.log('[MALDEF] Cancel completed')
+        return { success: true }
+      } catch (error) {
+        console.error('[MALDEF] Error during cancel:', error)
+        currentMaldefScan = null
+        maldefScanAbortController = null
+        return { success: false, error: error.message }
+      }
+    })
+    console.log('[MALDEF] ✓ Handler registered successfully!')
+  } catch (e) {
+    console.error('[MALDEF] ✗ CRITICAL: Failed to register handler!')
+    console.error('[MALDEF] Error:', e.message)
+    console.error('[MALDEF] Stack:', e.stack)
+    // Still try to register a minimal handler to prevent "No handler registered" error
+    ipcMain.handle('maldef:start', async (event, url, options = {}) => {
+      return { error: `Handler registration failed: ${e.message}` }
+    })
+  }
+  
+  // Verify handler registration
+  console.log('[MALDEF] Handler registration complete. Verifying...')
+  console.log('[MALDEF] Handler should be registered now. Check console for errors above.')
 
   app.whenReady().then(async () => {
     console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
@@ -3456,6 +3995,547 @@ ipcMain.handle('kali:test', async () => {
     }
   });
 
+  // Convert JSON to user-readable text using tgpt
+  ipcMain.handle('phishing:convertJsonToText', async (event, jsonData) => {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    
+    try {
+      console.log('📝 [TGPT] Converting JSON to user-readable text...');
+      
+      // Create a temporary JSON file
+      const tempDir = os.tmpdir();
+      const tempJsonFile = path.join(tempDir, `phishing-results-${Date.now()}.json`);
+      fs.writeFileSync(tempJsonFile, JSON.stringify(jsonData, null, 2));
+      
+      // Try different ways to run tgpt
+      let tgptCommand = null;
+      let tgptArgs = [];
+      
+      // Try python -m tgpt first
+      try {
+        const { execSync } = require('child_process');
+        execSync('python -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+        tgptCommand = 'python';
+        tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+      } catch (e1) {
+        try {
+          execSync('python3 -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+          tgptCommand = 'python3';
+          tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+        } catch (e2) {
+          try {
+            execSync('tgpt --version', { stdio: 'ignore', timeout: 3000 });
+            tgptCommand = 'tgpt';
+            tgptArgs = ['--json', tempJsonFile];
+          } catch (e3) {
+            throw new Error('tgpt tool not found. Please install it using: pip install tgpt');
+          }
+        }
+      }
+      
+      console.log(`📝 [TGPT] Using command: ${tgptCommand} ${tgptArgs.join(' ')}`);
+      
+      // Run tgpt to convert JSON to readable text
+      return new Promise((resolve, reject) => {
+        const tgptProcess = spawn(tgptCommand, tgptArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        tgptProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        tgptProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        tgptProcess.on('close', (code) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          if (code === 0 && stdout.trim()) {
+            console.log('✅ [TGPT] Successfully converted JSON to readable text');
+            resolve({
+              success: true,
+              readableText: stdout.trim()
+            });
+          } else {
+            // If tgpt doesn't work as expected, create a simple readable format
+            console.log('⚠️ [TGPT] tgpt returned non-zero or empty output, creating fallback readable format');
+            const fallbackText = createReadablePhishingReport(jsonData);
+            resolve({
+              success: true,
+              readableText: fallbackText,
+              fallback: true
+            });
+          }
+        });
+        
+        tgptProcess.on('error', (error) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          console.log('⚠️ [TGPT] Error running tgpt, using fallback:', error.message);
+          const fallbackText = createReadablePhishingReport(jsonData);
+          resolve({
+            success: true,
+            readableText: fallbackText,
+            fallback: true
+          });
+        });
+      });
+      
+    } catch (error) {
+      console.log('❌ [TGPT] Error:', error.message);
+      // Fallback: create a simple readable format
+      const fallbackText = createReadablePhishingReport(jsonData);
+      return {
+        success: true,
+        readableText: fallbackText,
+        fallback: true,
+        error: error.message
+      };
+    }
+  });
+
+  // Convert JSON to user-readable text using tgpt for malware/defacement scans
+  ipcMain.handle('maldef:convertJsonToText', async (event, jsonData) => {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    
+    try {
+      console.log('📝 [TGPT] Converting malware/defacement JSON to user-readable text...');
+      
+      // Create a temporary JSON file
+      const tempDir = os.tmpdir();
+      const tempJsonFile = path.join(tempDir, `maldef-results-${Date.now()}.json`);
+      fs.writeFileSync(tempJsonFile, JSON.stringify(jsonData, null, 2));
+      
+      // Try different ways to run tgpt
+      let tgptCommand = null;
+      let tgptArgs = [];
+      
+      // Try python -m tgpt first
+      try {
+        const { execSync } = require('child_process');
+        execSync('python -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+        tgptCommand = 'python';
+        tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+      } catch (e1) {
+        try {
+          execSync('python3 -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+          tgptCommand = 'python3';
+          tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+        } catch (e2) {
+          try {
+            execSync('tgpt --version', { stdio: 'ignore', timeout: 3000 });
+            tgptCommand = 'tgpt';
+            tgptArgs = ['--json', tempJsonFile];
+          } catch (e3) {
+            throw new Error('tgpt tool not found. Please install it using: pip install tgpt');
+          }
+        }
+      }
+      
+      console.log(`📝 [TGPT] Using command: ${tgptCommand} ${tgptArgs.join(' ')}`);
+      
+      // Run tgpt to convert JSON to readable text
+      return new Promise((resolve, reject) => {
+        const tgptProcess = spawn(tgptCommand, tgptArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        tgptProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        tgptProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        tgptProcess.on('close', (code) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          if (code === 0 && stdout.trim()) {
+            console.log('✅ [TGPT] Successfully converted JSON to readable text');
+            resolve({
+              success: true,
+              readableText: stdout.trim()
+            });
+          } else {
+            // If tgpt doesn't work as expected, create a simple readable format
+            console.log('⚠️ [TGPT] tgpt returned non-zero or empty output, creating fallback readable format');
+            const fallbackText = createReadableMaldefReport(jsonData);
+            resolve({
+              success: true,
+              readableText: fallbackText,
+              fallback: true
+            });
+          }
+        });
+        
+        tgptProcess.on('error', (error) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          console.log('⚠️ [TGPT] Error running tgpt, using fallback:', error.message);
+          const fallbackText = createReadableMaldefReport(jsonData);
+          resolve({
+            success: true,
+            readableText: fallbackText,
+            fallback: true
+          });
+        });
+      });
+      
+    } catch (error) {
+      console.log('❌ [TGPT] Error:', error.message);
+      // Fallback: create a simple readable format
+      const fallbackText = createReadableMaldefReport(jsonData);
+      return {
+        success: true,
+        readableText: fallbackText,
+        fallback: true,
+        error: error.message
+      };
+    }
+  });
+
+  // Helper function to create readable malware/defacement report from JSON
+  function createReadableMaldefReport(jsonData) {
+    let report = '═══════════════════════════════════════════════════════════════\n';
+    report += '      MALWARE & DEFACEMENT DETECTION REPORT\n';
+    report += '═══════════════════════════════════════════════════════════════\n\n';
+    
+    // Metadata
+    if (jsonData.metadata) {
+      const meta = jsonData.metadata;
+      if (meta.target) {
+        report += `Target URL: ${meta.target}\n`;
+      }
+      if (meta.timestamp) {
+        report += `Scan Date: ${new Date(meta.timestamp).toLocaleString()}\n`;
+      }
+      if (meta.scanDuration) {
+        report += `Scan Duration: ${(meta.scanDuration / 1000).toFixed(2)} seconds\n`;
+      }
+      if (meta.toolsUsed && meta.toolsUsed.length > 0) {
+        report += `Tools Used: ${meta.toolsUsed.join(', ')}\n`;
+      }
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'SUMMARY\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.summary) {
+      const summary = jsonData.summary;
+      report += `Overall Status: ${summary.status || 'Unknown'}\n`;
+      report += `Risk Score: ${summary.riskScore || 0}/100\n`;
+      report += `Severity: ${summary.severity || 'Unknown'}\n`;
+      report += `Total Findings: ${summary.totalFindings || 0}\n`;
+      if (summary.malwareStatus) {
+        report += `Malware Status: ${summary.malwareStatus}\n`;
+      }
+      if (summary.defacementStatus) {
+        report += `Defacement Status: ${summary.defacementStatus}\n`;
+      }
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'MALWARE FINDINGS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.findings?.malware) {
+      const malware = jsonData.findings.malware;
+      report += `Total Malware Findings: ${malware.count || 0}\n\n`;
+      
+      // ClamAV findings
+      if (jsonData.detailed?.malware?.clamav) {
+        const clamav = jsonData.detailed.malware.clamav;
+        report += `ClamAV Scan:\n`;
+        report += `  Status: ${clamav.exitCode === 0 ? 'Completed' : 'Failed'}\n`;
+        report += `  Infected Files: ${clamav.infectedCount || 0}\n`;
+        if (clamav.infectedFiles && clamav.infectedFiles.length > 0) {
+          report += `  Infected Files List:\n`;
+          clamav.infectedFiles.forEach((file, idx) => {
+            report += `    ${idx + 1}. ${file.file || file}\n`;
+            if (file.signature) {
+              report += `       Signature: ${file.signature}\n`;
+            }
+          });
+        }
+        report += '\n';
+      }
+      
+      // YARA findings
+      if (jsonData.detailed?.malware?.yara) {
+        const yara = jsonData.detailed.malware.yara;
+        report += `YARA Scan:\n`;
+        report += `  Status: ${yara.exitCode === 0 ? 'Completed' : 'Failed'}\n`;
+        report += `  Matches: ${yara.matchCount || 0}\n`;
+        if (yara.matches && yara.matches.length > 0) {
+          report += `  Pattern Matches:\n`;
+          yara.matches.forEach((match, idx) => {
+            report += `    ${idx + 1}. Rule: ${match.rule || 'Unknown'}\n`;
+            if (match.file) {
+              report += `       File: ${match.file}\n`;
+            }
+          });
+        }
+        report += '\n';
+      }
+    } else {
+      report += 'No malware findings.\n\n';
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'DEFACEMENT FINDINGS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.findings?.defacement) {
+      const defacement = jsonData.findings.defacement;
+      report += `Status: ${defacement.changed ? 'CHANGED' : 'NORMAL'}\n`;
+      report += `Message: ${defacement.message || 'No changes detected'}\n`;
+      
+      if (defacement.changes && defacement.changes.length > 0) {
+        report += `\nChanges Detected:\n`;
+        defacement.changes.forEach((change, idx) => {
+          report += `  ${idx + 1}. ${change.type || 'Change'}\n`;
+          if (change.file) {
+            report += `     File: ${change.file}\n`;
+          }
+          if (change.description) {
+            report += `     Description: ${change.description}\n`;
+          }
+        });
+      }
+    } else if (jsonData.comparison) {
+      const comparison = jsonData.comparison;
+      report += `Status: ${comparison.changed ? 'CHANGED' : 'NORMAL'}\n`;
+      report += `Message: ${comparison.message || 'No changes detected'}\n`;
+      
+      if (comparison.changes && comparison.changes.length > 0) {
+        report += `\nChanges Detected:\n`;
+        comparison.changes.forEach((change, idx) => {
+          report += `  ${idx + 1}. ${change.type || 'Change'}\n`;
+          if (change.file) {
+            report += `     File: ${change.file}\n`;
+          }
+          if (change.description) {
+            report += `     Description: ${change.description}\n`;
+          }
+        });
+      }
+    } else {
+      report += 'No defacement findings.\n';
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'RECOMMENDATIONS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.recommendations && Array.isArray(jsonData.recommendations) && jsonData.recommendations.length > 0) {
+      jsonData.recommendations.forEach((rec, index) => {
+        if (typeof rec === 'string') {
+          report += `${index + 1}. ${rec}\n`;
+        } else if (rec.action) {
+          report += `${index + 1}. [${rec.priority || 'medium'}] ${rec.action}\n`;
+          if (rec.details) {
+            report += `   Details: ${rec.details}\n`;
+          }
+          if (rec.steps && Array.isArray(rec.steps)) {
+            rec.steps.forEach(step => {
+              report += `   ${step}\n`;
+            });
+          }
+        }
+      });
+    } else {
+      report += '• Continue regular monitoring\n';
+      report += '• Keep security tools updated\n';
+      report += '• Review file permissions regularly\n';
+      report += '• Implement automated scanning\n';
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'EXECUTED COMMANDS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.metadata?.executedCommands && Array.isArray(jsonData.metadata.executedCommands)) {
+      jsonData.metadata.executedCommands.forEach((cmd, idx) => {
+        report += `${idx + 1}. Tool: ${cmd.tool || 'Unknown'}\n`;
+        report += `   Command: ${cmd.command || 'N/A'}\n`;
+        report += `   Exit Code: ${cmd.exitCode !== undefined ? cmd.exitCode : 'N/A'}\n`;
+        if (cmd.description) {
+          report += `   Description: ${cmd.description}\n`;
+        }
+        report += '\n';
+      });
+    } else {
+      report += 'No command details available.\n';
+    }
+    
+    report += '\n═══════════════════════════════════════════════════════════════\n';
+    report += 'Report Generated by CyberGuard Malware & Defacement Monitor\n';
+    report += '═══════════════════════════════════════════════════════════════\n';
+    
+    return report;
+  }
+
+  // Helper function to create readable phishing report from JSON
+  function createReadablePhishingReport(jsonData) {
+    let report = '═══════════════════════════════════════════════════════════════\n';
+    report += '           PHISHING DETECTION REPORT\n';
+    report += '═══════════════════════════════════════════════════════════════\n\n';
+    
+    if (jsonData.target_url) {
+      report += `Target URL: ${jsonData.target_url}\n`;
+    }
+    if (jsonData.target_domain) {
+      report += `Target Domain: ${jsonData.target_domain}\n`;
+    }
+    if (jsonData.timestamp) {
+      report += `Scan Date: ${new Date(jsonData.timestamp).toLocaleString()}\n`;
+    }
+    if (jsonData.threat_score !== undefined) {
+      report += `Threat Score: ${jsonData.threat_score}/100\n`;
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'SUMMARY\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.statistics) {
+      const stats = jsonData.statistics;
+      report += `Total Domain Variations Found: ${stats.total_variations || 0}\n`;
+      report += `Active Domains: ${stats.active_domains || 0}\n`;
+      report += `Inactive Domains: ${stats.inactive_domains || 0}\n`;
+      if (stats.suspicious_domains) {
+        report += `Suspicious Domains: ${stats.suspicious_domains}\n`;
+      }
+      if (stats.ssl_issues) {
+        report += `SSL Issues Found: ${stats.ssl_issues}\n`;
+      }
+      if (stats.visual_matches) {
+        report += `Visual Matches: ${stats.visual_matches}\n`;
+      }
+      if (stats.content_matches) {
+        report += `Content Matches: ${stats.content_matches}\n`;
+      }
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'FINDINGS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.findings && Array.isArray(jsonData.findings) && jsonData.findings.length > 0) {
+      jsonData.findings.forEach((finding, index) => {
+        report += `${index + 1}. ${finding.type || 'Finding'}\n`;
+        report += `   Severity: ${finding.severity || 'Unknown'}\n`;
+        if (finding.evidence) {
+          report += `   Evidence: ${finding.evidence}\n`;
+        }
+        if (finding.count !== undefined) {
+          report += `   Count: ${finding.count}\n`;
+        }
+        report += '\n';
+      });
+    } else {
+      report += 'No specific findings reported.\n\n';
+    }
+    
+    report += '───────────────────────────────────────────────────────────────\n';
+    report += 'DOMAIN VARIATIONS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.domain_variations && Array.isArray(jsonData.domain_variations) && jsonData.domain_variations.length > 0) {
+      jsonData.domain_variations.slice(0, 20).forEach((variation, index) => {
+        report += `${index + 1}. ${variation.domain || variation.domain_name || 'Unknown'}\n`;
+        report += `   Fuzzer: ${variation.fuzzer || 'Unknown'}\n`;
+        report += `   Active: ${variation.active ? 'Yes' : 'No'}\n`;
+        if (variation.risk_score !== undefined) {
+          report += `   Risk Score: ${variation.risk_score}/100\n`;
+        }
+        if (variation.phash_similarity !== undefined) {
+          report += `   Visual Similarity: ${variation.phash_similarity}%\n`;
+        }
+        if (variation.lsh_similarity !== undefined) {
+          report += `   Content Similarity: ${variation.lsh_similarity}%\n`;
+        }
+        if (variation.attack_category) {
+          report += `   Attack Category: ${variation.attack_category}\n`;
+        }
+        report += '\n';
+      });
+      
+      if (jsonData.domain_variations.length > 20) {
+        report += `... and ${jsonData.domain_variations.length - 20} more domain variations.\n\n`;
+      }
+    } else {
+      report += 'No domain variations found.\n\n';
+    }
+    
+    report += '───────────────────────────────────────────────────────────────\n';
+    report += 'RECOMMENDATIONS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.recommendations && Array.isArray(jsonData.recommendations) && jsonData.recommendations.length > 0) {
+      jsonData.recommendations.forEach((rec, index) => {
+        report += `${index + 1}. ${rec}\n`;
+      });
+    } else {
+      report += '• Monitor the identified domain variations regularly\n';
+      report += '• Consider registering high-risk variations to prevent abuse\n';
+      report += '• Implement email security measures to detect phishing attempts\n';
+      report += '• Educate users about typosquatting and phishing threats\n';
+    }
+    
+    report += '\n═══════════════════════════════════════════════════════════════\n';
+    report += 'Report Generated by CyberGuard Phishing Detection System\n';
+    report += '═══════════════════════════════════════════════════════════════\n';
+    
+    return report;
+  }
+
   // Secure WSL root execution handler used by WordPress audit tools
   ipcMain.handle('wsl-run-as-root', async (event, { distro, command, requireConfirm = true }) => {
     const { exec } = require('child_process');
@@ -4322,59 +5402,6 @@ ipcMain.handle('kali:test', async () => {
       return { success: true }
     } catch (e) {
       event.sender.send('websiteAudit:done', { error: e?.message || String(e) })
-      return { error: e?.message || String(e) }
-    }
-  })
-
-  // Security Analyzer (comprehensive defensive analysis)
-  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
-    try {
-      const { url, credentials, options } = payload
-      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
-      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
-      fs.mkdirSync(outDir, { recursive: true })
-      
-      // Launch target site in default browser for transparency
-      try {
-        const safeUrl = (() => {
-          try {
-            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
-          } catch {}
-          return null
-        })()
-        if (safeUrl) shell.openExternal(safeUrl)
-      } catch {}
-      
-      const scanOptions = {
-        outputDir: outDir,
-        onProgress: (update) => event.sender.send('securityAnalysis:progress', update),
-        ...options
-      }
-      
-      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
-      event.sender.send('securityAnalysis:complete', { success: true, result })
-      return { success: true }
-    } catch (e) {
-      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
-      return { error: e?.message || String(e) }
-    }
-  })
-
-  // Malware & Defacement orchestrated scan
-  ipcMain.handle('maldef:start', async (event, url) => {
-    try {
-      const { runMaldefScan } = require(path.join(__dirname, '..', 'maldef', 'orchestrator.js'))
-      const outRoot = path.join(process.cwd(), 'temp-scans')
-      const report = await runMaldefScan(url, {
-        outRoot,
-        onProgress: (u) => event.sender.send('maldef:progress', u)
-      })
-      event.sender.send('maldef:done', report)
-      return { ok: true }
-    } catch (e) {
-      event.sender.send('maldef:progress', { stage: 'error', message: e?.message || String(e) })
-      event.sender.send('maldef:done', null)
       return { error: e?.message || String(e) }
     }
   })

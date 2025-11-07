@@ -5,6 +5,7 @@ function PhishingDetection() {
   // State management
   const [url, setUrl] = useState('https://example.com');
   const [scanResults, setScanResults] = useState(null);
+  const [readableText, setReadableText] = useState(null);
   const [kaliStatus, setKaliStatus] = useState('Checking...');
 
   // Local state for scanning
@@ -66,6 +67,7 @@ function PhishingDetection() {
     setProgressMessage('Initializing dnstwist phishing detection engine...');
     setLogs((l) => [...l, '⏳ Starting phishing scan', '• Initializing dnstwist engine']);
     setScanResults(null);
+    setReadableText(null);
 
     await startRealPhishingScan(url, password);
   };
@@ -207,6 +209,23 @@ function PhishingDetection() {
       setProgress(0);
       setProgressMessage('');
       setScanResults(finalResults);
+      
+      // Convert JSON to readable text using tgpt
+      try {
+        setLogs((l) => [...l, '📝 Converting results to readable format...']);
+        if (window.cyberGuard && window.cyberGuard.convertPhishingJsonToText) {
+          const conversionResult = await window.cyberGuard.convertPhishingJsonToText(finalResults);
+          if (conversionResult && conversionResult.success) {
+            setReadableText(conversionResult.readableText);
+            setLogs((l) => [...l, '✅ Results converted to readable format']);
+          } else {
+            setLogs((l) => [...l, '⚠️ Could not convert results (using fallback format)']);
+          }
+        }
+      } catch (conversionError) {
+        console.log('Error converting JSON to text:', conversionError);
+        setLogs((l) => [...l, '⚠️ Error converting results to readable format']);
+      }
       
       // Clean up log listener
       if (logListener && typeof logListener === 'function') {
@@ -697,10 +716,41 @@ function PhishingDetection() {
         extension = 'csv';
         filename = `phishing-detection-${url.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.csv`;
       } else if (format === 'txt') {
-        dataStr = generateTextReport(scanResults);
+        // Use tgpt converted text if available, otherwise use fallback
+        if (readableText) {
+          dataStr = readableText;
+        } else {
+          dataStr = generateTextReport(scanResults);
+        }
         mimeType = 'text/plain;charset=utf-8';
         extension = 'txt';
         filename = `phishing-detection-${url.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.txt`;
+      } else if (format === 'readable') {
+        // Download readable text format (tgpt converted)
+        if (!readableText) {
+          // Try to convert now if not already converted
+          try {
+            if (window.cyberGuard && window.cyberGuard.convertPhishingJsonToText) {
+              const conversionResult = await window.cyberGuard.convertPhishingJsonToText(scanResults);
+              if (conversionResult && conversionResult.success) {
+                dataStr = conversionResult.readableText;
+                setReadableText(conversionResult.readableText);
+              } else {
+                dataStr = generateTextReport(scanResults);
+              }
+            } else {
+              dataStr = generateTextReport(scanResults);
+            }
+          } catch (error) {
+            console.error('Error converting to readable format:', error);
+            dataStr = generateTextReport(scanResults);
+          }
+        } else {
+          dataStr = readableText;
+        }
+        mimeType = 'text/plain;charset=utf-8';
+        extension = 'txt';
+        filename = `phishing-detection-readable-${url.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.txt`;
       } else if (format === 'html') {
         dataStr = generateHTMLReport(scanResults);
         mimeType = 'text/html;charset=utf-8';
@@ -1345,7 +1395,16 @@ function PhishingDetection() {
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6 w-full">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Scan Results</h2>
-            <div className="flex justify-center">
+            <div className="flex justify-center gap-3">
+              <button
+                onClick={() => downloadResults('readable')}
+                className="px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all text-base font-semibold flex items-center space-x-2 shadow-lg"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Download Readable Report</span>
+              </button>
               <button
                 onClick={() => downloadResults('pdf')}
                 className="px-8 py-3 bg-gradient-to-r from-orange-600 to-orange-700 text-white rounded-lg hover:from-orange-700 hover:to-orange-800 transition-all text-lg font-semibold flex items-center space-x-2 shadow-lg"

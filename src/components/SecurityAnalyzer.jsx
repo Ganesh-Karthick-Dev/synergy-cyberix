@@ -53,8 +53,31 @@ function SecurityAnalyzer() {
     }
     
     const onComplete = async (data) => {
-      setResult(data?.result || data)
       setIsScanning(false)
+      
+      // Check for errors first
+      if (data?.error) {
+        console.error('Security analysis error:', data.error)
+        
+        // Log scan failure
+        await scanLogger.logScan({
+          scanType: 'security-analyzer',
+          scanName: 'Security Analysis',
+          target: url.trim(),
+          status: 'failed',
+          startTime: new Date().toISOString(),
+          endTime: new Date().toISOString(),
+          duration: 0,
+          result: `Failed: ${data.error}`
+        })
+        
+        // Show error alert
+        alert(`Failed to start security analysis: ${data.error}\n\nPlease try again.`)
+        return
+      }
+      
+      // Success case
+      setResult(data?.result || data)
       
       // Log scan completion
       const endTime = new Date().toISOString()
