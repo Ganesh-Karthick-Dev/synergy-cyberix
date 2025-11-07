@@ -8,13 +8,13 @@ import { getSecurePassword, hasSecurePassword } from './securePasswordStorage';
 const REQUIRED_TOOLS = [
   'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb',
   'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
-  'curl', 'wget', 'ffuf', 'nuclei', 'dalfox', 'go'
+  'curl', 'wget', 'sslscan', 'ffuf', 'nuclei', 'dalfox', 'go'
 ];
 
 // Installation command for missing tools
 const INSTALL_COMMAND = `sudo apt install -y \\
   jq unzip nmap nikto sqlmap hydra gobuster dirb amass \\
-  john medusa zaproxy mitmproxy socat fail2ban curl wget`;
+  john medusa zaproxy mitmproxy socat fail2ban curl wget sslscan`;
 
 // Go-based tools installation commands
 const GO_TOOLS_INSTALL = [

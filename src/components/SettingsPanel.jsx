@@ -6,13 +6,14 @@ function SettingsPanel() {
   const { showError } = useToast()
   const [statuses, setStatuses] = useState({
     pip: { installed: false, checking: true },
-    tools: {}
+    tools: {},
+    tgpt: { installed: false, checking: true }
   })
   const [isChecking, setIsChecking] = useState(true)
   const [repos, setRepos] = useState([])
   const [reposChecking, setReposChecking] = useState(true)
 
-  const REQUIRED_TOOLS = ['jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','ffuf','nuclei','dalfox','go']
+  const REQUIRED_TOOLS = ['jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','wapiti','ffuf','nuclei','dalfox','go']
 
   useEffect(() => {
     refresh()
@@ -63,6 +64,19 @@ function SettingsPanel() {
       }))
       const toolMap = Object.fromEntries(toolEntries)
       setStatuses(prev => ({ ...prev, tools: toolMap }))
+
+      // Check tgpt
+      try {
+        setStatuses(prev => ({ ...prev, tgpt: { installed: false, checking: true } }))
+        const tgptCheckCommand = `bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`
+        const tgptRes = await window.cyberGuard?.runWslCommand?.(tgptCheckCommand, password)
+        const tgptOutput = `${tgptRes?.stdout||''}\n${tgptRes?.stderr||''}`
+        const tgptInstalled = tgptOutput.includes('tgpt is INSTALLED')
+        setStatuses(prev => ({ ...prev, tgpt: { installed: tgptInstalled, checking: false, version: tgptOutput.match(/tgpt is INSTALLED → (.+)/)?.[1] || null } }))
+      } catch (tgptError) {
+        console.log('[ToolCheck] tgpt: error during check', tgptError?.message)
+        setStatuses(prev => ({ ...prev, tgpt: { installed: false, checking: false } }))
+      }
     } catch (e) {
       showError('Failed to check tools')
       setStatuses(prev => ({ ...prev, pip: { installed: false, checking: false } }))
@@ -88,6 +102,28 @@ function SettingsPanel() {
           <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded">
             <div className="text-sm text-gray-900 dark:text-gray-100">pip / pip3</div>
             {renderBadge(statuses.pip.installed)}
+          </div>
+
+          <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded">
+            <div className="text-sm text-gray-900 dark:text-gray-100">
+              tgpt
+              {statuses.tgpt.checking && (
+                <svg className="w-4 h-4 text-gray-400 animate-spin inline-block ml-2" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              )}
+            </div>
+            {statuses.tgpt.checking ? (
+              <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
+            ) : (
+              <div className="flex items-center gap-2">
+                {renderBadge(statuses.tgpt.installed)}
+                {statuses.tgpt.version && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">({statuses.tgpt.version})</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Cloned repositories list */}

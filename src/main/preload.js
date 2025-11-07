@@ -108,7 +108,48 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   // Install single tool
   installSingleTool: (toolName, password) => ipcRenderer.invoke('tools:installSingle', toolName, password),
   // Check required tools only (without installing)
-  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password)
+  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password),
+  // Check and install tgpt
+  checkAndInstallTgpt: (password) => ipcRenderer.invoke('tools:checkAndInstallTgpt', password),
+  // Convert text using tgpt
+  convertWithTgpt: (prompt, password) => ipcRenderer.invoke('tgpt:convert', prompt, password),
+  // Wapiti scan
+  startWapitiScan: (url) => ipcRenderer.invoke('wapiti:start', url),
+  stopWapitiScan: () => ipcRenderer.invoke('wapiti:stop'),
+  onWapitiProgress: (listener) => {
+    const handler = (_e, data) => listener(data)
+    ipcRenderer.on('wapiti:progress', handler)
+    return handler
+  },
+  removeWapitiProgressListener: (handler) => {
+    if (handler) {
+      ipcRenderer.removeListener('wapiti:progress', handler)
+    }
+  },
+  onWapitiDone: (listener) => {
+    const handler = (_e, data) => listener(data)
+    ipcRenderer.on('wapiti:done', handler)
+    return handler
+  },
+  removeWapitiDoneListener: (handler) => {
+    if (handler) {
+      ipcRenderer.removeListener('wapiti:done', handler)
+    }
+  },
+  // Notifications
+  showNotification: (notificationData) => ipcRenderer.invoke('notification:show', notificationData),
+  clearNotificationBadge: () => ipcRenderer.invoke('notification:clearBadge'),
+  getNotificationCount: () => ipcRenderer.invoke('notification:getCount'),
+  onNotificationClicked: (listener) => {
+    const handler = (_e, data) => listener(data)
+    ipcRenderer.on('notification:clicked', handler)
+    return handler
+  },
+  removeNotificationClickedListener: (handler) => {
+    if (handler) {
+      ipcRenderer.removeListener('notification:clicked', handler)
+    }
+  }
 });
 
 

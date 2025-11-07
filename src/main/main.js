@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron');
 const { spawn } = require('child_process');
 const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
 require('dotenv').config();
@@ -15,32 +15,42 @@ function getPasswordFilePath() {
 }
 
 function encryptPassword(password) {
-  const algorithm = 'aes-256-gcm';
-  const key = crypto.scryptSync('synergy-cyberix-key', 'salt', 32);
-  const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipher(algorithm, key);
-  cipher.setAAD(Buffer.from('synergy-cyberix', 'utf8'));
-  
-  let encrypted = cipher.update(password, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  
-  const authTag = cipher.getAuthTag();
-  
-  return {
-    encrypted,
-    iv: iv.toString('hex'),
-    authTag: authTag.toString('hex')
-  };
+  try {
+    const algorithm = 'aes-256-gcm';
+    const key = crypto.scryptSync('synergy-cyberix-key', 'salt', 32);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(algorithm, key, iv);
+    cipher.setAAD(Buffer.from('synergy-cyberix', 'utf8'));
+    
+    let encrypted = cipher.update(password, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const authTag = cipher.getAuthTag();
+    
+    return {
+      encrypted,
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex')
+    };
+  } catch (error) {
+    console.error('Failed to encrypt password:', error);
+    throw error;
+  }
 }
 
 function decryptPassword(encryptedData) {
   try {
+    if (!encryptedData || !encryptedData.encrypted || !encryptedData.iv || !encryptedData.authTag) {
+      console.error('Invalid encrypted data structure:', Object.keys(encryptedData || {}));
+      return null;
+    }
+    
     const algorithm = 'aes-256-gcm';
     const key = crypto.scryptSync('synergy-cyberix-key', 'salt', 32);
     const iv = Buffer.from(encryptedData.iv, 'hex');
     const authTag = Buffer.from(encryptedData.authTag, 'hex');
     
-    const decipher = crypto.createDecipher(algorithm, key);
+    const decipher = crypto.createDecipheriv(algorithm, key, iv);
     decipher.setAAD(Buffer.from('synergy-cyberix', 'utf8'));
     decipher.setAuthTag(authTag);
     
@@ -49,7 +59,8 @@ function decryptPassword(encryptedData) {
     
     return decrypted;
   } catch (error) {
-    console.error('Failed to decrypt password:', error);
+    console.error('Failed to decrypt password:', error.message);
+    console.error('Error stack:', error.stack);
     return null;
   }
 }
@@ -70,16 +81,31 @@ function storePasswordSecurely(password) {
 function loadStoredPassword() {
   try {
     const passwordFile = getPasswordFilePath();
+    console.log('[PASSWORD] Checking password file at:', passwordFile);
+    
     if (!fs.existsSync(passwordFile)) {
+      console.log('[PASSWORD] ⚠️ Password file does not exist');
       return null;
     }
     
-    const encryptedData = JSON.parse(fs.readFileSync(passwordFile, 'utf8'));
+    console.log('[PASSWORD] ✅ Password file exists, reading...');
+    const fileContent = fs.readFileSync(passwordFile, 'utf8');
+    console.log('[PASSWORD] File content length:', fileContent.length);
+    
+    const encryptedData = JSON.parse(fileContent);
+    console.log('[PASSWORD] Encrypted data keys:', Object.keys(encryptedData));
+    
     const password = decryptPassword(encryptedData);
-    console.log('🔐 Password loaded from secure storage');
-    return password;
+    if (password) {
+      console.log('[PASSWORD] ✅ Password successfully decrypted (length:', password.length, ')');
+      return password;
+    } else {
+      console.log('[PASSWORD] ❌ Password decryption returned null');
+      return null;
+    }
   } catch (error) {
-    console.error('Failed to load password:', error);
+    console.error('[PASSWORD] ❌ Failed to load password:', error.message);
+    console.error('[PASSWORD] Error stack:', error.stack);
     return null;
   }
 }
@@ -823,13 +849,198 @@ async function createMainWindow() {
         return result;
       };
       
-      // Run the network scan using Python script with nmap
+      // Note: We use wsl -u root for ALL commands (including tgpt), so password is NOT required
+      // tgpt now runs as root user (same as Kali commands), so no password needed
+      
+      // Helper function to convert Windows path to WSL path
+      const convertToWSLPath = (winPath) => {
+        if (process.platform !== 'win32') return winPath;
+        const normalized = winPath.replace(/\\/g, '/');
+        const driveMatch = normalized.match(/^([A-Za-z]):/);
+        if (driveMatch) {
+          const driveLetter = driveMatch[1].toLowerCase();
+          return normalized.replace(/^[A-Za-z]:/, `/mnt/${driveLetter}`).replace(/ /g, '\\ ');
+        }
+        return normalized.replace(/ /g, '\\ ');
+      };
+      
+      // Helper function to extract IP from host output
+      const extractIPFromHost = (output) => {
+        const ipMatch = output.match(/has\s+address\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
+        return ipMatch ? ipMatch[1] : null;
+      };
+      
+      // Helper function to analyze result with tgpt
+      // Note: tempDir and convertToWSLPath are defined in the parent scope (runNetworkScanAsync)
+      // Note: event, stepNumber, totalSteps, and wslPrefix are passed as parameters
+      const analyzeWithTgpt = async (commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix) => {
+        console.log(`[TGPT] analyzeWithTgpt called for ${commandName}`);
+        console.log(`[TGPT] Raw result length: ${rawResult ? rawResult.length : 0}`);
+        
+        const prompt = `You are an expert security analyst. I have executed a security scan command and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
+
+SCAN TYPE: ${commandName}
+
+COMMAND EXECUTED: ${command}
+
+RAW SCAN OUTPUT:
+${rawResult}
+
+INSTRUCTIONS:
+1. First, explain WHAT WE DID: Describe the security scan command that was executed and what it was trying to discover or test. Make it clear and understandable for the user.
+2. Then, explain WHAT WE GOT: Analyze the raw output above thoroughly and explain what the results mean in simple terms. Help the user understand what the scan discovered.
+3. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
+4. DO NOT include the Kali Linux command or command syntax in your output
+5. Focus on translating technical scan results into clear, understandable information
+6. Include ALL details found in the raw output - nothing should be omitted
+7. Structure the JSON in a logical way that makes sense for this type of scan
+8. Use clear, non-technical language where possible, but maintain accuracy
+9. Provide detailed explanations, findings, vulnerabilities, and recommendations
+10. Include specific values, IPs, ports, services, versions, and any other data found in the scan
+11. Make the report actionable with clear recommendations
+12. For port scans, extract all port information (port number, state, service, version) in a structured format
+
+REQUIREMENTS:
+- The JSON must be valid and parseable
+- Include a "whatWeDid" field explaining the scan purpose in user-friendly terms
+- Include a "whatWeGot" field explaining the results meaning in simple terms
+- Include a summary section with key findings
+- List all findings with detailed descriptions
+- Identify any security vulnerabilities or concerns
+- Provide actionable recommendations
+- Include all technical details from the scan in a user-friendly format
+- For port scans, include a "ports" array with port details (number, state, service, version, etc.)
+- Do NOT include generic responses - base everything on the actual scan results
+- Do NOT include the command itself in the output
+
+Create a comprehensive JSON report that covers all aspects of the scan results. Structure it however makes the most sense for this type of scan, but ensure it includes:
+- whatWeDid: Explanation of what the scan command does
+- whatWeGot: Explanation of what the results mean
+- Summary of findings
+- Detailed findings with all relevant information
+- Security vulnerabilities or concerns (if any)
+- Recommendations for improvement
+- For port scans: ports array with detailed port information
+- Any other relevant sections that would help a user understand the scan results
+
+Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.`;
+        
+        try {
+          // Use the same execution pattern as Kali commands
+          // wslPrefix is already defined: 'wsl -u root --' on Windows
+          // Write prompt to temp file and pipe to tgpt (safer than echo with special chars)
+          // Use 'path' module (imported at top) instead of pathModule
+          const promptFile = path.join(tempDir, `tgpt_prompt_${Date.now()}.txt`);
+          const promptFileWSL = convertToWSLPath(promptFile);
+          
+          console.log(`[TGPT] Writing prompt to file: ${promptFile}`);
+          console.log(`[TGPT] WSL path: ${promptFileWSL}`);
+          
+          // Write prompt to file
+          fs.writeFileSync(promptFile, prompt, 'utf8');
+          console.log(`[TGPT] Prompt file written, size: ${fs.statSync(promptFile).size} bytes`);
+          
+          // Execute tgpt using the same pattern as Kali commands
+          const tgptCommand = `${wslPrefix} bash -c "cat ${promptFileWSL} | tgpt"`;
+          console.log(`[TGPT] Executing command: ${tgptCommand}`);
+          
+          // Log the TGPT command like Kali commands (only if event and stepNumber are provided)
+          if (event && stepNumber && totalSteps) {
+            event.sender.send('networkscan:progress', {
+              stage: 'analyzing',
+              message: `Executing TGPT command...`,
+              command: 'tgpt',
+              output: '',
+              progress: Math.round((stepNumber / totalSteps) * 100),
+              consoleLog: `\n[TGPT] Command: ${tgptCommand}\n`
+            });
+          }
+          
+          const result = await executeCommand(tgptCommand, 300000);
+          console.log(`[TGPT] Command executed, stdout length: ${result.stdout ? result.stdout.length : 0}, stderr length: ${result.stderr ? result.stderr.length : 0}`);
+          
+          // Log the TGPT result (only if event and stepNumber are provided)
+          if (event && stepNumber && totalSteps) {
+            if (result && result.success && result.stdout) {
+              event.sender.send('networkscan:progress', {
+                stage: 'analyzing',
+                message: `TGPT analysis result received`,
+                command: 'tgpt',
+                output: result.stdout.substring(0, 2000) + (result.stdout.length > 2000 ? '...' : ''),
+                progress: Math.round((stepNumber / totalSteps) * 100),
+                  consoleLog: `\n[TGPT] Result received (${result.stdout.length} characters):\n${result.stdout.substring(0, 1000)}${result.stdout.length > 1000 ? '...' : ''}\n`
+              });
+            } else if (result && !result.success) {
+              event.sender.send('networkscan:progress', {
+                stage: 'analyzing',
+                message: `TGPT command failed`,
+                command: 'tgpt',
+                output: result.stderr || result.error || '',
+                progress: Math.round((stepNumber / totalSteps) * 100),
+                  consoleLog: `\n[TGPT] Command failed: ${result.error || 'Unknown error'}\nstderr: ${(result.stderr || '').substring(0, 500)}\n`
+              });
+            }
+          }
+          
+          // Clean up temp file
+          try {
+            if (fs.existsSync(promptFile)) {
+              fs.unlinkSync(promptFile);
+              console.log(`[TGPT] Prompt file cleaned up`);
+            }
+          } catch (cleanupError) {
+            console.warn(`[TGPT] Cleanup error:`, cleanupError);
+          }
+          
+          // Check if command was successful
+          if (result && result.success) {
+            const output = (result.stdout || '').trim();
+            console.log(`[TGPT] Output received, length: ${output.length}`);
+            
+            if (!output || output.length === 0) {
+              console.error(`[TGPT] Empty output from tgpt command`);
+              return { error: 'TGPT returned empty output', raw: result.stderr || '' };
+            }
+            
+            let cleanedOutput = output;
+            // Remove markdown code blocks if present
+            cleanedOutput = cleanedOutput.replace(/^```(?:json)?\s*\n?/gm, '').replace(/\n?```\s*$/gm, '');
+            
+            // Try to parse JSON
+            try {
+              const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log(`[TGPT] Successfully parsed JSON for ${commandName}`);
+                return parsed;
+              }
+              const parsed = JSON.parse(cleanedOutput);
+              console.log(`[TGPT] Successfully parsed JSON for ${commandName} (direct)`);
+              return parsed;
+            } catch (parseError) {
+              console.error(`[TGPT] Failed to parse JSON for ${commandName}:`, parseError);
+              console.error(`[TGPT] Output (first 500 chars):`, cleanedOutput.substring(0, 500));
+              return { error: 'Failed to parse TGPT response', raw: cleanedOutput };
+            }
+          } else {
+            const errorMsg = result?.error || 'TGPT command failed';
+            const stderr = result?.stderr || '';
+            const stdout = result?.stdout || '';
+            console.error(`[TGPT] Command failed: ${errorMsg}`);
+            console.error(`[TGPT] stderr: ${stderr.substring(0, 500)}`);
+            console.error(`[TGPT] stdout: ${stdout.substring(0, 500)}`);
+            return { error: errorMsg, raw: stdout || stderr || '' };
+          }
+        } catch (error) {
+          console.error(`[TGPT] Exception in analyzeWithTgpt for ${commandName}:`, error);
+          console.error(`[TGPT] Error analyzing ${commandName}:`, error);
+          return { error: error.message, raw: rawResult };
+        }
+      };
+      
+      // Run the network scan sequentially
       const runNetworkScanAsync = async () => {
         try {
-          // Ensure path and fs modules are available
-          const pathModule = require('path');
-          const fs = require('fs');
-          
           // Use local time in the same format (YYYY-MM-DD HH:MM:SS)
           const now = new Date();
           const year = now.getFullYear();
@@ -840,262 +1051,426 @@ async function createMainWindow() {
           const seconds = String(now.getSeconds()).padStart(2, '0');
           const startTimestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
           
+          // Normalize target (remove http/https, ensure it starts with http:// or https://)
+          let targetUrl = target;
+          if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            targetUrl = `https://${targetUrl}`;
+          }
+          const targetDomain = targetUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+          
+          // Create temp directory for scan files (use 'path' imported at top)
+          const tempDir = path.join(process.cwd(), 'temp-network-scans');
+          if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+          }
+          
+          // Storage for all results
+          const scanResults = {};
+          let extractedIP = null;
+          
+          // Determine WSL prefix
+          const wslPrefix = process.platform === 'win32' ? 'wsl -u root --' : '';
+          const sudoPrefix = process.platform === 'win32' ? '' : 'sudo';
+          
           event.sender.send('networkscan:progress', { 
             stage: 'starting', 
             message: 'Initializing network scan...',
             command: '',
             output: '',
-            consoleLog: `[${startTimestamp}] Starting network scan for ports 1-2000...`
+            progress: 0,
+            consoleLog: `[${startTimestamp}] Starting network scan for ${targetDomain}\n`
           });
-          console.log(`[${startTimestamp}] Starting network scan for target:`, target);
           
-          // Normalize target (remove http/https)
-          const targetDomain = target.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+          // Storage for analyzed results (TGPT analysis for each command)
+          const analyzedResults = {};
           
-          // Create temp directory for scan files
-          const tempDir = pathModule.join(process.cwd(), 'temp-network-scans');
-          if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-          }
+          // Total steps: 7 commands + 7 AI analysis = 14 steps (interleaved)
+          const totalSteps = 14;
+          let currentStep = 0;
           
-          // Generate unique filenames
-          const timestamp = Date.now();
-          const nmapXmlFile = pathModule.join(tempDir, `nmap_${timestamp}.xml`);
-          const jsonOutputFile = pathModule.join(tempDir, `scan_${timestamp}.json`);
-          
-          // Path to Python script - ensure we're using the correct path
-          // __dirname in Electron main process is src/main when in dev, but different when packaged
-          // Use process.cwd() or app.getAppPath() to get the actual application path
-          const appPath = app.isPackaged ? app.getAppPath() : process.cwd();
-          let pythonScriptPath = pathModule.join(appPath, 'backend', 'network_scan_to_json_v_2.py');
-          let absolutePythonPath = pathModule.resolve(pythonScriptPath);
-          
-          // Verify Python script exists, try alternative path if needed
-          if (!fs.existsSync(absolutePythonPath)) {
-            console.warn(`[SCAN] Python script not found at: ${absolutePythonPath}`);
-            console.log(`[SCAN] App path: ${appPath}`);
-            console.log(`[SCAN] __dirname: ${__dirname}`);
-            console.log(`[SCAN] process.cwd(): ${process.cwd()}`);
-            // Try alternative path using __dirname
-            const altPath = pathModule.join(__dirname, '..', '..', 'backend', 'network_scan_to_json_v_2.py');
-            const altAbsolutePath = pathModule.resolve(altPath);
-            console.log(`[SCAN] Trying alternative path: ${altAbsolutePath}`);
-            if (fs.existsSync(altAbsolutePath)) {
-              console.log(`[SCAN] Using alternative path: ${altAbsolutePath}`);
-              absolutePythonPath = altAbsolutePath;
-              pythonScriptPath = altPath;
-            } else {
-              throw new Error(`Python script not found at: ${absolutePythonPath} or ${altAbsolutePath}`);
-            }
-          }
-          
-          console.log(`[SCAN] ✅ Python script found at: ${absolutePythonPath}`);
-          
-          // Convert paths for WSL if on Windows
-          let nmapXmlPathWSL = nmapXmlFile;
-          let pythonScriptPathWSL = absolutePythonPath;
-          let jsonOutputPathWSL = jsonOutputFile;
-          let tempDirWSL = tempDir;
-          
-          if (process.platform === 'win32') {
-            const convertToWSLPath = (winPath) => {
-              const normalized = winPath.replace(/\\/g, '/');
-              const driveMatch = normalized.match(/^([A-Za-z]):/);
-              if (driveMatch) {
-                const driveLetter = driveMatch[1].toLowerCase();
-                // Escape spaces in path for bash
-                return normalized.replace(/^[A-Za-z]:/, `/mnt/${driveLetter}`).replace(/ /g, '\\ ');
+          // Helper function to run TGPT analysis immediately after each command
+          // Note: wslPrefix will be defined later in this function, so we'll pass it when calling
+          const runTgptAnalysis = async (commandKey, commandName, command, rawResult, stepNumber, wslPrefixParam) => {
+            try {
+              currentStep = stepNumber;
+              const progressPercent = Math.round((currentStep / totalSteps) * 100);
+              
+              console.log(`[TGPT] Starting analysis for ${commandKey} (step ${stepNumber}/${totalSteps})`);
+              
+              event.sender.send('networkscan:progress', {
+                stage: 'analyzing',
+                message: `[${stepNumber}/${totalSteps}] Analyzing ${commandName} with AI...`,
+                command: 'tgpt',
+                output: '',
+                progress: progressPercent,
+                consoleLog: `\n[${stepNumber}/${totalSteps}] Analyzing ${commandName} with AI...\nCommand: tgpt (analyzing ${commandName} results)\nRaw Result Being Analyzed:\n${rawResult.substring(0, 500)}${rawResult.length > 500 ? '...' : ''}\n`
+              });
+              
+              // Ensure we have raw result
+              if (!rawResult || rawResult.trim().length === 0) {
+                console.warn(`[TGPT] No raw result for ${commandKey}, skipping analysis`);
+                analyzedResults[commandKey] = { error: 'No raw result available', raw: '' };
+                event.sender.send('networkscan:progress', {
+                  stage: 'analyzing',
+                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis skipped (no data)`,
+                  command: 'tgpt',
+                  output: '',
+                  progress: progressPercent,
+                  consoleLog: `[WARNING] [${stepNumber}/${totalSteps}] ${commandName} analysis skipped - no raw result available\n`
+                });
+                return analyzedResults[commandKey];
               }
-              return normalized.replace(/ /g, '\\ ');
-            };
-            nmapXmlPathWSL = convertToWSLPath(nmapXmlFile);
-            pythonScriptPathWSL = convertToWSLPath(absolutePythonPath);
-            jsonOutputPathWSL = convertToWSLPath(jsonOutputFile);
-            tempDirWSL = convertToWSLPath(tempDir);
-            
-            // Ensure temp directory exists in WSL
-            try {
-              await execAsync(`wsl bash -c "mkdir -p '${tempDirWSL.replace(/\\ /g, ' ')}'"`, { timeout: 5000 });
-            } catch (e) {
-              console.log('Warning: Could not create temp directory in WSL, continuing anyway');
-            }
-          }
-          
-          // Step 1: Run nmap to scan ports 1-2000 and output XML
-          // Use wsl -u root instead of sudo to avoid password prompts
-          // Also properly escape the path with spaces
-          let nmapCommand;
-          let displayPath = nmapXmlFile; // For display purposes
-          
-          if (process.platform === 'win32') {
-            // Use double quotes for the path to handle spaces, and escape properly
-            const escapedPath = nmapXmlPathWSL.replace(/\\ /g, ' ');
-            const escapedTarget = targetDomain.replace(/'/g, "'\\''");
-            // Use wsl -u root to run as root without sudo
-            nmapCommand = `wsl -u root -- nmap -Pn -p1-2000 -sV -oX "${escapedPath}" "${escapedTarget}"`;
-            displayPath = escapedPath; // Show WSL path in logs
-          } else {
-            nmapCommand = `sudo nmap -Pn -p1-2000 -sV -oX "${nmapXmlFile}" "${targetDomain}"`;
-          }
-          
-          event.sender.send('networkscan:progress', {
-            stage: 'running',
-            message: 'Running nmap scan (ports 1-2000)...',
-            command: '',
-            output: '',
-            consoleLog: `\n[${startTimestamp}] 🔍 Running nmap -Pn -p1-2000 -sV -oX ${displayPath} ${targetDomain}\n`
-          });
-          
-          console.log(`[SCAN] Executing nmap: ${nmapCommand}`);
-          console.log(`[SCAN] WSL Path: ${process.platform === 'win32' ? nmapXmlPathWSL.replace(/\\ /g, ' ') : nmapXmlFile}`);
-          
-          try {
-            const { stdout: nmapStdout, stderr: nmapStderr } = await execAsync(nmapCommand, {
-              maxBuffer: 50 * 1024 * 1024, // 50MB buffer for large XML output
-              timeout: 300000, // 5 minutes timeout
-              windowsHide: true
-            });
-            
-            // Send nmap output to UI
-            event.sender.send('networkscan:progress', {
-              stage: 'running',
-              message: 'Nmap scan completed, parsing results...',
-              command: '',
-              output: stripAnsiCodes(nmapStdout || ''),
-              consoleLog: stripAnsiCodes(nmapStdout || nmapStderr || '')
-            });
-            
-            // Check if XML file was created
-            if (!fs.existsSync(nmapXmlFile)) {
-              throw new Error('Nmap XML output file not found. Scan may have failed.');
-            }
-            
-          } catch (nmapError) {
-            console.error('Nmap scan error:', nmapError);
-            // Log the full error details for debugging
-            const errorDetails = nmapError.stderr || nmapError.stdout || nmapError.message;
-            console.error('Nmap error details:', errorDetails);
-            
-            event.sender.send('networkscan:progress', {
-              stage: 'error',
-              message: `Nmap scan failed: ${nmapError.message}`,
-              command: '',
-              output: stripAnsiCodes(errorDetails || ''),
-              consoleLog: `\n❌ Nmap scan error: ${nmapError.message}\n${stripAnsiCodes(errorDetails || '')}\n`
-            });
-            throw new Error(`Nmap scan failed: ${nmapError.message}`);
-          }
-          
-          // Step 2: Run Python script to convert XML to JSON
-          // Properly escape paths for Python command
-          let pythonCommand;
-          let displayPythonPath = absolutePythonPath;
-          let displayXmlPath = nmapXmlFile;
-          let displayJsonPath = jsonOutputFile;
-          
-          if (process.platform === 'win32') {
-            // Use double quotes and escape properly for paths with spaces
-            const escapedPythonPath = pythonScriptPathWSL.replace(/\\ /g, ' ');
-            const escapedXmlPath = nmapXmlPathWSL.replace(/\\ /g, ' ');
-            const escapedJsonPath = jsonOutputPathWSL.replace(/\\ /g, ' ');
-            const escapedTarget = targetDomain.replace(/'/g, "'\\''");
-            pythonCommand = `wsl python3 "${escapedPythonPath}" --nmap-xml "${escapedXmlPath}" --domain "${escapedTarget}" --output "${escapedJsonPath}"`;
-            // Show WSL paths in logs
-            displayPythonPath = escapedPythonPath;
-            displayXmlPath = escapedXmlPath;
-            displayJsonPath = escapedJsonPath;
-          } else {
-            pythonCommand = `python3 "${absolutePythonPath}" --nmap-xml "${nmapXmlFile}" --domain "${targetDomain}" --output "${jsonOutputFile}"`;
-          }
-          
-          event.sender.send('networkscan:progress', {
-            stage: 'running',
-            message: 'Converting scan results to JSON...',
-            command: '',
-            output: '',
-            consoleLog: `\n[${new Date().toISOString()}] 📊 Converting nmap XML to JSON using: ${displayPythonPath}\n`
-          });
-          
-          console.log(`[SCAN] Executing Python script: ${pythonCommand}`);
-          console.log(`[SCAN] Python Script WSL Path: ${process.platform === 'win32' ? displayPythonPath : absolutePythonPath}`);
-          console.log(`[SCAN] XML Input WSL Path: ${displayXmlPath}`);
-          console.log(`[SCAN] JSON Output WSL Path: ${displayJsonPath}`);
-          
-          try {
-            const { stdout: pythonStdout, stderr: pythonStderr } = await execAsync(pythonCommand, {
-              maxBuffer: 10 * 1024 * 1024,
-              timeout: 60000, // 1 minute timeout for parsing
-              windowsHide: true
-            });
-            
-            // Send Python script output to UI
-            event.sender.send('networkscan:progress', {
-              stage: 'running',
-              message: 'Parsing completed...',
-              command: '',
-              output: stripAnsiCodes(pythonStdout || ''),
-              consoleLog: stripAnsiCodes(pythonStdout || pythonStderr || '')
-            });
-            
-            // Read JSON output file
-            if (!fs.existsSync(jsonOutputFile)) {
-              throw new Error('JSON output file not found. Python script may have failed.');
-            }
-            
-            const jsonContent = fs.readFileSync(jsonOutputFile, 'utf-8');
-            const scanData = JSON.parse(jsonContent);
-            
-            // Generate Markdown report
-            const reportGeneratorPath = pathModule.join(__dirname, '..', 'utils', 'scanReportGenerator.js');
-            let markdownReport = '';
-            try {
-              const { generateMarkdownReport } = require(reportGeneratorPath);
-              markdownReport = generateMarkdownReport(scanData);
+              
+              console.log(`[TGPT] Calling analyzeWithTgpt for ${commandKey}...`);
+              const analyzed = await analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefixParam);
+              
+              console.log(`[TGPT] Analysis result for ${commandKey}:`, analyzed ? 'Success' : 'Failed', analyzed?.error ? `Error: ${analyzed.error}` : '');
+              
+              analyzedResults[commandKey] = analyzed;
+              
+              if (analyzed && !analyzed.error) {
+                event.sender.send('networkscan:progress', {
+                  stage: 'analyzing',
+                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis completed`,
+                  command: 'tgpt',
+                  output: '',
+                  progress: progressPercent,
+                  consoleLog: `[SUCCESS] [${stepNumber}/${totalSteps}] ${commandName} analysis completed\nAnalysis Result:\n${JSON.stringify(analyzed, null, 2).substring(0, 1000)}${JSON.stringify(analyzed).length > 1000 ? '...' : ''}\n`
+                });
+              } else {
+                event.sender.send('networkscan:progress', {
+                  stage: 'analyzing',
+                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis failed`,
+                  command: 'tgpt',
+                  output: '',
+                  progress: progressPercent,
+                  consoleLog: `[ERROR] [${stepNumber}/${totalSteps}] ${commandName} analysis failed: ${analyzed?.error || 'Unknown error'}\n`
+                });
+              }
+              
+              return analyzed;
             } catch (error) {
-              console.error('Error generating markdown report:', error);
-              markdownReport = `# Network Scan Report\n\nTarget: ${target}\n\nScan completed at: ${new Date().toISOString()}\n\n## Results\n\n\`\`\`json\n${JSON.stringify(scanData, null, 2)}\n\`\`\``;
+              console.error(`[TGPT] Error in runTgptAnalysis for ${commandKey}:`, error);
+              analyzedResults[commandKey] = { error: error.message || 'TGPT analysis error', raw: '' };
+              event.sender.send('networkscan:progress', {
+                stage: 'analyzing',
+                message: `[${stepNumber}/${totalSteps}] ${commandName} analysis error`,
+                command: 'tgpt',
+                output: '',
+                progress: Math.round((stepNumber / totalSteps) * 100),
+                consoleLog: `[ERROR] [${stepNumber}/${totalSteps}] ${commandName} analysis error: ${error.message}\n`
+              });
+              return analyzedResults[commandKey];
             }
+          };
+          
+          // 1. WhatWeb Scan
+          currentStep = 1;
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running WhatWeb scan...`,
+            command: 'whatweb',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running WhatWeb scan...\nCommand: whatweb --log-json=whatweb_output.json ${targetUrl}\n`
+          });
+          
+          const whatwebOutputFile = path.join(tempDir, 'whatweb_output.json');
+          const whatwebOutputFileWSL = convertToWSLPath(whatwebOutputFile);
+          const whatwebCommand = `${wslPrefix} whatweb --log-json="${whatwebOutputFileWSL.replace(/\\ /g, ' ')}" "${targetUrl}"`;
+          
+          const whatwebResult = await executeCommand(whatwebCommand, 60000);
+          scanResults.whatweb = { command: whatwebCommand, raw: whatwebResult.stdout || whatwebResult.stderr || '' };
+          
+          // Read whatweb JSON output
+          if (fs.existsSync(whatwebOutputFile)) {
+            try {
+              const whatwebJson = fs.readFileSync(whatwebOutputFile, 'utf-8');
+              scanResults.whatweb.json = JSON.parse(whatwebJson);
+              scanResults.whatweb.raw = whatwebJson;
+            } catch (e) {
+              console.error('Failed to read whatweb JSON:', e);
+            }
+          }
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] WhatWeb scan completed`,
+            command: 'whatweb',
+            output: scanResults.whatweb.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] WhatWeb scan completed\nRaw Result:\n${scanResults.whatweb.raw.substring(0, 1000)}${scanResults.whatweb.raw.length > 1000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for WhatWeb
+          currentStep = 2;
+          await runTgptAnalysis('whatweb', 'WhatWeb Scan', whatwebCommand, scanResults.whatweb.raw, currentStep, wslPrefix);
+          
+          // 2. Ping Test
+          currentStep = 3;
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running Ping test...`,
+            command: 'ping',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Ping test...\nCommand: ping -c 4 ${targetDomain}\n`
+          });
+          
+          const pingCommand = `${wslPrefix} ping -c 4 "${targetDomain}"`;
+          const pingResult = await executeCommand(pingCommand, 30000);
+          scanResults.ping = { command: pingCommand, raw: pingResult.stdout || pingResult.stderr || '' };
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Ping test completed`,
+            command: 'ping',
+            output: scanResults.ping.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Ping test completed\nRaw Result:\n${scanResults.ping.raw}\n`
+          });
+          
+          // Immediately run TGPT analysis for Ping
+          currentStep = 4;
+          await runTgptAnalysis('ping', 'Ping Test', pingCommand, scanResults.ping.raw, currentStep, wslPrefix);
+          
+          // 3. Hping3 Scan
+          currentStep = 5;
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running Hping3 scan...`,
+            command: 'hping3',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Hping3 scan...\nCommand: hping3 -S ${targetDomain} -p 80 -c 3\n`
+          });
+          
+          const hpingCommand = `${wslPrefix} hping3 -S "${targetDomain}" -p 80 -c 3`;
+          const hpingResult = await executeCommand(hpingCommand, 30000);
+          scanResults.hping = { command: hpingCommand, raw: hpingResult.stdout || hpingResult.stderr || '' };
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Hping3 scan completed`,
+            command: 'hping3',
+            output: scanResults.hping.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Hping3 scan completed\nRaw Result:\n${scanResults.hping.raw}\n`
+          });
+          
+          // Immediately run TGPT analysis for Hping3
+          currentStep = 6;
+          await runTgptAnalysis('hping', 'Hping3 Scan', hpingCommand, scanResults.hping.raw, currentStep, wslPrefix);
+          
+          // 4. Host Command (DNS Resolution)
+          currentStep = 7;
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running DNS resolution (host)...`,
+            command: 'host',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running DNS resolution (host)...\nCommand: host ${targetDomain}\n`
+          });
+          
+          const hostCommand = `${wslPrefix} host "${targetDomain}"`;
+          const hostResult = await executeCommand(hostCommand, 30000);
+          scanResults.host = { command: hostCommand, raw: hostResult.stdout || hostResult.stderr || '' };
+          
+          // Extract IP from host output
+          extractedIP = extractIPFromHost(scanResults.host.raw);
+          if (extractedIP) {
+            scanResults.host.extractedIP = extractedIP;
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] DNS resolution completed - IP: ${extractedIP}`,
+              command: 'host',
+              output: scanResults.host.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] DNS resolution completed - IP: ${extractedIP}\nRaw Result:\n${scanResults.host.raw}\nExtracted IP: ${extractedIP}\n`
+            });
+          } else {
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] DNS resolution completed (IP not found)`,
+              command: 'host',
+              output: scanResults.host.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] DNS resolution completed (IP not found)\nRaw Result:\n${scanResults.host.raw}\n`
+            });
+          }
+          
+          // Immediately run TGPT analysis for Host
+          currentStep = 8;
+          await runTgptAnalysis('host', 'DNS Resolution', hostCommand, scanResults.host.raw, currentStep, wslPrefix);
+          
+          // 5. Nmap Host Discovery (using extracted IP)
+          currentStep = 9;
+          if (extractedIP) {
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Running Nmap host discovery on ${extractedIP}...`,
+              command: 'nmap -sn',
+              output: '',
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap host discovery on ${extractedIP}...\nCommand: sudo nmap -sn ${extractedIP}\n`
+            });
+            
+            const nmapSnCommand = `${wslPrefix} ${sudoPrefix} nmap -sn "${extractedIP}"`;
+            const nmapSnResult = await executeCommand(nmapSnCommand, 300000);
+            scanResults.nmapSn = { command: nmapSnCommand, raw: nmapSnResult.stdout || nmapSnResult.stderr || '' };
             
             event.sender.send('networkscan:progress', {
-              stage: 'completed',
-              message: 'Network scan completed successfully',
-              command: '',
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Nmap host discovery completed`,
+              command: 'nmap -sn',
+              output: scanResults.nmapSn.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap host discovery completed\nRaw Result:\n${scanResults.nmapSn.raw.substring(0, 2000)}${scanResults.nmapSn.raw.length > 2000 ? '...' : ''}\n`
+            });
+            
+            // Immediately run TGPT analysis for Nmap Host Discovery
+            currentStep = 10;
+            await runTgptAnalysis('nmapSn', 'Nmap Host Discovery', nmapSnCommand, scanResults.nmapSn.raw, currentStep, wslPrefix);
+          } else {
+            event.sender.send('networkscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Skipping Nmap host discovery (no IP found)`,
+              command: 'nmap -sn',
               output: '',
-              consoleLog: `\n✅ [SCAN] Network scan completed successfully!\n`
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] Skipping Nmap host discovery (no IP found)\n`
             });
+            scanResults.nmapSn = { command: 'skipped', raw: 'IP address not found from host command' };
             
-            console.log('Network scan completed, sending results');
-            event.sender.send('networkscan:done', { 
-              success: true, 
-              summary: 'Network scan completed successfully',
-              results: {
-                json: scanData,
-                markdown: markdownReport,
-                raw: jsonContent
-              },
-              target: target,
-              extractedIP: scanData.ip_address || null
-            });
-            
-            // Clean up temp files
-            try {
-              if (fs.existsSync(nmapXmlFile)) fs.unlinkSync(nmapXmlFile);
-              if (fs.existsSync(jsonOutputFile)) fs.unlinkSync(jsonOutputFile);
-              if (fs.existsSync(tempDir) && fs.readdirSync(tempDir).length === 0) {
-                fs.rmdirSync(tempDir);
-              }
-            } catch (cleanupError) {
-              console.log('Cleanup warning:', cleanupError.message);
+            // Still run TGPT analysis even if skipped
+            currentStep = 10;
+            await runTgptAnalysis('nmapSn', 'Nmap Host Discovery', 'skipped', scanResults.nmapSn.raw, currentStep, wslPrefix);
+          }
+          
+          // 6. Nmap Fast Scan
+          currentStep = 11;
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running Nmap fast scan (top 100 ports)...`,
+            command: 'nmap -F',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap fast scan (top 100 ports)...\nCommand: sudo nmap -T4 -Pn -F ${targetDomain}\n`
+          });
+          
+          const nmapFastCommand = `${wslPrefix} ${sudoPrefix} nmap -T4 -Pn -F "${targetDomain}"`;
+          const nmapFastResult = await executeCommand(nmapFastCommand, 300000);
+          scanResults.nmapFast = { command: nmapFastCommand, raw: nmapFastResult.stdout || nmapFastResult.stderr || '' };
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Nmap fast scan completed`,
+            command: 'nmap -F',
+            output: scanResults.nmapFast.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap fast scan completed\nRaw Result:\n${scanResults.nmapFast.raw.substring(0, 2000)}${scanResults.nmapFast.raw.length > 2000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for Nmap Fast Scan
+          currentStep = 12;
+          await runTgptAnalysis('nmapFast', 'Nmap Fast Scan', nmapFastCommand, scanResults.nmapFast.raw, currentStep, wslPrefix);
+          
+          // 7. Nmap Full Scan
+          currentStep = 13;
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running Nmap full scan (all 65535 ports)...`,
+            command: 'nmap -p1-65535',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap full scan (all 65535 ports)...\nCommand: sudo nmap -Pn -p1-65535 -sS -sV ${targetDomain}\n`
+          });
+          
+          const nmapFullCommand = `${wslPrefix} ${sudoPrefix} nmap -Pn -p1-65535 -sS -sV "${targetDomain}"`;
+          const nmapFullResult = await executeCommand(nmapFullCommand, 300000);
+          scanResults.nmapFull = { command: nmapFullCommand, raw: nmapFullResult.stdout || nmapFullResult.stderr || '' };
+          
+          event.sender.send('networkscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Nmap full scan completed`,
+            command: 'nmap -p1-65535',
+            output: scanResults.nmapFull.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap full scan completed\nRaw Result:\n${scanResults.nmapFull.raw.substring(0, 2000)}${scanResults.nmapFull.raw.length > 2000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for Nmap Full Scan
+          currentStep = 14;
+          await runTgptAnalysis('nmapFull', 'Nmap Full Scan', nmapFullCommand, scanResults.nmapFull.raw, currentStep, wslPrefix);
+          
+          // Send final results
+          event.sender.send('networkscan:progress', {
+            stage: 'completed',
+            message: 'Network scan and analysis completed successfully',
+            command: '',
+            output: '',
+            progress: 100,
+            consoleLog: `\n✅ Network scan and analysis completed successfully!\n`
+          });
+          
+          const finalResults = {
+            target: target,
+            targetDomain: targetDomain,
+            extractedIP: extractedIP,
+            rawResults: scanResults,
+            analyzedResults: analyzedResults,
+            timestamp: startTimestamp
+          };
+          
+          console.log(`[NETWORK-SCAN] Sending final results with ${Object.keys(analyzedResults).length} analyzed commands:`, Object.keys(analyzedResults));
+          
+          event.sender.send('networkscan:done', { 
+            success: true, 
+            summary: 'Network scan completed successfully',
+            results: {
+              json: finalResults,
+              raw: JSON.stringify(finalResults, null, 2)
+            },
+            target: target,
+            extractedIP: extractedIP
+          });
+          
+          // Send notification after scan completion
+          try {
+            if (Notification.isSupported()) {
+              const notification = new Notification({
+                title: 'Network Scan Completed',
+                body: `Network scan for ${target} has been completed successfully.`,
+                icon: iconPath,
+                urgency: 'normal',
+                timeoutType: 'default'
+              });
+              
+              notification.on('click', () => {
+                if (mainWindowInstance) {
+                  mainWindowInstance.show();
+                  mainWindowInstance.focus();
+                }
+              });
+              
+              notification.show();
+              notificationCount++;
+              updateBadgeCount(notificationCount);
+              console.log('[SUCCESS] [NOTIFICATION] Network scan completion notification shown');
             }
-            
-          } catch (pythonError) {
-            console.error('Python script error:', pythonError);
-            event.sender.send('networkscan:done', {
-              success: false,
-              error: `Failed to parse scan results: ${pythonError.message}`,
-              results: null
-            });
-            throw pythonError;
+          } catch (notifError) {
+            console.log('[WARNING] [NOTIFICATION] Failed to show scan completion notification:', notifError.message);
+          }
+          
+          // Clean up temp files
+          try {
+            if (fs.existsSync(whatwebOutputFile)) fs.unlinkSync(whatwebOutputFile);
+            if (fs.existsSync(tempDir) && fs.readdirSync(tempDir).length === 0) {
+              fs.rmdirSync(tempDir);
+            }
+          } catch (cleanupError) {
+            console.log('Cleanup warning:', cleanupError.message);
           }
           
         } catch (error) {
@@ -1236,8 +1611,1183 @@ async function createMainWindow() {
     return { error: 'No network scan running' };
   });
 
+  // Server scan handlers (register before app.whenReady)
+  let serverScanChild = null;
+  let serverScanAbortController = null;
+  let currentServerScanTarget = null;
+  
+  console.log('[SERVER-SCAN] Registering serverscan:start handler...');
+  ipcMain.handle('serverscan:start', async (event, target) => {
+    console.log('[SERVER-SCAN] Handler called for target:', target);
+    if (serverScanChild) return { error: 'Server scan already running' };
+    
+    try {
+      // Create abort controller for this scan
+      serverScanAbortController = new AbortController();
+      currentServerScanTarget = target;
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Helper function to strip ANSI escape codes
+      const stripAnsiCodes = (text) => {
+        if (!text || typeof text !== 'string') return text;
+        return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[[0-9;]*m/g, '').replace(/\[\d+[m[]?/g, '').trim();
+      };
+      
+      // Helper function to execute command and parse output
+      const executeCommand = async (command, timeout = 30000) => {
+        try {
+          const { stdout, stderr } = await execAsync(command, {
+            maxBuffer: 10 * 1024 * 1024,
+            timeout: timeout,
+            windowsHide: true,
+            signal: serverScanAbortController.signal
+          });
+          // Strip ANSI codes from output
+          return { 
+            success: true, 
+            stdout: stripAnsiCodes(stdout || ''), 
+            stderr: stripAnsiCodes(stderr || ''), 
+            error: null 
+          };
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            throw error;
+          }
+          // Sanitize error message to remove "wsl" references
+          let errorMessage = error.message || '';
+          errorMessage = errorMessage.replace(/Command failed: wsl\s+/gi, 'Command failed: ');
+          errorMessage = errorMessage.replace(/wsl\s+/gi, '');
+          
+          // Strip ANSI codes from output
+          return { 
+            success: false, 
+            stdout: stripAnsiCodes(error.stdout || ''), 
+            stderr: stripAnsiCodes(error.stderr || ''), 
+            error: errorMessage,
+            code: error.code
+          };
+        }
+      };
+      
+      // Helper function to convert Windows path to WSL path
+      const convertToWSLPath = (winPath) => {
+        if (process.platform !== 'win32') return winPath;
+        return winPath.replace(/^([A-Z]):/, '/mnt/$1').replace(/\\/g, '/').toLowerCase();
+      };
+      
+      // Helper function to extract IP from host command output
+      const extractIPFromHost = (output) => {
+        if (!output) return null;
+        const ipMatch = output.match(/(?:has address|has IPv4 address)\s+([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/i);
+        return ipMatch ? ipMatch[1] : null;
+      };
+      
+      // TGPT analysis function (same as network scan)
+      const analyzeWithTgpt = async (commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix) => {
+        console.log(`[TGPT] analyzeWithTgpt called for ${commandName}`);
+        console.log(`[TGPT] Raw result length: ${rawResult ? rawResult.length : 0}`);
+        
+        const prompt = `You are an expert security analyst. I have executed a security scan command and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
+
+SCAN TYPE: ${commandName}
+
+COMMAND EXECUTED: ${command}
+
+RAW SCAN OUTPUT:
+${rawResult}
+
+INSTRUCTIONS:
+1. First, explain WHAT WE DID: Describe the security scan command that was executed and what it was trying to discover or test. Make it clear and understandable for the user.
+2. Then, explain WHAT WE GOT: Analyze the raw output above thoroughly and explain what the results mean in simple terms. Help the user understand what the scan discovered.
+3. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
+4. DO NOT include the Kali Linux command or command syntax in your output
+5. Focus on translating technical scan results into clear, understandable information
+6. Include ALL details found in the raw output - nothing should be omitted
+7. Structure the JSON in a logical way that makes sense for this type of scan
+8. Use clear, non-technical language where possible, but maintain accuracy
+9. Provide detailed explanations, findings, vulnerabilities, and recommendations
+10. Include specific values, IPs, ports, services, versions, and any other data found in the scan
+11. Make the report actionable with clear recommendations
+12. For port scans, extract all port information (port number, state, service, version) in a structured format
+
+REQUIREMENTS:
+- The JSON must be valid and parseable
+- Include a "whatWeDid" field explaining the scan purpose in user-friendly terms
+- Include a "whatWeGot" field explaining the results meaning in simple terms
+- Include a summary section with key findings
+- List all findings with detailed descriptions
+- Identify any security vulnerabilities or concerns
+- Provide actionable recommendations
+- Include all technical details from the scan in a user-friendly format
+- For port scans, include a "ports" array with port details (number, state, service, version, etc.)
+- Do NOT include generic responses - base everything on the actual scan results
+- Do NOT include the command itself in the output
+
+Create a comprehensive JSON report that covers all aspects of the scan results. Structure it however makes the most sense for this type of scan, but ensure it includes:
+- whatWeDid: Explanation of what the scan command does
+- whatWeGot: Explanation of what the results mean
+- Summary of findings
+- Detailed findings with all relevant information
+- Security vulnerabilities or concerns (if any)
+- Recommendations for improvement
+- For port scans: ports array with detailed port information
+- Any other relevant sections that would help a user understand the scan results
+
+Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.`;
+        
+        try {
+          const promptFile = path.join(tempDir, `tgpt_prompt_${Date.now()}.txt`);
+          const promptFileWSL = convertToWSLPath(promptFile);
+          
+          console.log(`[TGPT] Writing prompt to file: ${promptFile}`);
+          console.log(`[TGPT] WSL path: ${promptFileWSL}`);
+          
+          fs.writeFileSync(promptFile, prompt, 'utf8');
+          console.log(`[TGPT] Prompt file written, size: ${fs.statSync(promptFile).size} bytes`);
+          
+          const tgptCommand = `${wslPrefix} bash -c "cat ${promptFileWSL} | tgpt"`;
+          console.log(`[TGPT] Executing command: ${tgptCommand}`);
+          
+          if (event && stepNumber && totalSteps) {
+            event.sender.send('serverscan:progress', {
+              stage: 'analyzing',
+              message: `Executing TGPT command...`,
+              command: 'tgpt',
+              output: '',
+              progress: Math.round((stepNumber / totalSteps) * 100),
+              consoleLog: `\n[TGPT] Command: ${tgptCommand}\n`
+            });
+          }
+          
+          const result = await executeCommand(tgptCommand, 300000);
+          console.log(`[TGPT] Command executed, stdout length: ${result.stdout ? result.stdout.length : 0}, stderr length: ${result.stderr ? result.stderr.length : 0}`);
+          
+          if (event && stepNumber && totalSteps) {
+            if (result && result.success && result.stdout) {
+              event.sender.send('serverscan:progress', {
+                stage: 'analyzing',
+                message: `TGPT analysis result received`,
+                command: 'tgpt',
+                output: result.stdout.substring(0, 2000) + (result.stdout.length > 2000 ? '...' : ''),
+                progress: Math.round((stepNumber / totalSteps) * 100),
+                consoleLog: `\n[TGPT] Result received (${result.stdout.length} characters):\n${result.stdout.substring(0, 1000)}${result.stdout.length > 1000 ? '...' : ''}\n`
+              });
+            } else if (result && !result.success) {
+              event.sender.send('serverscan:progress', {
+                stage: 'analyzing',
+                message: `TGPT command failed`,
+                command: 'tgpt',
+                output: result.stderr || result.error || '',
+                progress: Math.round((stepNumber / totalSteps) * 100),
+                consoleLog: `\n[TGPT] Command failed: ${result.error || 'Unknown error'}\nstderr: ${(result.stderr || '').substring(0, 500)}\n`
+              });
+            }
+          }
+          
+          // Clean up temp file
+          try {
+            if (fs.existsSync(promptFile)) {
+              fs.unlinkSync(promptFile);
+              console.log(`[TGPT] Prompt file cleaned up`);
+            }
+          } catch (cleanupError) {
+            console.warn(`[TGPT] Cleanup error:`, cleanupError);
+          }
+          
+          // Check if command was successful
+          if (result && result.success) {
+            const output = (result.stdout || '').trim();
+            console.log(`[TGPT] Output received, length: ${output.length}`);
+            
+            if (!output || output.length === 0) {
+              console.error(`[TGPT] Empty output from tgpt command`);
+              return { error: 'TGPT returned empty output', raw: result.stderr || '' };
+            }
+            
+            let cleanedOutput = output;
+            // Remove markdown code blocks if present
+            cleanedOutput = cleanedOutput.replace(/^```(?:json)?\s*\n?/gm, '').replace(/\n?```\s*$/gm, '');
+            
+            // Try to parse JSON
+            try {
+              const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log(`[TGPT] Successfully parsed JSON for ${commandName}`);
+                return parsed;
+              }
+              const parsed = JSON.parse(cleanedOutput);
+              console.log(`[TGPT] Successfully parsed JSON for ${commandName} (direct)`);
+              return parsed;
+            } catch (parseError) {
+              console.error(`[TGPT] Failed to parse JSON for ${commandName}:`, parseError);
+              console.error(`[TGPT] Output (first 500 chars):`, cleanedOutput.substring(0, 500));
+              return { error: 'Failed to parse TGPT response', raw: cleanedOutput };
+            }
+          } else {
+            const errorMsg = result?.error || 'TGPT command failed';
+            const stderr = result?.stderr || '';
+            const stdout = result?.stdout || '';
+            console.error(`[TGPT] Command failed: ${errorMsg}`);
+            console.error(`[TGPT] stderr: ${stderr.substring(0, 500)}`);
+            console.error(`[TGPT] stdout: ${stdout.substring(0, 500)}`);
+            return { error: errorMsg, raw: stdout || stderr || '' };
+          }
+        } catch (error) {
+          console.error(`[TGPT] Exception in analyzeWithTgpt for ${commandName}:`, error);
+          console.error(`[TGPT] Error analyzing ${commandName}:`, error);
+          return { error: error.message, raw: rawResult };
+        }
+      };
+      
+      // Run the server scan sequentially
+      const runServerScanAsync = async () => {
+        try {
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          const hours = String(now.getHours()).padStart(2, '0');
+          const minutes = String(now.getMinutes()).padStart(2, '0');
+          const seconds = String(now.getSeconds()).padStart(2, '0');
+          const startTimestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          
+          // Normalize target
+          let targetUrl = target;
+          if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+            targetUrl = `https://${targetUrl}`;
+          }
+          const targetDomain = targetUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+          
+          // Create temp directory for scan files
+          const tempDir = path.join(process.cwd(), 'temp-server-scans');
+          if (!fs.existsSync(tempDir)) {
+            fs.mkdirSync(tempDir, { recursive: true });
+          }
+          
+          // Storage for all results
+          const scanResults = {};
+          let extractedIP = null;
+          
+          // Determine WSL prefix
+          const wslPrefix = process.platform === 'win32' ? 'wsl -u root --' : '';
+          const sudoPrefix = process.platform === 'win32' ? '' : 'sudo';
+          
+          event.sender.send('serverscan:progress', { 
+            stage: 'starting', 
+            message: 'Initializing server scan...',
+            command: '',
+            output: '',
+            progress: 0,
+            consoleLog: `[${startTimestamp}] Starting server scan for ${targetDomain}\n`
+          });
+          
+          // Storage for analyzed results (TGPT analysis for each command)
+          const analyzedResults = {};
+          
+          // Total steps: 7 commands + 7 AI analysis = 14 steps (interleaved)
+          const totalSteps = 14;
+          let currentStep = 0;
+          
+          // Helper function to run TGPT analysis immediately after each command
+          const runTgptAnalysis = async (commandKey, commandName, command, rawResult, stepNumber, wslPrefixParam) => {
+            try {
+              currentStep = stepNumber;
+              const progressPercent = Math.round((currentStep / totalSteps) * 100);
+              
+              console.log(`[TGPT] Starting analysis for ${commandKey} (step ${stepNumber}/${totalSteps})`);
+              
+              event.sender.send('serverscan:progress', {
+                stage: 'analyzing',
+                message: `[${stepNumber}/${totalSteps}] Analyzing ${commandName} with AI...`,
+                command: 'tgpt',
+                output: '',
+                progress: progressPercent,
+                consoleLog: `\n[${stepNumber}/${totalSteps}] Analyzing ${commandName} with AI...\nCommand: tgpt (analyzing ${commandName} results)\nRaw Result Being Analyzed:\n${rawResult.substring(0, 500)}${rawResult.length > 500 ? '...' : ''}\n`
+              });
+              
+              if (!rawResult || rawResult.trim().length === 0) {
+                console.warn(`[TGPT] No raw result for ${commandKey}, skipping analysis`);
+                analyzedResults[commandKey] = { error: 'No raw result available', raw: '' };
+                event.sender.send('serverscan:progress', {
+                  stage: 'analyzing',
+                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis skipped (no data)`,
+                  command: 'tgpt',
+                  output: '',
+                  progress: progressPercent,
+                  consoleLog: `[WARNING] [${stepNumber}/${totalSteps}] ${commandName} analysis skipped - no raw result available\n`
+                });
+                return analyzedResults[commandKey];
+              }
+              
+              console.log(`[TGPT] Calling analyzeWithTgpt for ${commandKey}...`);
+              const analyzed = await analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefixParam);
+              
+              console.log(`[TGPT] Analysis result for ${commandKey}:`, analyzed ? 'Success' : 'Failed', analyzed?.error ? `Error: ${analyzed.error}` : '');
+              
+              analyzedResults[commandKey] = analyzed;
+              
+              if (analyzed && !analyzed.error) {
+                event.sender.send('serverscan:progress', {
+                  stage: 'analyzing',
+                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis completed`,
+                  command: 'tgpt',
+                  output: '',
+                  progress: progressPercent,
+                  consoleLog: `[SUCCESS] [${stepNumber}/${totalSteps}] ${commandName} analysis completed\nAnalysis Result:\n${JSON.stringify(analyzed, null, 2).substring(0, 1000)}${JSON.stringify(analyzed).length > 1000 ? '...' : ''}\n`
+                });
+              } else {
+                event.sender.send('serverscan:progress', {
+                  stage: 'analyzing',
+                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis failed`,
+                  command: 'tgpt',
+                  output: '',
+                  progress: progressPercent,
+                  consoleLog: `[ERROR] [${stepNumber}/${totalSteps}] ${commandName} analysis failed: ${analyzed?.error || 'Unknown error'}\n`
+                });
+              }
+              
+              return analyzed;
+            } catch (error) {
+              console.error(`[TGPT] Error in runTgptAnalysis for ${commandKey}:`, error);
+              analyzedResults[commandKey] = { error: error.message || 'TGPT analysis error', raw: '' };
+              event.sender.send('serverscan:progress', {
+                stage: 'analyzing',
+                message: `[${stepNumber}/${totalSteps}] ${commandName} analysis error`,
+                command: 'tgpt',
+                output: '',
+                progress: Math.round((stepNumber / totalSteps) * 100),
+                consoleLog: `[ERROR] [${stepNumber}/${totalSteps}] ${commandName} analysis error: ${error.message}\n`
+              });
+              return analyzedResults[commandKey];
+            }
+          };
+          
+          // 1. Nikto Scan
+          currentStep = 1;
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running Nikto scan...`,
+            command: 'nikto',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nikto scan...\nCommand: nikto -h ${targetDomain} -e -output nikto_report.txt\n`
+          });
+          
+          const niktoReportFile = path.join(tempDir, 'nikto_report.txt');
+          const niktoReportFileWSL = convertToWSLPath(niktoReportFile);
+          const niktoCommand = `${wslPrefix} nikto -h ${targetDomain} -e -output "${niktoReportFileWSL}"`;
+          
+          const niktoResult = await executeCommand(niktoCommand, 300000);
+          scanResults.nikto = { command: niktoCommand, raw: niktoResult.stdout || niktoResult.stderr || '' };
+          
+          // Read nikto report file if it exists
+          if (fs.existsSync(niktoReportFile)) {
+            try {
+              const niktoReport = fs.readFileSync(niktoReportFile, 'utf-8');
+              scanResults.nikto.raw = niktoReport;
+            } catch (e) {
+              console.error('Failed to read nikto report:', e);
+            }
+          }
+          
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Nikto scan completed`,
+            command: 'nikto',
+            output: scanResults.nikto.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nikto scan completed\nRaw Result:\n${scanResults.nikto.raw.substring(0, 2000)}${scanResults.nikto.raw.length > 2000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for Nikto
+          currentStep = 2;
+          await runTgptAnalysis('nikto', 'Nikto Web Server Scan', niktoCommand, scanResults.nikto.raw, currentStep, wslPrefix);
+          
+          // 2. SQLMap Scan
+          currentStep = 3;
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running SQLMap scan...`,
+            command: 'sqlmap',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SQLMap scan...\nCommand: sqlmap -u "${targetUrl}" --dbs\n`
+          });
+          
+          const sqlmapCommand = `${wslPrefix} sqlmap -u "${targetUrl}" --dbs --batch`;
+          const sqlmapResult = await executeCommand(sqlmapCommand, 300000);
+          scanResults.sqlmap = { command: sqlmapCommand, raw: sqlmapResult.stdout || sqlmapResult.stderr || '' };
+          
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] SQLMap scan completed`,
+            command: 'sqlmap',
+            output: scanResults.sqlmap.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] SQLMap scan completed\nRaw Result:\n${scanResults.sqlmap.raw.substring(0, 2000)}${scanResults.sqlmap.raw.length > 2000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for SQLMap
+          currentStep = 4;
+          await runTgptAnalysis('sqlmap', 'SQLMap Database Scan', sqlmapCommand, scanResults.sqlmap.raw, currentStep, wslPrefix);
+          
+          // 3. Nmap Version Scan (all ports)
+          currentStep = 5;
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running Nmap version scan (all ports)...`,
+            command: 'nmap -sV -p-',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan (all ports)...\nCommand: ${sudoPrefix} nmap -sV -p- -oN nmap_scan.txt ${targetDomain}\n`
+          });
+          
+          const nmapScanFile = path.join(tempDir, 'nmap_scan.txt');
+          const nmapScanFileWSL = convertToWSLPath(nmapScanFile);
+          const nmapSVCommand = `${wslPrefix} ${sudoPrefix} nmap -sV -p- -oN "${nmapScanFileWSL}" ${targetDomain}`;
+          
+          const nmapSVResult = await executeCommand(nmapSVCommand, 300000);
+          scanResults.nmapSV = { command: nmapSVCommand, raw: nmapSVResult.stdout || nmapSVResult.stderr || '' };
+          
+          // Read nmap scan file if it exists
+          if (fs.existsSync(nmapScanFile)) {
+            try {
+              const nmapScan = fs.readFileSync(nmapScanFile, 'utf-8');
+              scanResults.nmapSV.raw = nmapScan;
+            } catch (e) {
+              console.error('Failed to read nmap scan file:', e);
+            }
+          }
+          
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Nmap version scan completed`,
+            command: 'nmap -sV -p-',
+            output: scanResults.nmapSV.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap version scan completed\nRaw Result:\n${scanResults.nmapSV.raw.substring(0, 2000)}${scanResults.nmapSV.raw.length > 2000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for Nmap Version Scan
+          currentStep = 6;
+          await runTgptAnalysis('nmapSV', 'Nmap Version Scan', nmapSVCommand, scanResults.nmapSV.raw, currentStep, wslPrefix);
+          
+          // 4. SSLScan
+          currentStep = 7;
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running SSLScan...`,
+            command: 'sslscan',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SSLScan...\nCommand: sslscan ${targetDomain}\n`
+          });
+          
+          const sslscanCommand = `${wslPrefix} sslscan ${targetDomain}`;
+          const sslscanResult = await executeCommand(sslscanCommand, 300000);
+          scanResults.sslscan = { command: sslscanCommand, raw: sslscanResult.stdout || sslscanResult.stderr || '' };
+          
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] SSLScan completed`,
+            command: 'sslscan',
+            output: scanResults.sslscan.raw,
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] SSLScan completed\nRaw Result:\n${scanResults.sslscan.raw.substring(0, 2000)}${scanResults.sslscan.raw.length > 2000 ? '...' : ''}\n`
+          });
+          
+          // Immediately run TGPT analysis for SSLScan
+          currentStep = 8;
+          await runTgptAnalysis('sslscan', 'SSL/TLS Scan', sslscanCommand, scanResults.sslscan.raw, currentStep, wslPrefix);
+          
+          // 5. Host Command (DNS Resolution) - to get IP
+          currentStep = 9;
+          event.sender.send('serverscan:progress', {
+            stage: 'running',
+            message: `[${currentStep}/${totalSteps}] Running DNS resolution (host)...`,
+            command: 'host',
+            output: '',
+            progress: Math.round((currentStep / totalSteps) * 100),
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running DNS resolution (host)...\nCommand: host ${targetDomain}\n`
+          });
+          
+          const hostCommand = `${wslPrefix} host "${targetDomain}"`;
+          const hostResult = await executeCommand(hostCommand, 30000);
+          scanResults.host = { command: hostCommand, raw: hostResult.stdout || hostResult.stderr || '' };
+          
+          // Extract IP from host output
+          extractedIP = extractIPFromHost(scanResults.host.raw);
+          if (extractedIP) {
+            scanResults.host.extractedIP = extractedIP;
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] DNS resolution completed - IP: ${extractedIP}`,
+              command: 'host',
+              output: scanResults.host.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] DNS resolution completed - IP: ${extractedIP}\nRaw Result:\n${scanResults.host.raw}\nExtracted IP: ${extractedIP}\n`
+            });
+          } else {
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] DNS resolution completed (IP not found)`,
+              command: 'host',
+              output: scanResults.host.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] DNS resolution completed (IP not found)\nRaw Result:\n${scanResults.host.raw}\n`
+            });
+          }
+          
+          // Immediately run TGPT analysis for Host
+          currentStep = 10;
+          await runTgptAnalysis('host', 'DNS Resolution', hostCommand, scanResults.host.raw, currentStep, wslPrefix);
+          
+          // 6. Nmap Version Scan on IP (using extracted IP)
+          currentStep = 11;
+          if (extractedIP) {
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Running Nmap version scan on IP ${extractedIP}...`,
+              command: 'nmap -sV',
+              output: '',
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan on IP ${extractedIP}...\nCommand: ${sudoPrefix} nmap -sV ${extractedIP}\n`
+            });
+            
+            const nmapSVIPCommand = `${wslPrefix} ${sudoPrefix} nmap -sV "${extractedIP}"`;
+            const nmapSVIPResult = await executeCommand(nmapSVIPCommand, 300000);
+            scanResults.nmapSVIP = { command: nmapSVIPCommand, raw: nmapSVIPResult.stdout || nmapSVIPResult.stderr || '' };
+            
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Nmap version scan on IP completed`,
+              command: 'nmap -sV',
+              output: scanResults.nmapSVIP.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap version scan on IP completed\nRaw Result:\n${scanResults.nmapSVIP.raw.substring(0, 2000)}${scanResults.nmapSVIP.raw.length > 2000 ? '...' : ''}\n`
+            });
+            
+            // Immediately run TGPT analysis for Nmap Version Scan on IP
+            currentStep = 12;
+            await runTgptAnalysis('nmapSVIP', 'Nmap Version Scan (IP)', nmapSVIPCommand, scanResults.nmapSVIP.raw, currentStep, wslPrefix);
+          } else {
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Skipping Nmap version scan on IP (no IP found)`,
+              command: 'nmap -sV',
+              output: '',
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] Skipping Nmap version scan on IP (no IP found)\n`
+            });
+            scanResults.nmapSVIP = { command: 'skipped', raw: 'IP address not found from host command' };
+            
+            // Still run TGPT analysis even if skipped
+            currentStep = 12;
+            await runTgptAnalysis('nmapSVIP', 'Nmap Version Scan (IP)', 'skipped', scanResults.nmapSVIP.raw, currentStep, wslPrefix);
+          }
+          
+          // 7. Nmap Script Scan on IP (using extracted IP)
+          currentStep = 13;
+          if (extractedIP) {
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Running Nmap script scan on IP ${extractedIP}...`,
+              command: 'nmap -sC',
+              output: '',
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap script scan on IP ${extractedIP}...\nCommand: ${sudoPrefix} nmap -sC ${extractedIP}\n`
+            });
+            
+            const nmapSCIPCommand = `${wslPrefix} ${sudoPrefix} nmap -sC "${extractedIP}"`;
+            const nmapSCIPResult = await executeCommand(nmapSCIPCommand, 300000);
+            scanResults.nmapSCIP = { command: nmapSCIPCommand, raw: nmapSCIPResult.stdout || nmapSCIPResult.stderr || '' };
+            
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Nmap script scan on IP completed`,
+              command: 'nmap -sC',
+              output: scanResults.nmapSCIP.raw,
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap script scan on IP completed\nRaw Result:\n${scanResults.nmapSCIP.raw.substring(0, 2000)}${scanResults.nmapSCIP.raw.length > 2000 ? '...' : ''}\n`
+            });
+            
+            // Immediately run TGPT analysis for Nmap Script Scan on IP
+            currentStep = 14;
+            await runTgptAnalysis('nmapSCIP', 'Nmap Script Scan (IP)', nmapSCIPCommand, scanResults.nmapSCIP.raw, currentStep, wslPrefix);
+          } else {
+            event.sender.send('serverscan:progress', {
+              stage: 'running',
+              message: `[${currentStep}/${totalSteps}] Skipping Nmap script scan on IP (no IP found)`,
+              command: 'nmap -sC',
+              output: '',
+              progress: Math.round((currentStep / totalSteps) * 100),
+              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] Skipping Nmap script scan on IP (no IP found)\n`
+            });
+            scanResults.nmapSCIP = { command: 'skipped', raw: 'IP address not found from host command' };
+            
+            // Still run TGPT analysis even if skipped
+            currentStep = 14;
+            await runTgptAnalysis('nmapSCIP', 'Nmap Script Scan (IP)', 'skipped', scanResults.nmapSCIP.raw, currentStep, wslPrefix);
+          }
+          
+          // Send final results
+          event.sender.send('serverscan:progress', {
+            stage: 'completed',
+            message: 'Server scan and analysis completed successfully',
+            command: '',
+            output: '',
+            progress: 100,
+            consoleLog: `\n✅ Server scan and analysis completed successfully!\n`
+          });
+          
+          const finalResults = {
+            target: target,
+            targetDomain: targetDomain,
+            extractedIP: extractedIP,
+            rawResults: scanResults,
+            analyzedResults: analyzedResults,
+            timestamp: startTimestamp
+          };
+          
+          console.log(`[SERVER-SCAN] Sending final results with ${Object.keys(analyzedResults).length} analyzed commands:`, Object.keys(analyzedResults));
+          
+          event.sender.send('serverscan:done', { 
+            success: true, 
+            summary: 'Server scan completed successfully',
+            results: {
+              json: finalResults,
+              raw: JSON.stringify(finalResults, null, 2)
+            },
+            target: target,
+            extractedIP: extractedIP
+          });
+          
+          // Send notification after scan completion
+          try {
+            if (Notification.isSupported()) {
+              const notification = new Notification({
+                title: 'Server Scan Completed',
+                body: `Server scan for ${target} has been completed successfully.`,
+                icon: iconPath,
+                urgency: 'normal',
+                timeoutType: 'default'
+              });
+              
+              notification.on('click', () => {
+                if (mainWindowInstance) {
+                  mainWindowInstance.show();
+                  mainWindowInstance.focus();
+                }
+              });
+              
+              notification.show();
+              notificationCount++;
+              updateBadgeCount(notificationCount);
+              console.log('[SUCCESS] [NOTIFICATION] Server scan completion notification shown');
+            }
+          } catch (notifError) {
+            console.log('[WARNING] [NOTIFICATION] Failed to show scan completion notification:', notifError.message);
+          }
+          
+          // Clean up temp files
+          try {
+            if (fs.existsSync(niktoReportFile)) fs.unlinkSync(niktoReportFile);
+            if (fs.existsSync(nmapScanFile)) fs.unlinkSync(nmapScanFile);
+            if (fs.existsSync(tempDir) && fs.readdirSync(tempDir).length === 0) {
+              fs.rmdirSync(tempDir);
+            }
+          } catch (cleanupError) {
+            console.log('Cleanup warning:', cleanupError.message);
+          }
+          
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            event.sender.send('serverscan:progress', { 
+              stage: 'aborted', 
+              message: 'Server scan aborted by user',
+              command: '',
+              output: '',
+              consoleLog: '\n⚠️ Server scan aborted by user\n'
+            });
+            event.sender.send('serverscan:done', { aborted: true });
+          } else {
+            event.sender.send('serverscan:progress', { 
+              stage: 'error', 
+              message: error.message,
+              command: '',
+              output: '',
+              consoleLog: `\n❌ Server scan error: ${error.message}\n`
+            });
+            console.error('Server scan error:', error);
+            event.sender.send('serverscan:done', { 
+              success: false, 
+              error: error.message,
+              results: null
+            });
+          }
+        } finally {
+          serverScanChild = null;
+          currentServerScanTarget = null;
+          serverScanAbortController = null;
+        }
+      };
+      
+      // Run in background
+      runServerScanAsync();
+      
+      return { success: true };
+    } catch (error) {
+      return { error: error.message };
+    }
+  });
+
+  ipcMain.handle('serverscan:abort', async (event) => {
+    console.log('[SERVER-SCAN] Abort requested, serverScanChild:', serverScanChild ? 'exists' : 'null');
+    
+    if (serverScanChild || currentServerScanTarget) {
+      try {
+        // Send abort message to UI immediately
+        event.sender.send('serverscan:progress', {
+          stage: 'aborting',
+          message: 'Aborting scan...',
+          command: '',
+          output: '',
+          consoleLog: '\n⚠️ [ABORT] Stopping server scan...\n'
+        });
+        
+        // Kill the child process if it exists
+        if (serverScanChild) {
+          try {
+            serverScanChild.kill('SIGTERM');
+            setTimeout(() => {
+              if (serverScanChild && !serverScanChild.killed) {
+                serverScanChild.kill('SIGKILL');
+              }
+            }, 500);
+            console.log('[SERVER-SCAN] Child process killed');
+          } catch (e) {
+            console.log('[SERVER-SCAN] Kill failed:', e.message);
+          }
+        }
+        
+        // Abort the abort controller
+        if (serverScanAbortController) {
+          serverScanAbortController.abort();
+        }
+        
+        // Kill any running processes in WSL
+        if (currentServerScanTarget) {
+          try {
+            const { exec } = require('child_process');
+            const { promisify } = require('util');
+            const execAsync = promisify(exec);
+            
+            // Kill nikto, sqlmap, nmap, sslscan processes
+            await execAsync(`wsl -- bash -c "pkill -f 'nikto.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'nikto.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -f 'sqlmap.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'sqlmap.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -f 'nmap.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'nmap.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -f 'sslscan.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'sslscan.*${currentServerScanTarget}' || true"`, { timeout: 3000 });
+          } catch (e) {
+            console.log('[SERVER-SCAN] Some cleanup commands failed:', e.message);
+          }
+        }
+        
+        // Clean up
+        serverScanChild = null;
+        currentServerScanTarget = null;
+        serverScanAbortController = null;
+        
+        event.sender.send('serverscan:done', { aborted: true });
+        return { success: true };
+      } catch (error) {
+        console.error('[SERVER-SCAN] Abort error:', error);
+        return { error: error.message };
+      }
+    }
+    return { error: 'No server scan running' };
+  });
+
+  // Wapiti scan handlers (register before app.whenReady)
+  let wapitiScanChild = null
+  let wapitiInterrupted = false
+  let wapitiReportGenerated = false
+  
+  // Test handler to verify registration
+  ipcMain.handle('wapiti:test', async () => {
+    console.log('[WAPITI-TEST] Test handler called successfully')
+    return { success: true, message: 'Wapiti handlers are working' }
+  })
+  
+  console.log('[WAPITI] Registering wapiti:start handler...')
+  ipcMain.handle('wapiti:start', async (event, url) => {
+    console.log('[WAPITI] wapiti:start handler called with url:', url)
+    if (wapitiScanChild) return { error: 'Wapiti scan already running' }
+    wapitiInterrupted = false
+    wapitiReportGenerated = false
+    try {
+      const useWsl = await checkWslInstalled()
+      if (!useWsl) {
+        event.sender.send('wapiti:progress', { stage: 'error', message: 'WSL is required for Wapiti scans' })
+        return { error: 'WSL is required for Wapiti scans' }
+      }
+      const tempDir = path.join(process.cwd(), 'temp-scans')
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true })
+      }
+      const scanFile = path.join(tempDir, 'local_scan.json')
+      const wslPath = tempDir.replace(/\\/g, '/').replace(/^([A-Z]):/, (match, drive) => `/mnt/${drive.toLowerCase()}`)
+      const wapitiCmd = `wapiti -u "${url}" -d 3 -m xss,sql -f json -o local_scan.json --max-scan-time 300 --skip .jpg --skip .jpeg --skip .png --skip .webp`
+      event.sender.send('wapiti:progress', { stage: 'starting', message: `Starting Wapiti scan for ${url}...` })
+      event.sender.send('wapiti:progress', { stage: 'info', message: `Command: ${wapitiCmd}` })
+      const wslCommand = `cd "${wslPath}" && ${wapitiCmd}`
+      wapitiScanChild = spawn('wsl', ['bash', '-c', wslCommand], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+      let interruptionTimeout = null
+      let autoInterruptTimeout = null
+      const maxScanTime = 5 * 60 * 1000 // 5 minutes
+      let reportRetryTimeout = null
+      
+      const checkForInterruption = (data) => {
+        const text = data.toString()
+        if (text.includes('Attack process was interrupted') || 
+            text.includes('Do you want to:') ||
+            text.includes('r) stop everything here and generate the (R)eport')) {
+          wapitiInterrupted = true
+          event.sender.send('wapiti:progress', { stage: 'warning', message: 'Scan interrupted. Generating report...' })
+          
+          // Clear auto-interrupt timeout since we're already interrupted
+          if (autoInterruptTimeout) {
+            clearTimeout(autoInterruptTimeout)
+            autoInterruptTimeout = null
+          }
+          
+          // Send 'R' to generate report
+          if (wapitiScanChild && wapitiScanChild.stdin) {
+            wapitiScanChild.stdin.write('R\n')
+            event.sender.send('wapiti:progress', { stage: 'info', message: 'Sent report generation command (R)' })
+          }
+          
+          // Wait 2 minutes for report generation, then send R again if needed
+          if (reportRetryTimeout) {
+            clearTimeout(reportRetryTimeout)
+          }
+          reportRetryTimeout = setTimeout(() => {
+            if (!wapitiReportGenerated && wapitiScanChild) {
+              event.sender.send('wapiti:progress', { stage: 'warning', message: 'Report generation taking longer than expected. Sending R again...' })
+              if (wapitiScanChild.stdin) {
+                wapitiScanChild.stdin.write('R\n')
+              }
+            }
+          }, 2 * 60 * 1000) // 2 minutes
+        }
+        if (text.includes('A report has been generated in the file local_scan.json') ||
+            text.includes('Report has been generated')) {
+          wapitiReportGenerated = true
+          
+          // Clear all timeouts
+          if (autoInterruptTimeout) {
+            clearTimeout(autoInterruptTimeout)
+            autoInterruptTimeout = null
+          }
+          if (reportRetryTimeout) {
+            clearTimeout(reportRetryTimeout)
+            reportRetryTimeout = null
+          }
+          
+          event.sender.send('wapiti:progress', { stage: 'success', message: 'Report generated! Reading scan results...' })
+          setTimeout(async () => {
+            try {
+              const { exec } = require('child_process')
+              const { promisify } = require('util')
+              const execAsync = promisify(exec)
+              const wslPathForCat = tempDir.replace(/\\/g, '/').replace(/^([A-Z]):/, (match, drive) => `/mnt/${drive.toLowerCase()}`)
+              const catWslCmd = `wsl bash -c "cd \\"${wslPathForCat}\\" && cat local_scan.json"`
+              const { stdout } = await execAsync(catWslCmd, {
+                maxBuffer: 10 * 1024 * 1024,
+                timeout: 30000
+              })
+              let scanResults = null
+              try {
+                scanResults = JSON.parse(stdout)
+                event.sender.send('wapiti:progress', { stage: 'success', message: 'Scan results parsed successfully!' })
+              } catch (parseError) {
+                scanResults = { raw: stdout }
+              }
+              event.sender.send('wapiti:done', { 
+                success: true, 
+                results: scanResults,
+                rawJson: stdout
+              })
+            } catch (catError) {
+              event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to read report: ${catError.message}` })
+              event.sender.send('wapiti:done', { error: `Failed to read report: ${catError.message}` })
+            }
+          }, 1000)
+        }
+      }
+      
+      // Auto-interrupt after 5 minutes
+      autoInterruptTimeout = setTimeout(() => {
+        if (wapitiScanChild && !wapitiInterrupted && !wapitiReportGenerated) {
+          event.sender.send('wapiti:progress', { stage: 'warning', message: 'Scan has been running for 5 minutes. Interrupting to generate report...' })
+          
+          // Send Ctrl+C (SIGINT) to interrupt the scan
+          try {
+            if (wapitiScanChild && !wapitiScanChild.killed) {
+              wapitiScanChild.kill('SIGINT')
+              event.sender.send('wapiti:progress', { stage: 'info', message: 'Sent interrupt signal (Ctrl+C) to Wapiti...' })
+            }
+          } catch (killError) {
+            event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to interrupt scan: ${killError.message}` })
+          }
+        }
+      }, maxScanTime)
+      wapitiScanChild.stdout.on('data', (data) => {
+        const lines = data.toString().split(/\r?\n/)
+        for (const line of lines) {
+          if (line.trim()) {
+            event.sender.send('wapiti:progress', { stage: 'log', message: line })
+          }
+        }
+        checkForInterruption(data)
+      })
+      wapitiScanChild.stderr.on('data', (data) => {
+        const lines = data.toString().split(/\r?\n/)
+        for (const line of lines) {
+          if (line.trim()) {
+            const stage = line.toLowerCase().includes('error') ? 'error' : 
+                         line.toLowerCase().includes('warning') ? 'warning' : 'log'
+            event.sender.send('wapiti:progress', { stage, message: line })
+          }
+        }
+        checkForInterruption(data)
+      })
+      // This timeout is now handled by autoInterruptTimeout above
+      wapitiScanChild.on('close', (code) => {
+        // Clear all timeouts
+        if (interruptionTimeout) {
+          clearTimeout(interruptionTimeout)
+          interruptionTimeout = null
+        }
+        if (autoInterruptTimeout) {
+          clearTimeout(autoInterruptTimeout)
+          autoInterruptTimeout = null
+        }
+        if (reportRetryTimeout) {
+          clearTimeout(reportRetryTimeout)
+          reportRetryTimeout = null
+        }
+        
+        if (code === 0 || wapitiReportGenerated) {
+          if (fs.existsSync(scanFile)) {
+            event.sender.send('wapiti:progress', { stage: 'info', message: 'Reading scan results from file...' })
+            setTimeout(async () => {
+              try {
+                const reportContent = fs.readFileSync(scanFile, 'utf8')
+                let scanResults = null
+                try {
+                  scanResults = JSON.parse(reportContent)
+                  event.sender.send('wapiti:progress', { stage: 'success', message: 'Scan results parsed successfully!' })
+                } catch (parseError) {
+                  scanResults = { raw: reportContent }
+                }
+                event.sender.send('wapiti:done', { 
+                  success: true, 
+                  results: scanResults,
+                  rawJson: reportContent
+                })
+              } catch (readError) {
+                event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to read report: ${readError.message}` })
+                event.sender.send('wapiti:done', { error: `Failed to read report: ${readError.message}` })
+              }
+            }, 1000)
+          } else {
+            event.sender.send('wapiti:done', { error: 'Scan completed but report file not found' })
+          }
+        } else {
+          event.sender.send('wapiti:done', { error: `Scan process exited with code ${code}` })
+        }
+        wapitiScanChild = null
+      })
+      wapitiScanChild.on('error', (error) => {
+        // Clear all timeouts
+        if (interruptionTimeout) {
+          clearTimeout(interruptionTimeout)
+          interruptionTimeout = null
+        }
+        if (autoInterruptTimeout) {
+          clearTimeout(autoInterruptTimeout)
+          autoInterruptTimeout = null
+        }
+        if (reportRetryTimeout) {
+          clearTimeout(reportRetryTimeout)
+          reportRetryTimeout = null
+        }
+        
+        event.sender.send('wapiti:progress', { stage: 'error', message: `Process error: ${error.message}` })
+        event.sender.send('wapiti:done', { error: error.message })
+        wapitiScanChild = null
+      })
+      return { ok: true }
+    } catch (error) {
+      event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to start scan: ${error.message}` })
+      event.sender.send('wapiti:done', { error: error.message })
+      wapitiScanChild = null
+      return { error: error.message }
+    }
+  })
+  
+  console.log('[WAPITI] Registering wapiti:stop handler...')
+  ipcMain.handle('wapiti:stop', async () => {
+    console.log('[WAPITI] wapiti:stop handler called')
+    if (wapitiScanChild) {
+      try {
+        wapitiScanChild.kill('SIGINT')
+        setTimeout(() => {
+          if (wapitiScanChild) {
+            try {
+              wapitiScanChild.kill('SIGKILL')
+            } catch {}
+          }
+        }, 2000)
+        wapitiScanChild = null
+        return { ok: true }
+      } catch (error) {
+        return { error: error.message }
+      }
+    }
+    return { error: 'No scan running' }
+  })
+
+  // Website Security Audit (authorized, read-only)
+  ipcMain.handle('websiteAudit:start', async (event, payload) => {
+    try {
+      const { url, credentials } = typeof payload === 'object' ? payload : { url: payload, credentials: null }
+      const websiteAuditModule = require(path.join(__dirname, '..', 'scanners', 'website-audit.js'))
+      const outDir = path.join(process.cwd(), 'temp-scans', `website-audit-${Date.now()}`)
+      fs.mkdirSync(outDir, { recursive: true })
+      // Launch target site in default browser (read-only view) for user context
+      try {
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+          } catch {}
+          return null
+        })()
+        if (safeUrl) shell.openExternal(safeUrl)
+      } catch {}
+      const options = {
+        outputDir: outDir,
+        onProgress: (u) => event.sender.send('websiteAudit:progress', u)
+      }
+      const result = await websiteAuditModule.runWebsiteAudit(url, { ...options, credentials })
+      event.sender.send('websiteAudit:done', { success: true, result })
+      return { success: true }
+    } catch (e) {
+      event.sender.send('websiteAudit:done', { error: e?.message || String(e) })
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Security Analyzer (comprehensive defensive analysis)
+  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
+    console.log('[SECURITY-ANALYZER] Handler called with payload:', payload);
+    try {
+      const { url, credentials, options } = payload || {}
+      
+      if (!url) {
+        throw new Error('URL is required')
+      }
+      
+      console.log('[SECURITY-ANALYZER] Loading security-analyzer module...');
+      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
+      console.log('[SECURITY-ANALYZER] Module loaded successfully');
+      
+      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
+      fs.mkdirSync(outDir, { recursive: true })
+      console.log('[SECURITY-ANALYZER] Output directory created:', outDir);
+      
+      // Launch target site in default browser for transparency
+      try {
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+          } catch {}
+          return null
+        })()
+        if (safeUrl) {
+          console.log('[SECURITY-ANALYZER] Opening URL in browser:', safeUrl);
+          shell.openExternal(safeUrl)
+        }
+      } catch (openError) {
+        console.warn('[SECURITY-ANALYZER] Failed to open URL in browser:', openError);
+      }
+      
+      const scanOptions = {
+        outputDir: outDir,
+        onProgress: (update) => {
+          console.log('[SECURITY-ANALYZER] Progress update:', update);
+          event.sender.send('securityAnalysis:progress', update)
+        },
+        ...options
+      }
+      
+      console.log('[SECURITY-ANALYZER] Starting security analysis...');
+      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
+      console.log('[SECURITY-ANALYZER] Analysis completed successfully');
+      
+      event.sender.send('securityAnalysis:complete', { success: true, result })
+      return { success: true }
+    } catch (e) {
+      console.error('[SECURITY-ANALYZER] Error:', e);
+      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Global notification count for badge
+  let notificationCount = 0;
+  let mainWindowInstance = null;
+
+  // Function to update badge count
+  const updateBadgeCount = (count) => {
+    notificationCount = count;
+    if (process.platform === 'win32') {
+      // Windows: Set badge count on taskbar
+      if (mainWindowInstance) {
+        mainWindowInstance.setOverlayIcon(
+          count > 0 ? null : null, // We'll use setBadgeCount if available
+          count > 0 ? `${count} scan${count > 1 ? 's' : ''} completed` : ''
+        );
+      }
+      // Try to use app.setBadgeCount if available (Electron 9+)
+      if (app.setBadgeCount) {
+        app.setBadgeCount(count);
+      }
+    } else if (process.platform === 'darwin') {
+      // macOS: Set badge count on dock
+      app.dock?.setBadge(count > 0 ? String(count) : '');
+    } else {
+      // Linux: Set badge count
+      if (app.setBadgeCount) {
+        app.setBadgeCount(count);
+      }
+    }
+  };
+
   app.whenReady().then(async () => {
   const win = await createMainWindow();
+  mainWindowInstance = win;
 
   // Setup IPC handlers (moved here to access win variable)
   ipcMain.handle('setup:selectDirectory', async () => {
@@ -1513,7 +3063,7 @@ async function createMainWindow() {
     const requiredTools = [
       'jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb',
       'amass','john','medusa','zaproxy','mitmproxy','socat','fail2ban',
-      'curl','wget'
+      'curl','wget','wapiti'
     ];
   
     const goTools = ['ffuf','nuclei','dalfox','go'];
@@ -1592,7 +3142,80 @@ async function createMainWindow() {
       raw: { stdout, stderr }
     };
   }
-  
+
+  // Check and install tgpt
+  async function checkAndInstallTgpt(password, event = null) {
+    console.log('🔧 [TGPT-CHECKER] Starting tgpt check...');
+    
+    const { exec } = require('child_process');
+    const { promisify } = require('util');
+    const execAsync = promisify(exec);
+
+    try {
+      // Check if tgpt is installed
+      const checkCommand = `wsl -d kali-linux -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
+      
+      console.log('🔧 [TGPT-CHECKER] Running check command...');
+      let stdout = '';
+      let stderr = '';
+      
+      try {
+        const result = await execAsync(checkCommand, { maxBuffer: 10 * 1024 * 1024 });
+        stdout = result.stdout || '';
+        stderr = result.stderr || '';
+      } catch (execError) {
+        stdout = execError.stdout || '';
+        stderr = execError.stderr || '';
+      }
+
+      console.log('🔧 [TGPT-CHECKER] Check output:', stdout);
+      
+      const isInstalled = stdout.includes('tgpt is INSTALLED');
+      
+      if (isInstalled) {
+        console.log('✅ [TGPT-CHECKER] tgpt is already installed');
+        return { installed: true, version: stdout.match(/tgpt is INSTALLED → (.+)/)?.[1] || 'unknown' };
+      }
+
+      // Install tgpt if not installed
+      console.log('🔧 [TGPT-CHECKER] tgpt is not installed. Installing...');
+      
+      if (event) {
+        event.sender.send('scan:progress', {
+          stage: 'installing',
+          message: 'Installing tgpt...'
+        });
+      }
+
+      const installCommand = `wsl -d kali-linux -u root -- bash -lc "echo '${password}' | sudo -S bash -c 'curl -sSL https://raw.githubusercontent.com/aandrew-me/tgpt/main/install | bash'"`;
+      
+      console.log('🔧 [TGPT-CHECKER] Running install command...');
+      try {
+        const installResult = await execAsync(installCommand, { maxBuffer: 10 * 1024 * 1024 });
+        console.log('✅ [TGPT-CHECKER] tgpt installation completed');
+        console.log('🔧 [TGPT-CHECKER] Install output:', installResult.stdout);
+        
+        // Verify installation
+        const verifyCommand = `wsl -d kali-linux -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
+        const verifyResult = await execAsync(verifyCommand, { maxBuffer: 10 * 1024 * 1024 });
+        const verified = verifyResult.stdout.includes('tgpt is INSTALLED');
+        
+        if (verified) {
+          console.log('✅ [TGPT-CHECKER] tgpt verified as installed');
+          return { installed: true, version: verifyResult.stdout.match(/tgpt is INSTALLED → (.+)/)?.[1] || 'unknown' };
+        } else {
+          console.log('⚠️ [TGPT-CHECKER] tgpt installation may have failed');
+          return { installed: false, error: 'Installation completed but verification failed' };
+        }
+      } catch (installError) {
+        console.log('❌ [TGPT-CHECKER] tgpt installation failed:', installError.message);
+        return { installed: false, error: installError.message };
+      }
+    } catch (error) {
+      console.log('❌ [TGPT-CHECKER] tgpt check failed:', error.message);
+      return { installed: false, error: error.message };
+    }
+  }
 
   // Comprehensive tool checking and installation function
   async function checkAndInstallRequiredTools(password, event = null) {
@@ -1601,7 +3224,7 @@ async function createMainWindow() {
     const requiredTools = [
       'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
       'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
-      'curl', 'wget'
+      'curl', 'wget', 'wapiti', 'sslscan'
     ];
 
     const goTools = [
@@ -2520,6 +4143,11 @@ async function createMainWindow() {
       
       const toolResult = await checkRequiredToolsOnly(password);
       
+      // Check and install tgpt
+      console.log('🔧 Checking tgpt...');
+      const tgptResult = await checkAndInstallTgpt(password, event);
+      console.log('🔧 tgpt check result:', tgptResult);
+      
       if (toolResult.success) {
         console.log('✅ All required tools are available');
         event.sender.send('scan:progress', { 
@@ -2588,6 +4216,118 @@ async function createMainWindow() {
     }
   });
 
+  // Check and install tgpt
+  ipcMain.handle('tools:checkAndInstallTgpt', async (event, password) => {
+    try {
+      console.log('🔧 [TGPT] Checking and installing tgpt...');
+      if (!password) {
+        console.log('❌ [TGPT] No password provided');
+        return { installed: false, error: 'Password is required' };
+      }
+      
+      const result = await checkAndInstallTgpt(password, event);
+      return result;
+    } catch (error) {
+      console.log('❌ [TGPT] Failed to check/install tgpt:', error.message);
+      return { installed: false, error: error.message };
+    }
+  });
+
+  // Convert text using tgpt
+  ipcMain.handle('tgpt:convert', async (event, prompt, password) => {
+    try {
+      console.log('🤖 [TGPT] Converting text with tgpt...');
+      
+      if (!password) {
+        return { success: false, error: 'Password is required' };
+      }
+
+      const { spawn } = require('child_process');
+      
+      // Pass prompt content directly to TGPT via stdin (no temp file)
+      console.log('🤖 [TGPT] Prompt length:', prompt.length, 'characters');
+      console.log('🤖 [TGPT] Prompt preview (first 500 chars):', prompt.substring(0, 500));
+      console.log('🤖 [TGPT] Passing content directly via stdin (no temp file)');
+      
+      return new Promise((resolve, reject) => {
+        // Execute tgpt in WSL and pipe prompt content directly via stdin
+        const wslProcess = spawn('wsl', ['bash', '-c', 'tgpt'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          maxBuffer: 10 * 1024 * 1024,
+          shell: false
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        // Write prompt content directly to stdin
+        wslProcess.stdin.write(prompt, 'utf8');
+        wslProcess.stdin.end(); // Close stdin to signal end of input
+        
+        wslProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        wslProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        // Increase timeout to 5 minutes for large content
+        const timeout = setTimeout(() => {
+          wslProcess.kill();
+          reject(new Error('TGPT command timeout after 5 minutes'));
+        }, 300000);
+        
+        wslProcess.on('close', (code) => {
+          clearTimeout(timeout);
+          
+          console.log('🤖 [TGPT] Process exited with code:', code);
+          console.log('🤖 [TGPT] stdout length:', stdout.length);
+          console.log('🤖 [TGPT] stderr length:', stderr.length);
+          console.log('🤖 [TGPT] stdout (first 500 chars):', stdout.substring(0, 500));
+          console.log('🤖 [TGPT] stderr:', stderr);
+          
+          // Check if output contains generic AI greeting (indicates prompt not received)
+          if (stdout && (stdout.includes('Hello! I\'m an AI assistant') || stdout.includes('How can I assist you today') || stdout.includes('Loading'))) {
+            console.log('⚠️ [TGPT] Warning: Received generic AI greeting or loading message - prompt may not have been received');
+            console.log('⚠️ [TGPT] Prompt preview:', prompt.substring(0, 200));
+            console.log('⚠️ [TGPT] This suggests TGPT is not receiving the prompt correctly');
+            console.log('⚠️ [TGPT] Try checking if TGPT is installed correctly: wsl bash -c "which tgpt"');
+          }
+          
+          // Check if stderr contains errors
+          if (stderr && stderr.length > 0) {
+            console.log('⚠️ [TGPT] stderr contains:', stderr);
+          }
+          
+          if (stdout || code === 0) {
+            resolve({
+              success: true,
+              output: stdout,
+              stderr: stderr
+            });
+          } else {
+            resolve({
+              success: false,
+              error: `Process exited with code ${code}. stderr: ${stderr}`,
+              stdout: stdout,
+              stderr: stderr
+            });
+          }
+        });
+        
+        wslProcess.on('error', (error) => {
+          clearTimeout(timeout);
+          console.error('🤖 [TGPT] Spawn error:', error);
+          reject(error);
+        });
+      });
+    } catch (error) {
+      console.log('❌ [TGPT] Outer conversion failed:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Check required tools only (without installing)
   ipcMain.handle('tools:checkRequiredToolsOnly', async (event, password) => {
     try {
@@ -2603,6 +4343,13 @@ async function createMainWindow() {
       
       const result = await checkRequiredToolsOnly(password);
       console.log('🔧 [TOOLS-CHECK] Tool check result:', result);
+      
+      // Check tgpt in background (non-blocking) - don't wait for it
+      checkAndInstallTgpt(password, event).then(tgptResult => {
+        console.log('🔧 [TOOLS-CHECK] tgpt status (background):', tgptResult);
+      }).catch(err => {
+        console.log('⚠️ [TOOLS-CHECK] tgpt check failed (non-blocking):', err.message);
+      });
       
       return result;
     } catch (error) {
@@ -3282,443 +5029,6 @@ async function createMainWindow() {
     }
   });
 
-  // Server scan handlers
-  let serverScanChild = null;
-  let serverScanAbortController = null;
-  
-  ipcMain.handle('serverscan:start', async (event, target) => {
-    console.log('serverscan:start handler called with target:', target);
-    
-    if (serverScanChild) return { error: 'Server scan already running' };
-    
-    try {
-      // Create abort controller for this scan
-      serverScanAbortController = new AbortController();
-      
-      // Simulate a realistic server scan flow with proper timing
-      console.log('Server scan handler is working - starting test scan simulation');
-      
-      // Run the simulation in background
-      (async () => {
-        try {
-          console.log('Sending initial progress message...');
-          event.sender.send('serverscan:progress', { stage: 'starting', message: 'Initializing server security scan...' });
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          console.log('Sending DNS progress message...');
-          event.sender.send('serverscan:progress', { stage: 'dns', message: 'Starting DNS resolution...' });
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          console.log('Sending Nmap progress message...');
-          event.sender.send('serverscan:progress', { stage: 'nmap', message: 'Starting port discovery...' });
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          
-          console.log('Sending SSL progress message...');
-          event.sender.send('serverscan:progress', { stage: 'ssl', message: 'Checking SSL/TLS configuration...' });
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          console.log('Sending Nikto progress message...');
-          event.sender.send('serverscan:progress', { stage: 'nikto', message: 'Scanning web server...' });
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          
-          console.log('Sending Gobuster progress message...');
-          event.sender.send('serverscan:progress', { stage: 'gobuster', message: 'Enumerating directories...' });
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          console.log('Sending SQLMap progress message...');
-          event.sender.send('serverscan:progress', { stage: 'sqlmap', message: 'Checking for SQL injection...' });
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          console.log('Sending reports progress message...');
-          event.sender.send('serverscan:progress', { stage: 'reports', message: 'Generating reports...' });
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          // Send completion with advanced mock results
-          const mockResults = {
-            target: target,
-            hostname: new URL(target.startsWith('http') ? target : `https://${target}`).hostname,
-            timestamp: new Date().toISOString(),
-            scanDuration: '15 minutes',
-            scanType: 'Comprehensive Security Assessment',
-            summary: {
-              dnsResolved: true,
-              portsScanned: 65535,
-              servicesDetected: 12,
-              vulnerabilitiesFound: 8,
-              directoriesFound: 47,
-              totalFindings: 67,
-              riskScore: 7.2,
-              securityLevel: 'Medium-High Risk'
-            },
-            findings: {
-              dns: {
-                ip: '203.0.113.1',
-                mx: 'mail.example.com',
-                txt: ['v=spf1 include:_spf.google.com ~all', 'v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com'],
-                cname: ['www.example.com'],
-                ns: ['ns1.example.com', 'ns2.example.com'],
-                soa: 'ns1.example.com admin.example.com',
-                ptr: 'web.example.com',
-                srv: [
-                  { service: '_http._tcp', target: 'web.example.com', port: 80, priority: 10, weight: 5 },
-                  { service: '_https._tcp', target: 'web.example.com', port: 443, priority: 10, weight: 5 }
-                ]
-              },
-              ports: [
-                { 
-                  port: 22, 
-                  service: 'ssh', 
-                  version: 'OpenSSH 8.2p1 Ubuntu 4ubuntu0.5', 
-                  status: 'open',
-                  banner: 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5',
-                  cpe: 'cpe:/a:openbsd:openssh:8.2p1',
-                  riskLevel: 'High',
-                  vulnerabilities: ['Weak SSH configuration', 'Default SSH port exposed'],
-                  recommendations: ['Change default port', 'Disable root login', 'Use key-based authentication']
-                },
-                { 
-                  port: 80, 
-                  service: 'http', 
-                  version: 'Apache/2.4.41 (Ubuntu)', 
-                  status: 'open',
-                  banner: 'Apache/2.4.41 (Ubuntu) Server at example.com Port 80',
-                  cpe: 'cpe:/a:apache:http_server:2.4.41',
-                  riskLevel: 'Medium',
-                  vulnerabilities: ['Server version disclosure', 'Missing security headers'],
-                  recommendations: ['Hide server version', 'Implement security headers', 'Enable HTTPS redirect']
-                },
-                { 
-                  port: 443, 
-                  service: 'https', 
-                  version: 'Apache/2.4.41 (Ubuntu)', 
-                  status: 'open',
-                  banner: 'Apache/2.4.41 (Ubuntu) Server at example.com Port 443',
-                  cpe: 'cpe:/a:apache:http_server:2.4.41',
-                  riskLevel: 'Medium',
-                  vulnerabilities: ['Weak SSL/TLS configuration', 'Outdated cipher suites'],
-                  recommendations: ['Update SSL configuration', 'Disable weak ciphers', 'Implement HSTS']
-                },
-                { 
-                  port: 3306, 
-                  service: 'mysql', 
-                  version: 'MySQL 8.0.25', 
-                  status: 'open',
-                  banner: 'MySQL 8.0.25-0ubuntu0.20.04.1',
-                  cpe: 'cpe:/a:oracle:mysql:8.0.25',
-                  riskLevel: 'High',
-                  vulnerabilities: ['Database exposed to internet', 'Default MySQL port'],
-                  recommendations: ['Restrict database access', 'Use firewall rules', 'Enable SSL for MySQL']
-                },
-                { 
-                  port: 5432, 
-                  service: 'postgresql', 
-                  version: 'PostgreSQL 13.3', 
-                  status: 'open',
-                  banner: 'PostgreSQL 13.3 (Ubuntu 13.3-1.pgdg20.04+1) on x86_64-pc-linux-gnu',
-                  cpe: 'cpe:/a:postgresql:postgresql:13.3',
-                  riskLevel: 'High',
-                  vulnerabilities: ['Database exposed to internet', 'Default PostgreSQL port'],
-                  recommendations: ['Restrict database access', 'Use firewall rules', 'Enable SSL for PostgreSQL']
-                },
-                { 
-                  port: 6379, 
-                  service: 'redis', 
-                  version: 'Redis 6.2.6', 
-                  status: 'open',
-                  banner: 'Redis 6.2.6 (00000000/0) 64 bit',
-                  cpe: 'cpe:/a:redis:redis:6.2.6',
-                  riskLevel: 'High',
-                  vulnerabilities: ['Redis exposed without authentication', 'Default Redis port'],
-                  recommendations: ['Enable Redis authentication', 'Restrict network access', 'Use firewall rules']
-                }
-              ],
-              vulnerabilities: [
-                { 
-                  type: 'SSL/TLS Configuration', 
-                  severity: 'High', 
-                  description: 'Weak SSL/TLS configuration detected with support for outdated protocols and weak cipher suites',
-                  cve: 'CVE-2021-3449',
-                  cvss: 7.5,
-                  affected: 'TLS 1.0, TLS 1.1, RC4, DES, MD5',
-                  remediation: 'Disable TLS 1.0/1.1, remove weak ciphers, implement TLS 1.3',
-                  references: ['https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-3449']
-                },
-                { 
-                  type: 'HTTP Security Headers', 
-                  severity: 'Medium', 
-                  description: 'Missing critical security headers that could prevent XSS, clickjacking, and other attacks',
-                  cve: 'N/A',
-                  cvss: 5.3,
-                  affected: 'X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Strict-Transport-Security',
-                  remediation: 'Implement comprehensive security headers policy',
-                  references: ['https://owasp.org/www-project-secure-headers/']
-                },
-                { 
-                  type: 'Server Information Disclosure', 
-                  severity: 'Medium', 
-                  description: 'Web server version and configuration details are exposed in HTTP headers',
-                  cve: 'N/A',
-                  cvss: 4.2,
-                  affected: 'Server header, X-Powered-By header',
-                  remediation: 'Hide server version information, remove unnecessary headers',
-                  references: ['https://owasp.org/www-community/attacks/Information_disclosure']
-                },
-                { 
-                  type: 'Database Exposure', 
-                  severity: 'Critical', 
-                  description: 'Database services (MySQL, PostgreSQL, Redis) are exposed to the internet without proper authentication',
-                  cve: 'N/A',
-                  cvss: 9.8,
-                  affected: 'MySQL (3306), PostgreSQL (5432), Redis (6379)',
-                  remediation: 'Implement database authentication, restrict network access, use VPN',
-                  references: ['https://owasp.org/www-project-top-ten/2017/A3_2017-Sensitive_Data_Exposure']
-                },
-                { 
-                  type: 'Directory Traversal', 
-                  severity: 'High', 
-                  description: 'Potential directory traversal vulnerability detected in web application',
-                  cve: 'CVE-2021-44228',
-                  cvss: 8.1,
-                  affected: 'Web application file access controls',
-                  remediation: 'Implement proper input validation, use whitelist approach for file access',
-                  references: ['https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-44228']
-                },
-                { 
-                  type: 'SQL Injection', 
-                  severity: 'Critical', 
-                  description: 'SQL injection vulnerabilities detected in web application forms and parameters',
-                  cve: 'CVE-2021-44228',
-                  cvss: 9.1,
-                  affected: 'Login forms, search functionality, user input fields',
-                  remediation: 'Implement parameterized queries, input validation, WAF protection',
-                  references: ['https://owasp.org/www-project-top-ten/2017/A1_2017-Injection']
-                },
-                { 
-                  type: 'Cross-Site Scripting (XSS)', 
-                  severity: 'High', 
-                  description: 'Reflected and stored XSS vulnerabilities detected in web application',
-                  cve: 'CVE-2021-44228',
-                  cvss: 7.8,
-                  affected: 'User input fields, search functionality, comment systems',
-                  remediation: 'Implement output encoding, Content Security Policy, input validation',
-                  references: ['https://owasp.org/www-project-top-ten/2017/A7_2017-Cross-Site_Scripting_(XSS)']
-                },
-                { 
-                  type: 'Insecure Direct Object References', 
-                  severity: 'Medium', 
-                  description: 'Direct object references without proper authorization checks detected',
-                  cve: 'N/A',
-                  cvss: 6.1,
-                  affected: 'File access, user data access, administrative functions',
-                  remediation: 'Implement proper authorization checks, use indirect object references',
-                  references: ['https://owasp.org/www-project-top-ten/2017/A5_2017-Broken_Access_Control']
-                }
-              ],
-              directories: [
-                { path: '/admin', status: 200, size: 1024, title: 'Administration Panel', description: 'Admin login page with basic authentication' },
-                { path: '/login', status: 200, size: 2048, title: 'User Login', description: 'User authentication portal' },
-                { path: '/backup', status: 403, size: 0, title: 'Backup Directory', description: 'Protected backup files directory' },
-                { path: '/uploads', status: 200, size: 51200, title: 'File Uploads', description: 'Public file upload directory' },
-                { path: '/config', status: 403, size: 0, title: 'Configuration', description: 'Application configuration files' },
-                { path: '/logs', status: 403, size: 0, title: 'Log Files', description: 'Application and system logs' },
-                { path: '/api', status: 200, size: 4096, title: 'API Endpoint', description: 'REST API interface' },
-                { path: '/dashboard', status: 200, size: 8192, title: 'User Dashboard', description: 'User control panel' },
-                { path: '/profile', status: 200, size: 3072, title: 'User Profile', description: 'User profile management' },
-                { path: '/settings', status: 200, size: 2048, title: 'Settings', description: 'Application settings page' },
-                { path: '/.git', status: 403, size: 0, title: 'Git Repository', description: 'Version control repository (should be hidden)' },
-                { path: '/.env', status: 403, size: 0, title: 'Environment File', description: 'Environment configuration file' },
-                { path: '/phpinfo.php', status: 200, size: 1024, title: 'PHP Info', description: 'PHP configuration information (security risk)' },
-                { path: '/test.php', status: 200, size: 512, title: 'Test Script', description: 'Development test script (should be removed)' },
-                { path: '/debug', status: 200, size: 2048, title: 'Debug Mode', description: 'Application debug interface' }
-              ],
-              ssl: {
-                certificate: {
-                  issuer: 'Let\'s Encrypt Authority X3',
-                  subject: 'CN=example.com',
-                  validFrom: '2023-01-01',
-                  validTo: '2023-04-01',
-                  keySize: 2048,
-                  signatureAlgorithm: 'SHA256withRSA',
-                  serialNumber: '03:12:34:56:78:90:AB:CD:EF:01:23:45:67:89:AB:CD:EF'
-                },
-                protocols: {
-                  tls10: true,
-                  tls11: true,
-                  tls12: true,
-                  tls13: false
-                },
-                ciphers: {
-                  weak: ['RC4', 'DES', '3DES', 'MD5'],
-                  strong: ['AES-256-GCM', 'AES-128-GCM', 'ChaCha20-Poly1305']
-                },
-                vulnerabilities: [
-                  'TLS 1.0 and 1.1 support (deprecated)',
-                  'Weak cipher suites enabled',
-                  'Missing HSTS header',
-                  'Certificate expires in 30 days'
-                ]
-              },
-              webApplication: {
-                technology: {
-                  server: 'Apache/2.4.41',
-                  language: 'PHP 7.4.3',
-                  framework: 'Laravel 8.x',
-                  database: 'MySQL 8.0.25'
-                },
-                securityHeaders: {
-                  present: ['X-Frame-Options', 'X-Content-Type-Options'],
-                  missing: ['Strict-Transport-Security', 'Content-Security-Policy', 'X-XSS-Protection']
-                },
-                cookies: [
-                  { name: 'session_id', secure: false, httpOnly: true, sameSite: 'Lax' },
-                  { name: 'csrf_token', secure: false, httpOnly: false, sameSite: 'Strict' },
-                  { name: 'remember_me', secure: false, httpOnly: true, sameSite: 'Lax' }
-                ]
-              },
-              network: {
-                latency: '45ms',
-                bandwidth: '100 Mbps',
-                packetLoss: '0.1%',
-                jitter: '2ms',
-                mtu: 1500
-              },
-              operatingSystem: {
-                type: 'Linux',
-                version: 'Ubuntu 20.04.3 LTS',
-                kernel: '5.4.0-89-generic',
-                architecture: 'x86_64',
-                uptime: '45 days, 12 hours'
-              }
-            },
-            recommendations: {
-              critical: [
-                'Immediately secure database services with authentication',
-                'Implement proper firewall rules to restrict database access',
-                'Enable SSL/TLS for all database connections',
-                'Remove or secure exposed administrative interfaces'
-              ],
-              high: [
-                'Update SSL/TLS configuration to disable weak protocols',
-                'Implement comprehensive security headers',
-                'Enable HSTS and Content Security Policy',
-                'Remove server version disclosure'
-              ],
-              medium: [
-                'Implement proper input validation and output encoding',
-                'Enable database query logging and monitoring',
-                'Implement rate limiting and DDoS protection',
-                'Regular security assessments and penetration testing'
-              ],
-              low: [
-                'Implement security monitoring and alerting',
-                'Regular backup and disaster recovery testing',
-                'Security awareness training for development team',
-                'Implement change management processes'
-              ]
-            },
-            compliance: {
-              pci: { score: 6.5, status: 'Non-compliant', issues: ['Database exposure', 'Weak SSL configuration'] },
-              gdpr: { score: 7.2, status: 'Partially compliant', issues: ['Data encryption', 'Access controls'] },
-              iso27001: { score: 5.8, status: 'Non-compliant', issues: ['Security controls', 'Risk management'] },
-              sox: { score: 6.9, status: 'Partially compliant', issues: ['Access controls', 'Audit logging'] }
-            }
-          };
-          
-          console.log('Sending completion message...');
-          event.sender.send('serverscan:done', { success: true, summary: 'Server scan completed successfully', result: mockResults });
-        } catch (error) {
-          console.error('Simulation error:', error);
-          event.sender.send('serverscan:progress', { stage: 'error', message: error.message });
-          event.sender.send('serverscan:done', null);
-        } finally {
-          serverScanChild = null;
-          serverScanAbortController = null;
-        }
-      })();
-      
-      return { success: true, message: 'Server scan started (test mode)' };
-    } catch (error) {
-      console.error('Server scan start error:', error);
-      return { error: error.message };
-    }
-  });
-
-  ipcMain.handle('serverscan:abort', async () => {
-    if (serverScanAbortController) {
-      serverScanAbortController.abort();
-      serverScanChild = null;
-      serverScanAbortController = null;
-      return { success: true };
-    }
-    return { error: 'No server scan running' };
-  });
-
-  // Website Security Audit (authorized, read-only)
-  ipcMain.handle('websiteAudit:start', async (event, payload) => {
-    try {
-      const { url, credentials } = typeof payload === 'object' ? payload : { url: payload, credentials: null }
-      const websiteAuditModule = require(path.join(__dirname, '..', 'scanners', 'website-audit.js'))
-      const outDir = path.join(process.cwd(), 'temp-scans', `website-audit-${Date.now()}`)
-      fs.mkdirSync(outDir, { recursive: true })
-      // Launch target site in default browser (read-only view) for user context
-      try {
-        const safeUrl = (() => {
-          try {
-            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
-          } catch {}
-          return null
-        })()
-        if (safeUrl) shell.openExternal(safeUrl)
-      } catch {}
-      const options = {
-        outputDir: outDir,
-        onProgress: (u) => event.sender.send('websiteAudit:progress', u)
-      }
-      const result = await websiteAuditModule.runWebsiteAudit(url, { ...options, credentials })
-      event.sender.send('websiteAudit:done', { success: true, result })
-      return { success: true }
-    } catch (e) {
-      event.sender.send('websiteAudit:done', { error: e?.message || String(e) })
-      return { error: e?.message || String(e) }
-    }
-  })
-
-  // Security Analyzer (comprehensive defensive analysis)
-  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
-    try {
-      const { url, credentials, options } = payload
-      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
-      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
-      fs.mkdirSync(outDir, { recursive: true })
-      
-      // Launch target site in default browser for transparency
-      try {
-        const safeUrl = (() => {
-          try {
-            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
-          } catch {}
-          return null
-        })()
-        if (safeUrl) shell.openExternal(safeUrl)
-      } catch {}
-      
-      const scanOptions = {
-        outputDir: outDir,
-        onProgress: (update) => event.sender.send('securityAnalysis:progress', update),
-        ...options
-      }
-      
-      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
-      event.sender.send('securityAnalysis:complete', { success: true, result })
-      return { success: true }
-    } catch (e) {
-      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
-      return { error: e?.message || String(e) }
-    }
-  })
-
   // Malware & Defacement orchestrated scan
   ipcMain.handle('maldef:start', async (event, url) => {
     try {
@@ -3736,6 +5046,67 @@ async function createMainWindow() {
       return { error: e?.message || String(e) }
     }
   })
+
+  // Notification handlers
+  ipcMain.handle('notification:show', async (event, notificationData) => {
+    try {
+      if (!Notification.isSupported()) {
+        console.log('[WARNING] [NOTIFICATION] Notifications not supported on this platform');
+        return { success: false, error: 'Notifications not supported' };
+      }
+
+      const { title, body, scanId, viewId } = notificationData;
+
+      // Create and show notification
+      const notification = new Notification({
+        title: title || 'Scan Completed',
+        body: body || 'A scan has been completed successfully.',
+        icon: iconPath, // Use app icon
+        urgency: 'normal',
+        timeoutType: 'default'
+      });
+
+      // Handle notification click - navigate to the scan view
+      notification.on('click', () => {
+        if (mainWindowInstance) {
+          mainWindowInstance.show();
+          mainWindowInstance.focus();
+          // Send message to renderer to navigate to the view
+          if (viewId) {
+            mainWindowInstance.webContents.send('notification:clicked', { scanId, viewId });
+          }
+        }
+      });
+
+      notification.show();
+      notificationCount++;
+      updateBadgeCount(notificationCount);
+      console.log('[SUCCESS] [NOTIFICATION] Notification shown:', title);
+
+      return { success: true };
+    } catch (error) {
+      console.error('[ERROR] [NOTIFICATION] Failed to show notification:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Clear notification badge
+  ipcMain.handle('notification:clearBadge', async () => {
+    try {
+      notificationCount = 0;
+      if (mainWindowInstance) {
+        mainWindowInstance.setBadgeCount(0);
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Get notification count
+  ipcMain.handle('notification:getCount', async () => {
+    return { count: notificationCount };
+  });
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
