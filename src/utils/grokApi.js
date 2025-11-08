@@ -13,9 +13,10 @@ if (!GROK_API_KEY && import.meta.env.DEV) {
   // Only show warning in development mode
   console.warn('⚠️ GROK_API_KEY is not set. AI suggestions will not work. Please set VITE_GROK_API_KEY in your .env file.')
 }
+
+/**
  * Now uses the centralized API service with axios interceptors
  */
-
 import { aiApi } from '../services/index.js'
 
 /**

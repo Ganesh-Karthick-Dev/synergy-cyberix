@@ -3122,63 +3122,6 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
     }
   })
 
-  // Security Analyzer (comprehensive defensive analysis)
-  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
-    console.log('[SECURITY-ANALYZER] Handler called with payload:', payload);
-    try {
-      const { url, credentials, options } = payload || {}
-      
-      if (!url) {
-        throw new Error('URL is required')
-      }
-      
-      console.log('[SECURITY-ANALYZER] Loading security-analyzer module...');
-      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
-      console.log('[SECURITY-ANALYZER] Module loaded successfully');
-      
-      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
-      fs.mkdirSync(outDir, { recursive: true })
-      console.log('[SECURITY-ANALYZER] Output directory created:', outDir);
-      
-      // Launch target site in default browser for transparency
-      try {
-        const safeUrl = (() => {
-          try {
-            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
-            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
-          } catch {}
-          return null
-        })()
-        if (safeUrl) {
-          console.log('[SECURITY-ANALYZER] Opening URL in browser:', safeUrl);
-          shell.openExternal(safeUrl)
-        }
-      } catch (openError) {
-        console.warn('[SECURITY-ANALYZER] Failed to open URL in browser:', openError);
-      }
-      
-      const scanOptions = {
-        outputDir: outDir,
-        onProgress: (update) => {
-          console.log('[SECURITY-ANALYZER] Progress update:', update);
-          event.sender.send('securityAnalysis:progress', update)
-        },
-        ...options
-      }
-      
-      console.log('[SECURITY-ANALYZER] Starting security analysis...');
-      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
-      console.log('[SECURITY-ANALYZER] Analysis completed successfully');
-      
-      event.sender.send('securityAnalysis:complete', { success: true, result })
-      return { success: true }
-    } catch (e) {
-      console.error('[SECURITY-ANALYZER] Error:', e);
-      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
-      return { error: e?.message || String(e) }
-    }
-  })
-
 // Global notification count for badge
 let notificationCount = 0;
 let mainWindowInstance = null;

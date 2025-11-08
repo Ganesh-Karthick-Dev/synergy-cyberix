@@ -170,8 +170,7 @@ contextBridge.exposeInMainWorld('cyberGuard', {
     if (handler) {
       ipcRenderer.removeListener('notification:sent', handler)
     }
-  }
-  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password),
+  },
   // Phishing detection with dnstwist
   runDnstwist: (domain, password) => ipcRenderer.invoke('phishing:runDnstwist', domain, password),
   onPhishingLog: (listener) => {
