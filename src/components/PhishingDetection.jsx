@@ -958,7 +958,7 @@ function PhishingDetection() {
       </div>
 
       {/* Help Modal */}
-      {showHelp && (
+      {/* {showHelp && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-gradient-to-r from-orange-600 to-orange-600 text-white p-6 rounded-t-xl flex items-center justify-between">
@@ -1081,9 +1081,9 @@ function PhishingDetection() {
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
-      {/* Overview Screen with Live Console */}
+{/*       
       {showOverview && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6 w-full">
           <div className="flex items-center justify-between mb-4">
@@ -1151,7 +1151,7 @@ function PhishingDetection() {
             </div>
           </div>
 
-          {/* Live Console Display */}
+     
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center">
               <span className="mr-2">📟</span>
@@ -1191,7 +1191,7 @@ function PhishingDetection() {
             )}
           </div>
 
-          {/* Process Information */}
+      
           <div className="mt-6 bg-gray-50 dark:bg-slate-900/50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">ℹ️ Current Process</h3>
             <div className="text-sm text-gray-700 dark:text-gray-300 space-y-2">
@@ -1210,7 +1210,7 @@ function PhishingDetection() {
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
 
       {/* Input Section */}

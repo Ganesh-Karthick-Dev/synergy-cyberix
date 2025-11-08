@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { githubApi, githubHelpers, githubScanIntegration } from '../services';
 
 function APIScanner() {
   // State management
   const [authStep, setAuthStep] = useState('not-authenticated'); // 'not-authenticated', 'authenticating', 'authenticated', 'selecting-repos', 'scanning'
-  const [userCode, setUserCode] = useState('');
-  const [verificationUri, setVerificationUri] = useState('');
-  const [verificationUriComplete, setVerificationUriComplete] = useState('');
   const [accessToken, setAccessToken] = useState(null);
   const [user, setUser] = useState(null);
   const [repositories, setRepositories] = useState([]);
@@ -38,109 +36,182 @@ function APIScanner() {
     }]);
   };
 
-  // Initiate GitHub OAuth Device Flow
+  // Initiate GitHub OAuth using the API service
   const handleInitiateAuth = async () => {
     try {
       setAuthStep('authenticating');
-      addLog('🔐 Initiating GitHub OAuth Device Flow...', null, 'info');
+      addLog('🔐 Initiating GitHub OAuth...', null, 'info');
       
-      if (!window.cyberGuard || !window.cyberGuard.initiateGitHubAuth) {
-        throw new Error('GitHub authentication not available');
+      // Check if GitHub OAuth is configured
+      if (!githubHelpers.isConfigured()) {
+        const configStatus = githubHelpers.getConfigurationStatus();
+        const missing = [];
+        if (!configStatus.clientId) missing.push('GITHUB_CLIENT_ID');
+        if (!configStatus.clientSecret) missing.push('GITHUB_CLIENT_SECRET');
+        if (!configStatus.callbackUrl) missing.push('GITHUB_CALLBACK_URL');
+        
+        throw new Error(`GitHub OAuth is not configured. Please set the following environment variables: ${missing.join(', ')}`);
       }
 
-      const result = await window.cyberGuard.initiateGitHubAuth();
+      addLog('🌐 Opening GitHub OAuth in browser...', null, 'info');
       
-      if (result.success) {
-        setUserCode(result.userCode);
-        setVerificationUri(result.verificationUri);
-        setVerificationUriComplete(result.verificationUriComplete);
-        addLog(`✅ Device code received. User code: ${result.userCode}`, null, 'success');
-        addLog(`🌐 Please visit: ${result.verificationUri}`, null, 'info');
-        addLog(`📋 Enter code: ${result.userCode}`, null, 'info');
+      // Use the GitHub helpers to complete OAuth flow
+      const result = await githubHelpers.completeOAuthFlow({
+        redirect: 'myapp://github-callback',
+        timeout: 300000 // 5 minutes
+      });
+      
+      if (result.success && result.token) {
+        // Store token
+        githubApi.setGitHubToken(result.token, true);
+        setAccessToken(result.token);
+        setUser(result.user);
+        setAuthStep('authenticated');
+        addLog(`✅ Authentication successful! Welcome, ${result.user.login || result.user.name}!`, null, 'success');
         
-        // Start polling for token
-        await handlePollToken(result.userCode, result.verificationUri);
+        // Automatically fetch repositories
+        await handleFetchRepositories(result.token);
       } else {
-        throw new Error(result.error || 'Failed to initiate authentication');
+        throw new Error('Authentication failed: No token received');
       }
     } catch (error) {
       console.error('Auth initiation error:', error);
       addLog(`❌ Authentication error: ${error.message}`, null, 'error');
       setAuthStep('not-authenticated');
-      alert(`❌ Authentication failed: ${error.message}`);
-    }
-  };
-
-  // Poll for access token
-  const handlePollToken = async (userCode, verificationUri) => {
-    try {
-      addLog('⏳ Waiting for authorization...', null, 'info');
       
-      if (!window.cyberGuard || !window.cyberGuard.pollGitHubToken) {
-        throw new Error('GitHub token polling not available');
-      }
-
-      // Set up progress listener
-      const progressCleanup = window.cyberGuard.onGitHubAuthProgress?.((progress) => {
-        if (progress.message) {
-          addLog(progress.message, null, progress.status === 'pending' ? 'info' : 'warning');
-        }
-      });
-
-      const result = await window.cyberGuard.pollGitHubToken(userCode, userCode);
-      
-      if (progressCleanup) progressCleanup();
-      
-      if (result.success && result.accessToken) {
-        setAccessToken(result.accessToken);
-        setUser(result.user);
-        setAuthStep('authenticated');
-        addLog(`✅ Authentication successful! Welcome, ${result.user.login}!`, null, 'success');
-        
-        // Automatically fetch repositories
-        await handleFetchRepositories(result.accessToken);
+      // Show user-friendly error message
+      if (error.message.includes('not configured')) {
+        alert(`❌ GitHub OAuth Configuration Error\n\n${error.message}\n\nPlease add these to your .env file and restart the application.`);
+      } else if (error.message.includes('timed out')) {
+        alert('❌ Authentication timed out. Please try again.');
       } else {
-        throw new Error(result.error || 'Failed to get access token');
+        alert(`❌ Authentication failed: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Token polling error:', error);
-      addLog(`❌ Token polling error: ${error.message}`, null, 'error');
-      setAuthStep('not-authenticated');
-      alert(`❌ Authentication failed: ${error.message}`);
     }
   };
 
-  // Fetch GitHub repositories
+  // Listen for OAuth callback from Electron (if using protocol handler)
+  useEffect(() => {
+    if (window.cyberGuard && window.cyberGuard.onProtocolUrl) {
+      const handleCallback = (url) => {
+        if (url && url.includes('github-callback')) {
+          addLog('📥 Received OAuth callback...', null, 'info');
+          githubHelpers.handleElectronCallback(url)
+            .then((result) => {
+              if (result.success && result.token) {
+                githubApi.setGitHubToken(result.token, true);
+                setAccessToken(result.token);
+                setUser(result.user);
+                setAuthStep('authenticated');
+                addLog(`✅ Authentication successful! Welcome, ${result.user.login || result.user.name}!`, null, 'success');
+                handleFetchRepositories(result.token);
+              }
+            })
+            .catch((error) => {
+              console.error('Callback handling error:', error);
+              addLog(`❌ Callback error: ${error.message}`, null, 'error');
+              setAuthStep('not-authenticated');
+            });
+        }
+      };
+
+      window.cyberGuard.onProtocolUrl(handleCallback);
+      
+      // Cleanup
+      return () => {
+        if (window.cyberGuard && window.cyberGuard.offProtocolUrl) {
+          window.cyberGuard.offProtocolUrl(handleCallback);
+        }
+      };
+    }
+  }, []);
+
+  // Fetch GitHub repositories using the API service
   const handleFetchRepositories = async (token = null) => {
     try {
-      const accessToken = token || accessToken;
-      if (!accessToken) {
-        throw new Error('No access token available');
+      const githubToken = token || githubApi.getGitHubToken() || accessToken;
+      if (!githubToken) {
+        throw new Error('No access token available. Please authenticate first.');
       }
 
       setAuthStep('selecting-repos');
       addLog('📦 Fetching repositories...', null, 'info');
       
-      if (!window.cyberGuard || !window.cyberGuard.getGitHubRepositories) {
-        throw new Error('GitHub repository fetching not available');
+      // Get user info first
+      try {
+        const userInfo = await githubApi.getUserInfo(githubToken);
+        if (userInfo.data) {
+          setUser(userInfo.data);
+        } else if (userInfo) {
+          setUser(userInfo);
+        }
+        addLog(`✅ Authenticated as ${userInfo.data?.login || userInfo.login || 'user'}`, null, 'success');
+      } catch (error) {
+        console.warn('Failed to get user info:', error);
       }
 
-      // Set up progress listener
-      const progressCleanup = window.cyberGuard.onGitHubReposProgress?.((progress) => {
-        if (progress.message) {
-          addLog(progress.message, null, 'info');
+      // Get organizations
+      let allRepos = [];
+      try {
+        const orgsResponse = await githubApi.getOrganizations(githubToken);
+        const orgs = orgsResponse.data || orgsResponse;
+        
+        if (Array.isArray(orgs) && orgs.length > 0) {
+          addLog(`📂 Found ${orgs.length} organization(s)`, null, 'info');
+          
+          // Get repositories from each organization
+          for (const org of orgs) {
+            try {
+              addLog(`📦 Fetching repositories from ${org.login}...`, null, 'info');
+              const reposResponse = await githubApi.getOrganizationRepos(org.login, githubToken);
+              const repos = reposResponse.data || reposResponse;
+              
+              if (Array.isArray(repos)) {
+                allRepos = [...allRepos, ...repos];
+                addLog(`✅ Found ${repos.length} repositories in ${org.login}`, null, 'success');
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch repos from ${org.login}:`, error);
+              addLog(`⚠️ Failed to fetch repos from ${org.login}: ${error.message}`, null, 'warning');
+            }
+          }
         }
-      });
+      } catch (error) {
+        console.warn('Failed to get organizations:', error);
+        addLog(`⚠️ Could not fetch organizations: ${error.message}`, null, 'warning');
+      }
 
-      const result = await window.cyberGuard.getGitHubRepositories(accessToken);
+      // If no repos found from orgs, try to get user's own repos
+      if (allRepos.length === 0) {
+        try {
+          addLog('📦 Fetching user repositories...', null, 'info');
+          // Note: You may need to add a getUserRepos method to githubApi
+          // For now, we'll use the organizations endpoint or handle it differently
+        } catch (error) {
+          console.warn('Failed to get user repos:', error);
+        }
+      }
+
+      // Format repositories for display
+      const formattedRepos = allRepos.map(repo => ({
+        id: repo.id || Math.random(),
+        name: repo.name,
+        fullName: repo.fullName || repo.full_name || `${repo.owner?.login || 'user'}/${repo.name}`,
+        description: repo.description || '',
+        private: repo.private || false,
+        language: repo.language || '',
+        stars: repo.stars || repo.stargazers_count || 0,
+        forks: repo.forks || repo.forks_count || 0,
+        updatedAt: repo.updatedAt || repo.updated_at || new Date().toISOString(),
+        owner: repo.owner?.login || repo.owner || 'user',
+        defaultBranch: repo.defaultBranch || repo.default_branch || 'main'
+      }));
+
+      setRepositories(formattedRepos);
+      addLog(`✅ Found ${formattedRepos.length} total repositories`, null, 'success');
       
-      if (progressCleanup) progressCleanup();
-      
-      if (result.success && result.repositories) {
-        setRepositories(result.repositories);
-        addLog(`✅ Found ${result.repositories.length} repositories`, null, 'success');
-      } else {
-        throw new Error(result.error || 'Failed to fetch repositories');
+      if (formattedRepos.length === 0) {
+        addLog('ℹ️ No repositories found. Make sure you have access to at least one repository.', null, 'info');
       }
     } catch (error) {
       console.error('Repository fetch error:', error);
@@ -171,7 +242,7 @@ function APIScanner() {
     }
   };
 
-  // Start scanning selected repositories
+  // Start scanning selected repositories using API service
   const handleStartScan = async () => {
     if (selectedRepos.length === 0) {
       alert('Please select at least one repository to scan');
@@ -188,41 +259,79 @@ function APIScanner() {
       
       addLog(`🚀 Starting scan for ${selectedRepos.length} repository/repositories...`, null, 'info');
       
-      if (!window.cyberGuard || !window.cyberGuard.startAPIScan) {
-        throw new Error('API scanner not available');
-      }
-
-      // Set up progress listener
-      const progressCleanup = window.cyberGuard.onAPIScanProgress?.((update) => {
-        if (update.progress !== undefined) {
-          setProgress(update.progress);
-        }
-        if (update.message) {
-          setProgressMessage(update.message);
-          addLog(update.message, update.command || null, update.type || 'info', update.tool || null, update.output || null);
-        }
-      });
-
-      // Set up completion listener
-      const completeCleanup = window.cyberGuard.onAPIScanComplete?.((result) => {
-        if (result.success && result.results) {
-          setScanResults(result.results);
-          addLog(`✅ Scan completed successfully!`, null, 'success');
-        } else {
-          addLog(`❌ Scan failed: ${result.error || 'Unknown error'}`, null, 'error');
-        }
-        setIsScanning(false);
-        setProgress(0);
-        setProgressMessage('');
-        setAuthStep('selecting-repos');
+      const results = [];
+      let completedScans = 0;
+      const token = accessToken || githubApi.getGitHubToken();
+      
+      // Scan each selected repository
+      for (let i = 0; i < selectedRepos.length; i++) {
+        const repo = selectedRepos[i];
+        const [owner, repoName] = repo.fullName.split('/');
         
-        if (progressCleanup) progressCleanup();
-        if (completeCleanup) completeCleanup();
+        try {
+          const progressPercent = Math.round((i / selectedRepos.length) * 100);
+          setProgress(progressPercent);
+          setProgressMessage(`Scanning ${repo.fullName} (${i + 1}/${selectedRepos.length})...`);
+          addLog(`🔍 Scanning ${repo.fullName}...`, null, 'info');
+          addLog(`📡 Discovering API endpoints...`, null, 'info');
+          
+          // Use githubScanIntegration to scan the repository (includes API endpoint scanning)
+          const scanResult = await githubScanIntegration.scanRepository(owner, repoName, {
+            scanTypes: ['code', 'dependencies', 'secrets', 'api-endpoints'], // OWASP ZAP, sqlmap, Nikto, w3af, API endpoints
+            branch: repo.defaultBranch || 'main',
+            includeCode: true,
+            includeDependencies: true,
+            includeSecrets: true,
+            includeAPIEndpoints: true, // Include API endpoint scanning
+            options: {
+              tools: ['zap', 'sqlmap', 'nikto', 'w3af'], // Specify tools
+              apiScanTypes: ['discovery', 'mismatch', 'exposed'] // API endpoint scan types
+            }
+          });
+          
+          completedScans++;
+          results.push({
+            repository: repo.fullName,
+            success: true,
+            scanResults: scanResult.scan || scanResult,
+            apiEndpoints: scanResult.apiEndpoints, // Include API endpoint results
+            aiAnalysis: scanResult.aiAnalysis
+          });
+          
+          addLog(`✅ Completed scan for ${repo.fullName}`, null, 'success');
+          if (scanResult.apiEndpoints) {
+            const epCount = scanResult.apiEndpoints.discovered?.endpoints?.length || 0;
+            const mismatchCount = scanResult.apiEndpoints.mismatches?.length || 0;
+            const exposedCount = scanResult.apiEndpoints.exposed?.endpoints?.length || 0;
+            addLog(`📊 API Endpoints: ${epCount} discovered, ${mismatchCount} mismatches, ${exposedCount} exposed`, null, 'info');
+          }
+          setProgress(Math.round((completedScans / selectedRepos.length) * 100));
+          
+        } catch (error) {
+          console.error(`Failed to scan ${repo.fullName}:`, error);
+          addLog(`❌ Failed to scan ${repo.fullName}: ${error.message}`, null, 'error');
+          results.push({
+            repository: repo.fullName,
+            success: false,
+            error: error.message
+          });
+        }
+      }
+      
+      // Set final results
+      setScanResults({
+        repositories: results,
+        totalScanned: selectedRepos.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length
       });
-
-      // Start the scan
-      await window.cyberGuard.startAPIScan(selectedRepos, accessToken);
-
+      
+      setIsScanning(false);
+      setProgress(100);
+      setProgressMessage('Scan completed!');
+      setAuthStep('selecting-repos');
+      addLog(`✅ All scans completed! ${results.filter(r => r.success).length}/${selectedRepos.length} successful`, null, 'success');
+      
     } catch (error) {
       console.error('Scan error:', error);
       addLog(`❌ Scan error: ${error.message}`, null, 'error');
@@ -236,6 +345,9 @@ function APIScanner() {
 
   // Logout
   const handleLogout = () => {
+    // Clear GitHub token
+    githubApi.logout();
+    
     setAccessToken(null);
     setUser(null);
     setRepositories([]);
@@ -244,6 +356,7 @@ function APIScanner() {
     setScanResults(null);
     setAuthStep('not-authenticated');
     setConsoleLogs([]);
+    addLog('👋 Logged out from GitHub', null, 'info');
   };
 
   return (
@@ -251,8 +364,7 @@ function APIScanner() {
       {/* Header */}
       <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg p-6 text-white">
         <h1 className="text-3xl font-bold mb-2">GitHub Repository API Scanner</h1>
-        <p className="text-orange-100">Scan GitHub repositories with OWASP ZAP, sqlmap, Nikto, and w3af</p>
-      </div>
+          </div>
 
       {/* Authentication Section */}
       {authStep === 'not-authenticated' && (
@@ -280,41 +392,22 @@ function APIScanner() {
           <div className="space-y-4">
             <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
               <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
-                Step 1: Visit this URL in your browser:
+                GitHub OAuth in progress...
               </p>
-              <a
-                href={verificationUriComplete || verificationUri}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 dark:text-blue-400 hover:underline break-all"
-              >
-                {verificationUriComplete || verificationUri}
-              </a>
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">
-                Step 2: Enter this code:
+              <p className="text-sm text-blue-800 dark:text-blue-200">
+                A browser window should open automatically. If not, check your browser for the GitHub authorization page.
               </p>
-              <div className="flex items-center space-x-2">
-                <code className="text-2xl font-mono font-bold text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 px-4 py-2 rounded border border-gray-300 dark:border-gray-600">
-                  {userCode}
-                </code>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(userCode);
-                    alert('Code copied to clipboard!');
-                  }}
-                  className="px-3 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-100 rounded text-sm"
-                >
-                  Copy
-                </button>
-              </div>
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
               <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               <span>Waiting for authorization...</span>
+            </div>
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+              <p className="text-xs text-yellow-800 dark:text-yellow-200">
+                💡 Make sure you authorize the application in the browser window that opens. The app will automatically detect when authorization is complete.
+              </p>
             </div>
           </div>
         </div>
@@ -582,6 +675,188 @@ function APIScanner() {
                     </div>
                     <div className="text-sm text-blue-800 dark:text-blue-200">Total</div>
                   </div>
+                </div>
+              )}
+
+              {/* API Endpoint Results */}
+              {repoResult.apiEndpoints && (
+                <div className="space-y-4 mb-4">
+                  <h4 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    API Endpoint Scan Results
+                  </h4>
+
+                  {/* Discovered Endpoints */}
+                  {repoResult.apiEndpoints.discovered && repoResult.apiEndpoints.discovered.endpoints && (
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="font-semibold text-blue-900 dark:text-blue-100">
+                          Discovered API Endpoints ({repoResult.apiEndpoints.discovered.endpoints.length})
+                        </h5>
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
+                          Discovery
+                        </span>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {repoResult.apiEndpoints.discovered.endpoints.slice(0, 20).map((endpoint, epIndex) => (
+                          <div key={epIndex} className="p-2 bg-white dark:bg-slate-800 rounded border border-blue-200 dark:border-blue-700">
+                            <div className="flex items-center justify-between">
+                              <code className="text-sm font-mono text-blue-900 dark:text-blue-100">
+                                {endpoint.method || 'GET'} {endpoint.path || endpoint.url || endpoint.endpoint}
+                              </code>
+                              {endpoint.status && (
+                                <span className={`px-2 py-1 rounded text-xs ${
+                                  endpoint.status >= 200 && endpoint.status < 300 ? 'bg-green-100 text-green-800' :
+                                  endpoint.status >= 400 ? 'bg-red-100 text-red-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }`}>
+                                  {endpoint.status}
+                                </span>
+                              )}
+                            </div>
+                            {endpoint.description && (
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{endpoint.description}</p>
+                            )}
+                            {endpoint.parameters && endpoint.parameters.length > 0 && (
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                Parameters: {endpoint.parameters.map(p => p.name).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {repoResult.apiEndpoints.discovered.endpoints.length > 20 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                            ... and {repoResult.apiEndpoints.discovered.endpoints.length - 20} more endpoints
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* API Mismatches */}
+                  {repoResult.apiEndpoints.mismatches && repoResult.apiEndpoints.mismatches.length > 0 && (
+                    <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="font-semibold text-yellow-900 dark:text-yellow-100">
+                          API Mismatches Found ({repoResult.apiEndpoints.mismatches.length})
+                        </h5>
+                        <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded text-xs font-medium">
+                          Mismatch
+                        </span>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {repoResult.apiEndpoints.mismatches.map((mismatch, mmIndex) => (
+                          <div key={mmIndex} className="p-3 bg-white dark:bg-slate-800 rounded border-l-4 border-yellow-500">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-yellow-900 dark:text-yellow-100">
+                                {mismatch.type || 'Version Mismatch'}
+                              </span>
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                mismatch.severity === 'high' ? 'bg-red-100 text-red-800' :
+                                mismatch.severity === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-blue-100 text-blue-800'
+                              }`}>
+                                {mismatch.severity || 'medium'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-yellow-800 dark:text-yellow-200 mb-1">
+                              {mismatch.endpoint || mismatch.path || 'Unknown endpoint'}
+                            </p>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">
+                              {mismatch.description || mismatch.message || 'Mismatch detected between code and documentation'}
+                            </p>
+                            {mismatch.expected && mismatch.actual && (
+                              <div className="mt-2 text-xs">
+                                <span className="text-green-600 dark:text-green-400">Expected: {mismatch.expected}</span>
+                                <span className="mx-2">→</span>
+                                <span className="text-red-600 dark:text-red-400">Actual: {mismatch.actual}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Exposed/Open Endpoints */}
+                  {repoResult.apiEndpoints.exposed && repoResult.apiEndpoints.exposed.endpoints && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                      <div className="flex items-center justify-between mb-3">
+                        <h5 className="font-semibold text-red-900 dark:text-red-100">
+                          Exposed/Open API Endpoints ({repoResult.apiEndpoints.exposed.endpoints.length})
+                        </h5>
+                        <span className="px-2 py-1 bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 rounded text-xs font-medium">
+                          Exposed
+                        </span>
+                      </div>
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {repoResult.apiEndpoints.exposed.endpoints.map((endpoint, expIndex) => (
+                          <div key={expIndex} className="p-3 bg-white dark:bg-slate-800 rounded border-l-4 border-red-500">
+                            <div className="flex items-center justify-between mb-1">
+                              <code className="text-sm font-mono text-red-900 dark:text-red-100">
+                                {endpoint.method || 'GET'} {endpoint.path || endpoint.url || endpoint.endpoint}
+                              </code>
+                              <span className="px-2 py-1 bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-200 rounded text-xs font-medium">
+                                {endpoint.risk || 'High Risk'}
+                              </span>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {endpoint.issues && endpoint.issues.map((issue, issueIndex) => (
+                                <div key={issueIndex} className="flex items-start gap-2 text-xs">
+                                  <span className="text-red-600 dark:text-red-400">⚠️</span>
+                                  <span className="text-gray-700 dark:text-gray-300">
+                                    {issue.type || issue}: {issue.description || issue.message || 'Security issue detected'}
+                                  </span>
+                                </div>
+                              ))}
+                              {!endpoint.issues && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400">
+                                  No authentication required • No rate limiting • CORS misconfigured
+                                </p>
+                              )}
+                            </div>
+                            {endpoint.recommendation && (
+                              <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded text-xs text-yellow-800 dark:text-yellow-200">
+                                💡 Recommendation: {endpoint.recommendation}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* API Endpoint Summary */}
+                  {repoResult.apiEndpoints.summary && (
+                    <div className="grid md:grid-cols-4 gap-3 mt-4">
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                          {repoResult.apiEndpoints.summary.totalEndpoints || repoResult.apiEndpoints.discovered?.endpoints?.length || 0}
+                        </div>
+                        <div className="text-xs text-blue-800 dark:text-blue-200">Total Endpoints</div>
+                      </div>
+                      <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                        <div className="text-xl font-bold text-yellow-600 dark:text-yellow-400">
+                          {repoResult.apiEndpoints.summary.mismatches || repoResult.apiEndpoints.mismatches?.length || 0}
+                        </div>
+                        <div className="text-xs text-yellow-800 dark:text-yellow-200">Mismatches</div>
+                      </div>
+                      <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <div className="text-xl font-bold text-red-600 dark:text-red-400">
+                          {repoResult.apiEndpoints.summary.exposed || repoResult.apiEndpoints.exposed?.endpoints?.length || 0}
+                        </div>
+                        <div className="text-xs text-red-800 dark:text-red-200">Exposed</div>
+                      </div>
+                      <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="text-xl font-bold text-green-600 dark:text-green-400">
+                          {repoResult.apiEndpoints.summary.secure || 0}
+                        </div>
+                        <div className="text-xs text-green-800 dark:text-green-200">Secure</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
