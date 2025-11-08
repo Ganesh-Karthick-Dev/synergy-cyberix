@@ -213,9 +213,84 @@ export const GlobalScanProvider = ({ children }) => {
       })
     }
 
+    // Server scan progress handler
+    const serverProgressHandler = (update) => {
+      // Find active server scan and update it
+      setActiveScans(prev => 
+        prev.map(scan => {
+          if (scan.scanType === 'Server Scan' && scan.viewId === 'server-scan') {
+            // Calculate progress from update.progress if provided, or from message like "[1/14]", "[2/14]", etc.
+            let progress = update.progress;
+            if (!progress && update.message) {
+              // Extract progress from message like "[1/14]", "[2/14]", etc.
+              const stageMatch = update.message.match(/\[(\d+)\/(\d+)\]/);
+              if (stageMatch) {
+                const current = parseInt(stageMatch[1]);
+                const total = parseInt(stageMatch[2]);
+                progress = Math.round((current / total) * 100);
+              }
+            }
+            
+            return {
+              ...scan,
+              progress: progress !== undefined ? progress : scan.progress,
+              message: update.message || update.consoleLog || scan.message
+            }
+          }
+          return scan
+        })
+      )
+    }
+
+    // Server scan done handler
+    const serverDoneHandler = (result) => {
+      setActiveScans(prev => {
+        const serverScan = prev.find(s => s.scanType === 'Server Scan' && s.viewId === 'server-scan')
+        if (serverScan) {
+          // Complete the scan
+          setCompletedScans(prevCompleted => [...prevCompleted, {
+            ...serverScan,
+            completedAt: new Date().toISOString(),
+            result
+          }])
+          
+          // Increment notification count
+          setNotificationCount(prev => prev + 1)
+          
+          // Send notification
+          if (window.cyberGuard?.showNotification) {
+            try {
+              window.cyberGuard.showNotification({
+                title: `${serverScan.scanType} Completed`,
+                body: `Scan for ${serverScan.target || 'target'} has been completed successfully.`,
+                scanId: serverScan.id,
+                viewId: serverScan.viewId
+              }).catch(err => {
+                // Silently handle notification errors - it's not critical
+                console.log('Notification not available:', err?.message || 'Unknown error')
+              })
+            } catch (err) {
+              // Silently handle notification errors - it's not critical
+              console.log('Notification not available:', err?.message || 'Unknown error')
+            }
+          }
+          
+          // Remove from map
+          if (serverScan.viewId) {
+            scanIdMapRef.current.delete(serverScan.viewId)
+          }
+          
+          return prev.filter(s => s.id !== serverScan.id)
+        }
+        return prev
+      })
+    }
+
     // Register listeners
     window.cyberGuard.onNetworkScanProgress(networkProgressHandler)
     window.cyberGuard.onNetworkScanDone(networkDoneHandler)
+    window.cyberGuard.onServerScanProgress(serverProgressHandler)
+    window.cyberGuard.onServerScanDone(serverDoneHandler)
 
     // Cleanup (but these should persist, so we don't remove them)
     return () => {

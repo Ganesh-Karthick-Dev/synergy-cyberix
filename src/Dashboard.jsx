@@ -20,13 +20,21 @@ import {
   Code, 
   Bug, 
   FileText, 
-  Settings 
+  Settings,
+  Activity,
+  Globe,
+  Store,
+  ShieldCheck,
+  AlertCircle,
+  List,
+  Sliders
 } from 'lucide-react'
 import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
 import FloatingProgressCard from './components/FloatingProgressCard'
 import WordPressCloudShield from './components/WordPressCloudShield'
 import ShopifyCloudShield from './components/ShopifyCloudShield'
+import ChatBot from './components/ChatBot'
 
 
 import PhishingDetection from './components/PhishingDetection'
@@ -93,14 +101,14 @@ function Dashboard({ onLogout }) {
       icon: <ScanSearch className="w-5 h-5" />,
       subItems: [
         {
+          id: 'port-scan',
+          name: 'Port Scanning',
+          icon: <Activity className="w-4 h-4" />
+        },
+        {
           id: 'network-scan',
           name: 'Network Scanning',
           icon: <Network className="w-4 h-4" />
-        },
-        {
-          id: 'port-scan',
-          name: 'Port Scanning',
-          icon: <Server className="w-4 h-4" />
         },
         {
           id: 'server-scan',
@@ -112,22 +120,22 @@ function Dashboard({ onLogout }) {
     { 
       id: 'wordpress-shield', 
       name: 'WordPress Cloud Shield', 
-      icon: <Shield className="w-5 h-5" />
+      icon: <Globe className="w-5 h-5" />
     },
     { 
       id: 'shopify-shield', 
       name: 'Shopify Cloud Shield', 
-      icon: <ShoppingBag className="w-5 h-5" />
+      icon: <Store className="w-5 h-5" />
     },
     {
       id: 'website-audit',
       name: 'Website Security Audit',
-      icon: <FileSearch className="w-5 h-5" />
+      icon: <ShieldCheck className="w-5 h-5" />
     },
     {
       id: 'phishing-scan',
       name: 'Phishing Detection',
-      icon: <AlertTriangle className="w-5 h-5" />
+      icon: <AlertCircle className="w-5 h-5" />
     },
     {
       id: 'api-scan',
@@ -142,12 +150,12 @@ function Dashboard({ onLogout }) {
     { 
       id: 'logs', 
       name: 'System Logs', 
-      icon: <FileText className="w-5 h-5" />
+      icon: <List className="w-5 h-5" />
     },
     {
       id: 'settings',
       name: 'Settings',
-      icon: <Settings className="w-5 h-5" />
+      icon: <Sliders className="w-5 h-5" />
     }
   ]
 
@@ -243,6 +251,9 @@ function Dashboard({ onLogout }) {
       
       {/* Floating Progress Card */}
       <FloatingProgressCard />
+
+      {/* ChatBot */}
+      <ChatBot />
     </div>
   )
 }

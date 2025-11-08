@@ -526,6 +526,21 @@ const WebsiteScanner = () => {
       dismissToast(loadingToastId)
       showSuccess('Comprehensive website scan completed! Check the results below.')
       
+      // Send desktop push notification
+      if (window.cyberGuard?.showNotification) {
+        try {
+          window.cyberGuard.showNotification({
+            title: 'Website Scan Completed',
+            body: `Comprehensive website scan completed successfully for ${targetUrl}`,
+            viewId: 'website-scanner'
+          }).catch(err => {
+            console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
+          })
+        } catch (err) {
+          console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
+        }
+      }
+      
     } catch (error) {
       addLog(`❌ Scan failed: ${error.message}`, 'error')
       dismissToast(loadingToastId)

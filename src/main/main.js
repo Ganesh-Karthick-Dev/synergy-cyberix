@@ -279,8 +279,10 @@ async function installKaliLinux() {
   });
 }
 
+// Global icon path for notifications
+const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
+
 async function createMainWindow() {
-  const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
 
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -1684,19 +1686,181 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
         return ipMatch ? ipMatch[1] : null;
       };
       
-      // TGPT analysis function (same as network scan)
-      const analyzeWithTgpt = async (commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix) => {
-        console.log(`[TGPT] analyzeWithTgpt called for ${commandName}`);
+      // Helper function to detect if TGPT returned a generic response
+      const isGenericTgptResponse = (output) => {
+        if (!output || typeof output !== 'string') return false;
+        const lowerOutput = output.toLowerCase();
+        const genericPatterns = [
+          'hello! i\'m an ai assistant',
+          'i\'m an ai assistant',
+          'how can i assist you',
+          'what would you like help with',
+          'created by phind',
+          'i\'m ready to assist'
+        ];
+        return genericPatterns.some(pattern => lowerOutput.includes(pattern));
+      };
+
+      // Helper function to manually convert raw results to JSON
+      const convertRawToJson = (commandName, command, rawResult) => {
+        try {
+          const result = {
+            whatWeDid: `Executed ${commandName} security scan`,
+            whatWeGot: `Raw scan output received and analyzed`,
+            summary: {
+              scanType: commandName,
+              command: command,
+              status: 'completed',
+              findingsCount: 0
+            },
+            findings: [],
+            rawOutput: rawResult,
+            timestamp: new Date().toISOString()
+          };
+
+          // Parse based on command type
+          if (commandName.toLowerCase().includes('nikto')) {
+            const lines = rawResult.split('\n').filter(l => l.trim());
+            const findings = [];
+            lines.forEach(line => {
+              if (line.includes('Target Host:') || line.includes('Target Port:')) {
+                const match = line.match(/Target (Host|Port):\s*(.+)/);
+                if (match) {
+                  result.summary[match[1].toLowerCase()] = match[2].trim();
+                }
+              } else if (line.trim().startsWith('+') || line.trim().startsWith('-')) {
+                findings.push({
+                  type: line.trim().startsWith('+') ? 'vulnerability' : 'info',
+                  description: line.trim().substring(1).trim(),
+                  severity: line.trim().startsWith('+') ? 'medium' : 'info'
+                });
+              }
+            });
+            result.findings = findings;
+            result.summary.findingsCount = findings.length;
+          } else if (commandName.toLowerCase().includes('sqlmap')) {
+            const lines = rawResult.split('\n').filter(l => l.trim());
+            const findings = [];
+            let hasInjection = false;
+            lines.forEach(line => {
+              if (line.includes('injectable')) {
+                hasInjection = true;
+                findings.push({
+                  type: 'vulnerability',
+                  description: 'SQL injection vulnerability detected',
+                  severity: 'high'
+                });
+              } else if (line.includes('ERROR') || line.includes('WARNING')) {
+                findings.push({
+                  type: 'warning',
+                  description: line.trim(),
+                  severity: 'medium'
+                });
+              }
+            });
+            result.findings = findings;
+            result.summary.findingsCount = findings.length;
+            result.summary.hasInjection = hasInjection;
+          } else {
+            // Generic conversion for other commands
+            const lines = rawResult.split('\n').filter(l => l.trim());
+            result.findings = lines.slice(0, 50).map(line => ({
+              type: 'info',
+              description: line.trim(),
+              severity: 'info'
+            }));
+            result.summary.findingsCount = result.findings.length;
+          }
+
+          return result;
+        } catch (error) {
+          console.error(`[MANUAL] Failed to convert raw to JSON:`, error);
+          return {
+            whatWeDid: `Executed ${commandName} security scan`,
+            whatWeGot: `Raw scan output received`,
+            summary: { scanType: commandName, status: 'completed' },
+            findings: [],
+            rawOutput: rawResult,
+            error: 'Failed to parse raw output',
+            timestamp: new Date().toISOString()
+          };
+        }
+      };
+
+      // TGPT analysis function with retry logic
+      const analyzeWithTgpt = async (commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix, retryCount = 0) => {
+        const maxRetries = 3;
+        console.log(`[TGPT] analyzeWithTgpt called for ${commandName} (attempt ${retryCount + 1}/${maxRetries + 1})`);
         console.log(`[TGPT] Raw result length: ${rawResult ? rawResult.length : 0}`);
         
-        const prompt = `You are an expert security analyst. I have executed a security scan command and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
+        // Store raw result in a separate variable (as requested)
+        const scanRawResult = rawResult || '';
+        
+        // Different prompts for retries - embed raw result directly in prompt string
+        // Special prompt for SQLMap
+        const isSQLMap = commandName.toLowerCase().includes('sqlmap') || commandName.toLowerCase().includes('sql map');
+        const basePrompt = isSQLMap ? 
+          `You are an expert security analyst. We have initiated a SQL injection attack test on a server for defensive security purposes. Your task is to analyze the raw output and create a comprehensive security report in JSON format.
+
+SCAN TYPE: ${commandName}
+
+RAW SCAN OUTPUT:
+${scanRawResult}
+
+CRITICAL QUESTIONS TO ANSWER:
+1. Was a SQL injection attack initiated? (Yes/No)
+2. Did the SQL injection attack succeed? (Yes/No - based on whether vulnerabilities were found)
+3. Is the server weak/vulnerable to SQL injection? (Yes/No - based on the scan results)
+
+INSTRUCTIONS:
+1. First, explain WHAT WE DID: State that we initiated a SQL injection attack test for defensive security purposes to check if the server is vulnerable.
+2. Then, explain WHAT WE GOT: Analyze the raw output and clearly state:
+   - Whether a SQL injection attack was initiated (Yes/No)
+   - Whether the attack succeeded in finding vulnerabilities (Yes/No)
+   - Whether the server is weak/vulnerable to SQL injection (Yes/No)
+   - Provide clear explanation of the findings
+3. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
+4. DO NOT include the Kali Linux command or command syntax in your output
+5. Focus on clearly stating if the server is vulnerable or not
+6. Include ALL details found in the raw output - nothing should be omitted
+7. Structure the JSON in a logical way that makes sense for SQL injection testing
+8. Use clear, non-technical language where possible, but maintain accuracy
+9. Provide detailed explanations, findings, vulnerabilities, and recommendations
+10. Make the report actionable with clear recommendations
+
+REQUIREMENTS:
+- The JSON must be valid and parseable
+- Include a "whatWeDid" field: "We initiated a SQL injection attack test for defensive security purposes to check if your server is vulnerable to SQL injection attacks."
+- Include a "whatWeGot" field that clearly states:
+  * Whether a SQL injection attack was initiated (Yes/No)
+  * Whether the attack succeeded in finding vulnerabilities (Yes/No)
+  * Whether the server is weak/vulnerable to SQL injection (Yes/No)
+  * Clear explanation of the findings
+- Include a summary section with key findings including attack status and server vulnerability status
+- List all findings with detailed descriptions
+- Identify any security vulnerabilities or concerns
+- Provide actionable recommendations
+- Include all technical details from the scan in a user-friendly format
+- Do NOT include generic responses - base everything on the actual scan results
+- Do NOT include the command itself in the output
+
+Create a comprehensive JSON report that covers all aspects of the SQL injection test results. Structure it however makes the most sense, but ensure it includes:
+- whatWeDid: Explanation that we initiated a SQL injection attack test for defensive purposes
+- whatWeGot: Clear statement about whether attack was initiated, succeeded, and if server is weak
+- Summary of findings including attack status and server vulnerability
+- Detailed findings with all relevant information
+- Security vulnerabilities or concerns (if any)
+- Recommendations for improvement
+
+Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.` :
+          `You are an expert security analyst. I have executed a security scan command and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
 
 SCAN TYPE: ${commandName}
 
 COMMAND EXECUTED: ${command}
 
 RAW SCAN OUTPUT:
-${rawResult}
+${scanRawResult}
 
 INSTRUCTIONS:
 1. First, explain WHAT WE DID: Describe the security scan command that was executed and what it was trying to discover or test. Make it clear and understandable for the user.
@@ -1737,27 +1901,31 @@ Create a comprehensive JSON report that covers all aspects of the scan results. 
 
 Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.`;
         
+        const prompts = [
+          basePrompt,
+          `Analyze this security scan output and convert it to JSON format. Scan type: ${commandName}. Command: ${command}. Output: ${scanRawResult.substring(0, 2000)}. Return ONLY valid JSON with fields: whatWeDid, whatWeGot, summary, findings.`,
+          `Convert this security scan result to JSON: ${commandName} scan output: ${scanRawResult.substring(0, 1500)}. Return valid JSON only.`
+        ];
+        
+        const prompt = prompts[Math.min(retryCount, prompts.length - 1)];
+        
         try {
-          const promptFile = path.join(tempDir, `tgpt_prompt_${Date.now()}.txt`);
-          const promptFileWSL = convertToWSLPath(promptFile);
+          // Store raw result in variable and embed directly in prompt - no files needed
+          // Use base64 encoding to safely pass prompt without escaping issues
+          const promptBase64 = Buffer.from(prompt, 'utf8').toString('base64');
           
-          console.log(`[TGPT] Writing prompt to file: ${promptFile}`);
-          console.log(`[TGPT] WSL path: ${promptFileWSL}`);
-          
-          fs.writeFileSync(promptFile, prompt, 'utf8');
-          console.log(`[TGPT] Prompt file written, size: ${fs.statSync(promptFile).size} bytes`);
-          
-          const tgptCommand = `${wslPrefix} bash -c "cat ${promptFileWSL} | tgpt"`;
-          console.log(`[TGPT] Executing command: ${tgptCommand}`);
+          // Decode base64 and pipe directly to tgpt (no file needed, handles all special characters)
+          const tgptCommand = `${wslPrefix} bash -c "echo '${promptBase64}' | base64 -d | tgpt"`;
+          console.log(`[TGPT] Executing command (prompt length: ${prompt.length} chars, using base64, no file)`);
           
           if (event && stepNumber && totalSteps) {
             event.sender.send('serverscan:progress', {
               stage: 'analyzing',
-              message: `Executing TGPT command...`,
+              message: `Executing TGPT command... (attempt ${retryCount + 1}/${maxRetries + 1})`,
               command: 'tgpt',
               output: '',
               progress: Math.round((stepNumber / totalSteps) * 100),
-              consoleLog: `\n[TGPT] Command: ${tgptCommand}\n`
+              consoleLog: `\n[TGPT] Executing AI analysis... (attempt ${retryCount + 1}/${maxRetries + 1})\n`
             });
           }
           
@@ -1786,15 +1954,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             }
           }
           
-          // Clean up temp file
-          try {
-            if (fs.existsSync(promptFile)) {
-              fs.unlinkSync(promptFile);
-              console.log(`[TGPT] Prompt file cleaned up`);
-            }
-          } catch (cleanupError) {
-            console.warn(`[TGPT] Cleanup error:`, cleanupError);
-          }
+          // No file cleanup needed - using direct pipe instead of files
           
           // Check if command was successful
           if (result && result.success) {
@@ -1803,7 +1963,22 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             
             if (!output || output.length === 0) {
               console.error(`[TGPT] Empty output from tgpt command`);
+              if (retryCount < maxRetries) {
+                console.log(`[TGPT] Retrying... (${retryCount + 1}/${maxRetries})`);
+                return analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix, retryCount + 1);
+              }
               return { error: 'TGPT returned empty output', raw: result.stderr || '' };
+            }
+            
+            // Check for generic response
+            if (isGenericTgptResponse(output)) {
+              console.warn(`[TGPT] Detected generic TGPT response, treating as failure`);
+              if (retryCount < maxRetries) {
+                console.log(`[TGPT] Retrying with different prompt... (${retryCount + 1}/${maxRetries})`);
+                return analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix, retryCount + 1);
+              }
+              console.log(`[TGPT] Max retries reached, using manual conversion`);
+              return convertRawToJson(commandName, command, rawResult);
             }
             
             let cleanedOutput = output;
@@ -1824,7 +1999,12 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             } catch (parseError) {
               console.error(`[TGPT] Failed to parse JSON for ${commandName}:`, parseError);
               console.error(`[TGPT] Output (first 500 chars):`, cleanedOutput.substring(0, 500));
-              return { error: 'Failed to parse TGPT response', raw: cleanedOutput };
+              if (retryCount < maxRetries) {
+                console.log(`[TGPT] Retrying... (${retryCount + 1}/${maxRetries})`);
+                return analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix, retryCount + 1);
+              }
+              console.log(`[TGPT] Max retries reached, using manual conversion`);
+              return convertRawToJson(commandName, command, rawResult);
             }
           } else {
             const errorMsg = result?.error || 'TGPT command failed';
@@ -1833,12 +2013,22 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             console.error(`[TGPT] Command failed: ${errorMsg}`);
             console.error(`[TGPT] stderr: ${stderr.substring(0, 500)}`);
             console.error(`[TGPT] stdout: ${stdout.substring(0, 500)}`);
-            return { error: errorMsg, raw: stdout || stderr || '' };
+            if (retryCount < maxRetries) {
+              console.log(`[TGPT] Retrying... (${retryCount + 1}/${maxRetries})`);
+              return analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix, retryCount + 1);
+            }
+            console.log(`[TGPT] Max retries reached, using manual conversion`);
+            return convertRawToJson(commandName, command, rawResult);
           }
         } catch (error) {
           console.error(`[TGPT] Exception in analyzeWithTgpt for ${commandName}:`, error);
           console.error(`[TGPT] Error analyzing ${commandName}:`, error);
-          return { error: error.message, raw: rawResult };
+          if (retryCount < maxRetries) {
+            console.log(`[TGPT] Retrying... (${retryCount + 1}/${maxRetries})`);
+            return analyzeWithTgpt(commandName, command, rawResult, tempDir, convertToWSLPath, event, stepNumber, totalSteps, wslPrefix, retryCount + 1);
+          }
+          console.log(`[TGPT] Max retries reached, using manual conversion`);
+          return convertRawToJson(commandName, command, rawResult);
         }
       };
       
@@ -1905,7 +2095,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
                 command: 'tgpt',
                 output: '',
                 progress: progressPercent,
-                consoleLog: `\n[${stepNumber}/${totalSteps}] Analyzing ${commandName} with AI...\nCommand: tgpt (analyzing ${commandName} results)\nRaw Result Being Analyzed:\n${rawResult.substring(0, 500)}${rawResult.length > 500 ? '...' : ''}\n`
+                consoleLog: `\n[${stepNumber}/${totalSteps}] Analyzing ${commandName} with AI...\n`
               });
               
               if (!rawResult || rawResult.trim().length === 0) {
@@ -1929,14 +2119,24 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
               
               analyzedResults[commandKey] = analyzed;
               
+              // Check if manual conversion was used (has rawOutput field)
+              const isManualConversion = analyzed && !analyzed.error && analyzed.rawOutput;
+              
               if (analyzed && !analyzed.error) {
+                const message = isManualConversion 
+                  ? `[${stepNumber}/${totalSteps}] ${commandName} analysis completed (manual conversion used)`
+                  : `[${stepNumber}/${totalSteps}] ${commandName} analysis completed`;
+                const logMessage = isManualConversion
+                  ? `[SUCCESS] [${stepNumber}/${totalSteps}] ${commandName} analysis completed (TGPT failed, used manual conversion)\nAnalysis Result:\n${JSON.stringify(analyzed, null, 2).substring(0, 1000)}${JSON.stringify(analyzed).length > 1000 ? '...' : ''}\n`
+                  : `[SUCCESS] [${stepNumber}/${totalSteps}] ${commandName} analysis completed\nAnalysis Result:\n${JSON.stringify(analyzed, null, 2).substring(0, 1000)}${JSON.stringify(analyzed).length > 1000 ? '...' : ''}\n`;
+                
                 event.sender.send('serverscan:progress', {
                   stage: 'analyzing',
-                  message: `[${stepNumber}/${totalSteps}] ${commandName} analysis completed`,
+                  message: message,
                   command: 'tgpt',
                   output: '',
                   progress: progressPercent,
-                  consoleLog: `[SUCCESS] [${stepNumber}/${totalSteps}] ${commandName} analysis completed\nAnalysis Result:\n${JSON.stringify(analyzed, null, 2).substring(0, 1000)}${JSON.stringify(analyzed).length > 1000 ? '...' : ''}\n`
+                  consoleLog: logMessage
                 });
               } else {
                 event.sender.send('serverscan:progress', {
@@ -1973,17 +2173,18 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             command: 'nikto',
             output: '',
             progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nikto scan...\nCommand: nikto -h ${targetDomain} -e -output nikto_report.txt\n`
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nikto scan...\n`
           });
           
           const niktoReportFile = path.join(tempDir, 'nikto_report.txt');
           const niktoReportFileWSL = convertToWSLPath(niktoReportFile);
-          const niktoCommand = `${wslPrefix} nikto -h ${targetDomain} -e -output "${niktoReportFileWSL}"`;
+          // Optimize nikto command: use -nointeractive to avoid waiting for user input, and -Format txt for faster output
+          const niktoCommand = `${wslPrefix} nikto -h ${targetDomain} -e -nointeractive -Format txt -output "${niktoReportFileWSL}"`;
           
           const niktoResult = await executeCommand(niktoCommand, 300000);
           scanResults.nikto = { command: niktoCommand, raw: niktoResult.stdout || niktoResult.stderr || '' };
           
-          // Read nikto report file if it exists
+          // Read nikto report file if it exists (optimize: read asynchronously)
           if (fs.existsSync(niktoReportFile)) {
             try {
               const niktoReport = fs.readFileSync(niktoReportFile, 'utf-8');
@@ -2002,7 +2203,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nikto scan completed\nRaw Result:\n${scanResults.nikto.raw.substring(0, 2000)}${scanResults.nikto.raw.length > 2000 ? '...' : ''}\n`
           });
           
-          // Immediately run TGPT analysis for Nikto
+          // Run TGPT analysis (blocking) - wait for it to complete before moving to next command
           currentStep = 2;
           await runTgptAnalysis('nikto', 'Nikto Web Server Scan', niktoCommand, scanResults.nikto.raw, currentStep, wslPrefix);
           
@@ -2014,7 +2215,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             command: 'sqlmap',
             output: '',
             progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SQLMap scan...\nCommand: sqlmap -u "${targetUrl}" --dbs\n`
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SQLMap scan...\n`
           });
           
           const sqlmapCommand = `${wslPrefix} sqlmap -u "${targetUrl}" --dbs --batch`;
@@ -2042,7 +2243,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             command: 'nmap -sV -p-',
             output: '',
             progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan (all ports)...\nCommand: ${sudoPrefix} nmap -sV -p- -oN nmap_scan.txt ${targetDomain}\n`
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan (all ports)...\n`
           });
           
           const nmapScanFile = path.join(tempDir, 'nmap_scan.txt');
@@ -2083,7 +2284,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             command: 'sslscan',
             output: '',
             progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SSLScan...\nCommand: sslscan ${targetDomain}\n`
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SSLScan...\n`
           });
           
           const sslscanCommand = `${wslPrefix} sslscan ${targetDomain}`;
@@ -2111,7 +2312,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             command: 'host',
             output: '',
             progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running DNS resolution (host)...\nCommand: host ${targetDomain}\n`
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running DNS resolution (host)...\n`
           });
           
           const hostCommand = `${wslPrefix} host "${targetDomain}"`;
@@ -2154,7 +2355,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
               command: 'nmap -sV',
               output: '',
               progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan on IP ${extractedIP}...\nCommand: ${sudoPrefix} nmap -sV ${extractedIP}\n`
+              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan on IP ${extractedIP}...\n`
             });
             
             const nmapSVIPCommand = `${wslPrefix} ${sudoPrefix} nmap -sV "${extractedIP}"`;
@@ -2198,7 +2399,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
               command: 'nmap -sC',
               output: '',
               progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap script scan on IP ${extractedIP}...\nCommand: ${sudoPrefix} nmap -sC ${extractedIP}\n`
+              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap script scan on IP ${extractedIP}...\n`
             });
             
             const nmapSCIPCommand = `${wslPrefix} ${sudoPrefix} nmap -sC "${extractedIP}"`;
@@ -2755,37 +2956,120 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
     }
   })
 
-  // Global notification count for badge
-  let notificationCount = 0;
-  let mainWindowInstance = null;
+// Global notification count for badge
+let notificationCount = 0;
+let mainWindowInstance = null;
 
-  // Function to update badge count
-  const updateBadgeCount = (count) => {
-    notificationCount = count;
-    if (process.platform === 'win32') {
-      // Windows: Set badge count on taskbar
-      if (mainWindowInstance) {
-        mainWindowInstance.setOverlayIcon(
-          count > 0 ? null : null, // We'll use setBadgeCount if available
-          count > 0 ? `${count} scan${count > 1 ? 's' : ''} completed` : ''
-        );
-      }
-      // Try to use app.setBadgeCount if available (Electron 9+)
-      if (app.setBadgeCount) {
-        app.setBadgeCount(count);
-      }
-    } else if (process.platform === 'darwin') {
-      // macOS: Set badge count on dock
-      app.dock?.setBadge(count > 0 ? String(count) : '');
-    } else {
-      // Linux: Set badge count
-      if (app.setBadgeCount) {
-        app.setBadgeCount(count);
-      }
+// Function to update badge count
+const updateBadgeCount = (count) => {
+  notificationCount = count;
+  if (process.platform === 'win32') {
+    // Windows: Set badge count on taskbar
+    if (mainWindowInstance) {
+      mainWindowInstance.setOverlayIcon(
+        count > 0 ? null : null, // We'll use setBadgeCount if available
+        count > 0 ? `${count} scan${count > 1 ? 's' : ''} completed` : ''
+      );
     }
-  };
+    // Try to use app.setBadgeCount if available (Electron 9+)
+    if (app.setBadgeCount) {
+      app.setBadgeCount(count);
+    }
+  } else if (process.platform === 'darwin') {
+    // macOS: Set badge count on dock
+    app.dock?.setBadge(count > 0 ? String(count) : '');
+  } else {
+    // Linux: Set badge count
+    if (app.setBadgeCount) {
+      app.setBadgeCount(count);
+    }
+  }
+};
 
-  app.whenReady().then(async () => {
+// Notification handlers (register early, before app.whenReady)
+console.log('[NOTIFICATION] Registering notification handlers...');
+ipcMain.handle('notification:show', async (event, notificationData) => {
+  try {
+    if (!Notification.isSupported()) {
+      console.log('[WARNING] [NOTIFICATION] Notifications not supported on this platform');
+      return { success: false, error: 'Notifications not supported' };
+    }
+
+    const { title, body, scanId, viewId } = notificationData;
+
+    // Create and show notification
+    const notification = new Notification({
+      title: title || 'Scan Completed',
+      body: body || 'A scan has been completed successfully.',
+      icon: iconPath, // Use app icon
+      urgency: 'normal',
+      timeoutType: 'default'
+    });
+
+    // Handle notification click - navigate to the scan view
+    notification.on('click', () => {
+      if (mainWindowInstance) {
+        mainWindowInstance.show();
+        mainWindowInstance.focus();
+        // Send message to renderer to navigate to the view
+        if (viewId) {
+          mainWindowInstance.webContents.send('notification:clicked', { scanId, viewId });
+        }
+      }
+    });
+
+    notification.show();
+    notificationCount++;
+    updateBadgeCount(notificationCount);
+    console.log('[SUCCESS] [NOTIFICATION] Notification shown:', title);
+
+    // Send notification data to renderer for in-app notification display
+    // Note: The NotificationContext also intercepts showNotification calls directly,
+    // so this is a backup method
+    if (mainWindowInstance && mainWindowInstance.webContents) {
+      try {
+        mainWindowInstance.webContents.send('notification:sent', {
+          title: title || 'Scan Completed',
+          body: body || 'A scan has been completed successfully.',
+          scanId,
+          viewId,
+          timestamp: Date.now()
+        });
+        console.log('[NOTIFICATION] Sent notification:sent IPC event to renderer');
+      } catch (error) {
+        console.error('[NOTIFICATION] Failed to send notification:sent IPC event:', error);
+      }
+    } else {
+      console.warn('[NOTIFICATION] mainWindowInstance not available, skipping IPC event (interceptor will handle it)');
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[ERROR] [NOTIFICATION] Failed to show notification:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Clear notification badge
+ipcMain.handle('notification:clearBadge', async () => {
+  try {
+    notificationCount = 0;
+    if (mainWindowInstance) {
+      mainWindowInstance.setBadgeCount(0);
+    }
+    updateBadgeCount(0);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Get notification count
+ipcMain.handle('notification:getCount', async () => {
+  return { count: notificationCount };
+});
+
+app.whenReady().then(async () => {
   const win = await createMainWindow();
   mainWindowInstance = win;
 
@@ -5047,66 +5331,6 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
     }
   })
 
-  // Notification handlers
-  ipcMain.handle('notification:show', async (event, notificationData) => {
-    try {
-      if (!Notification.isSupported()) {
-        console.log('[WARNING] [NOTIFICATION] Notifications not supported on this platform');
-        return { success: false, error: 'Notifications not supported' };
-      }
-
-      const { title, body, scanId, viewId } = notificationData;
-
-      // Create and show notification
-      const notification = new Notification({
-        title: title || 'Scan Completed',
-        body: body || 'A scan has been completed successfully.',
-        icon: iconPath, // Use app icon
-        urgency: 'normal',
-        timeoutType: 'default'
-      });
-
-      // Handle notification click - navigate to the scan view
-      notification.on('click', () => {
-        if (mainWindowInstance) {
-          mainWindowInstance.show();
-          mainWindowInstance.focus();
-          // Send message to renderer to navigate to the view
-          if (viewId) {
-            mainWindowInstance.webContents.send('notification:clicked', { scanId, viewId });
-          }
-        }
-      });
-
-      notification.show();
-      notificationCount++;
-      updateBadgeCount(notificationCount);
-      console.log('[SUCCESS] [NOTIFICATION] Notification shown:', title);
-
-      return { success: true };
-    } catch (error) {
-      console.error('[ERROR] [NOTIFICATION] Failed to show notification:', error);
-      return { success: false, error: error.message };
-    }
-  });
-
-  // Clear notification badge
-  ipcMain.handle('notification:clearBadge', async () => {
-    try {
-      notificationCount = 0;
-      if (mainWindowInstance) {
-        mainWindowInstance.setBadgeCount(0);
-      }
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  // Get notification count
-  ipcMain.handle('notification:getCount', async () => {
-    return { count: notificationCount };
-  });
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

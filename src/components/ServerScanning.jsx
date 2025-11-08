@@ -5,6 +5,7 @@ import scanLogger from '../utils/scanLogger'
 // Removed useToast import - no snack bars in server scan tab
 import { getSecurePassword } from '../utils/securePasswordStorage'
 import jsPDF from 'jspdf'
+import { Search, Syringe, Globe, Lock, Radio, Target, Zap } from 'lucide-react'
 
 // Import markdown converter
 let markdownToHTML;
@@ -899,6 +900,21 @@ function ServerScanning() {
             result: resultSummary
           })
           
+          // Send desktop push notification
+          if (isSuccess && window.cyberGuard?.showNotification) {
+            try {
+              window.cyberGuard.showNotification({
+                title: 'Server Scan Completed',
+                body: `Server scan completed successfully for ${target}`,
+                viewId: 'server-scan'
+              }).catch(err => {
+                console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
+              })
+            } catch (err) {
+              console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
+            }
+          }
+          
           // Update global scan state to mark scan as complete
           if (currentScanIdRef.current) {
             completeScan(currentScanIdRef.current, {
@@ -948,49 +964,49 @@ function ServerScanning() {
       key: 'nikto',
       name: 'Nikto Web Server Scan',
       description: 'Web server vulnerability scanner',
-      icon: '🔍',
+      icon: Search,
       color: '#FF6B6B'
     },
     {
       key: 'sqlmap',
       name: 'SQLMap Database Scan',
       description: 'SQL injection vulnerability scanner',
-      icon: '💉',
+      icon: Syringe,
       color: '#4ECDC4'
     },
     {
       key: 'nmapSV',
       name: 'Nmap Version Scan (All Ports)',
       description: 'Comprehensive port and service version scan',
-      icon: '🌐',
+      icon: Globe,
       color: '#45B7D1'
     },
     {
       key: 'sslscan',
       name: 'SSL/TLS Scan',
       description: 'SSL/TLS configuration and vulnerability scan',
-      icon: '🔒',
+      icon: Lock,
       color: '#FFA07A'
     },
     {
       key: 'host',
       name: 'DNS Resolution',
       description: 'Resolve hostname to IP address',
-      icon: '📡',
+      icon: Radio,
       color: '#98D8C8'
     },
     {
       key: 'nmapSVIP',
       name: 'Nmap Version Scan (IP)',
       description: 'Version scan on resolved IP address',
-      icon: '🎯',
+      icon: Target,
       color: '#6C5CE7'
     },
     {
       key: 'nmapSCIP',
       name: 'Nmap Script Scan (IP)',
       description: 'Default script scan on resolved IP address',
-      icon: '⚡',
+      icon: Zap,
       color: '#A29BFE'
     }
   ]
@@ -1015,7 +1031,7 @@ function ServerScanning() {
         transition: 'all 0.3s ease'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontSize: '24px', marginRight: '12px' }}>{config.icon}</span>
+          {config.icon && <config.icon size={24} style={{ marginRight: '12px', color: config.color }} />}
           <div style={{ flex: 1 }}>
             <h3 style={{ margin: 0, color: config.color, fontSize: '18px', fontWeight: '600' }}>
               {config.name}
@@ -1067,7 +1083,9 @@ function ServerScanning() {
               <div style={{ padding: '12px', backgroundColor: '#E7F3FF', borderRadius: '4px', marginBottom: '12px' }}>
                 <p style={{ margin: 0, color: '#004085', fontSize: '14px', fontWeight: '600' }}>Summary:</p>
                 <p style={{ margin: '4px 0 0 0', color: '#004085', fontSize: '13px' }}>
-                  {analyzed.summary}
+                  {typeof analyzed.summary === 'string' ? analyzed.summary : 
+                   typeof analyzed.summary === 'object' ? JSON.stringify(analyzed.summary, null, 2) : 
+                   String(analyzed.summary)}
                 </p>
               </div>
             )}
@@ -1091,7 +1109,9 @@ function ServerScanning() {
                       </p>
                       {finding.description && (
                         <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '12px' }}>
-                          {finding.description}
+                          {typeof finding.description === 'string' ? finding.description : 
+                           typeof finding.description === 'object' ? JSON.stringify(finding.description, null, 2) : 
+                           String(finding.description)}
                         </p>
                       )}
                       {finding.severity && (
@@ -1133,7 +1153,9 @@ function ServerScanning() {
                       </p>
                       {vuln.description && (
                         <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '12px' }}>
-                          {vuln.description}
+                          {typeof vuln.description === 'string' ? vuln.description : 
+                           typeof vuln.description === 'object' ? JSON.stringify(vuln.description, null, 2) : 
+                           String(vuln.description)}
                         </p>
                       )}
                       {vuln.severity && (
@@ -1152,7 +1174,9 @@ function ServerScanning() {
                       )}
                       {vuln.recommendation && (
                         <p style={{ margin: '4px 0 0 0', color: '#004085', fontSize: '12px', fontStyle: 'italic' }}>
-                          💡 {vuln.recommendation}
+                          💡 {typeof vuln.recommendation === 'string' ? vuln.recommendation : 
+                              typeof vuln.recommendation === 'object' ? JSON.stringify(vuln.recommendation, null, 2) : 
+                              String(vuln.recommendation)}
                         </p>
                       )}
                     </div>
@@ -1176,7 +1200,9 @@ function ServerScanning() {
                       borderLeft: '3px solid #004085'
                     }}>
                       <p style={{ margin: 0, color: '#004085', fontSize: '13px' }}>
-                        {rec}
+                        {typeof rec === 'string' ? rec : 
+                         typeof rec === 'object' ? JSON.stringify(rec, null, 2) : 
+                         String(rec)}
                       </p>
                     </div>
                   ))}
@@ -1389,25 +1415,25 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Merged Section - Server Scanning, Scan Configuration, and Console Log */}
-      <div className="rounded-2xl shadow-2xl border border-white/30 dark:border-white/20 p-8 bg-gradient-to-br from-white/40 via-white/30 to-white/20 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl relative overflow-hidden">
+      <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-8 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl relative overflow-hidden w-full max-w-full box-border">
         {/* Background Pattern */}
         <div className="absolute inset-0 opacity-5">
           <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500 rounded-full -translate-y-16 translate-x-16"></div>
           <div className="absolute bottom-0 left-0 w-24 h-24 bg-amber-500 rounded-full translate-y-12 -translate-x-12"></div>
         </div>
         
-        <div className="relative z-10 space-y-6">
+        <div className="relative z-10 space-y-6 w-full max-w-full overflow-x-hidden">
           {/* Header with Help Icon */}
           <div className="relative">
             <button
               onClick={() => setShowHelpDialog(true)}
-              className="absolute top-0 right-0 w-10 h-10 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-md hover:shadow-lg z-20"
+              className="absolute top-0 right-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:shadow-blue-500/70 hover:scale-110 transition-all duration-200 z-20"
               title="View detailed scan information"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
             </button>
             
@@ -1425,7 +1451,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
           </div>
 
           {/* Scan Configuration */}
-          <div className="space-y-6">
+          <div className="space-y-6 w-full max-w-full overflow-x-hidden">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 Target URL or Hostname
@@ -1476,8 +1502,14 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             </div>
             
             {/* Enhanced Timer Display */}
-            {(scanTimer.isRunning || scanTimer.completedTime) && scanTimer.startTime && (
-              <div className="bg-white/50 dark:bg-slate-800/50 rounded-xl p-6 border border-white/30 dark:border-slate-700/50 backdrop-blur-sm">
+            {(scanTimer.isRunning || scanTimer.completedTime) && scanTimer.startTime && (() => {
+              // Get progress from active scan in global state
+              const activeServerScan = activeScans.find(s => s.scanType === 'Server Scan' && s.viewId === 'server-scan')
+              const currentProgress = activeServerScan?.progress || 0
+              const currentMessage = activeServerScan?.message || 'Initializing server scan...'
+              
+              return (
+                <div className="bg-white/50 dark:bg-slate-800/50 rounded-xl p-6 border border-white/30 dark:border-slate-700/50 backdrop-blur-sm">
                 <div className="flex items-center space-x-2 mb-4">
                   <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -1486,6 +1518,26 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     {scanTimer.isRunning ? 'Scan in Progress' : 'Scan Completed'}
                   </h4>
                 </div>
+                
+                {/* Progress Bar */}
+                {scanTimer.isRunning && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Progress</span>
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{currentProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                      <div
+                        className="bg-gradient-to-r from-blue-500 to-indigo-600 h-3 rounded-full transition-all duration-300"
+                        style={{ width: `${currentProgress}%` }}
+                      ></div>
+                    </div>
+                    {currentMessage && (
+                      <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">{currentMessage}</p>
+                    )}
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-white/70 dark:bg-slate-800/70 rounded-lg p-4 border border-white/30 dark:border-slate-700/50 backdrop-blur-sm">
                     <div className="flex items-center space-x-2 mb-2">
@@ -1527,7 +1579,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                   </div>
                 </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* Console Log - Below Scan Completed */}
             {consoleLog && consoleLog.length > 0 && (
@@ -1571,8 +1624,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     </button>
                   </div>
                 </div>
-                <div className="bg-gray-900 rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm">
-                  <div className="space-y-1">
+                <div className="bg-gray-900 rounded-lg p-4 h-96 overflow-y-auto font-mono text-sm w-full max-w-full overflow-x-hidden box-border">
+                  <div className="space-y-1 w-full max-w-full">
                     {consoleLog.map((line, index) => {
                       let cleanedLine = stripAnsiCodes(line)
                       
@@ -1601,15 +1654,6 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
               </div>
             )}
 
-            {/* Command Cards - Show during scan */}
-            {isStarting && commandConfigs.length > 0 && (
-              <div className="mt-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Scan Progress</h3>
-                <div className="space-y-4">
-                  {commandConfigs.map(config => renderCommandCard(config))}
-                </div>
-              </div>
-            )}
           </div>
 
         </div>
@@ -1617,43 +1661,190 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
       {/* Help Dialog */}
       {showHelpDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Server Scanning Help</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
+              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Server-Level Scanning</h3>
               <button
                 onClick={() => setShowHelpDialog(false)}
-                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <div className="text-gray-700 dark:text-gray-300 space-y-4">
-              <p>Server Scanning allows you to perform comprehensive security analysis of web servers and applications using Kali Linux tools.</p>
-              <div>
-                <h4 className="font-semibold mb-2">Features:</h4>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Nikto web server vulnerability scanner</li>
-                  <li>SQLMap SQL injection vulnerability scanner</li>
-                  <li>Nmap comprehensive port and service version scanning</li>
-                  <li>SSL/TLS configuration and vulnerability scanning</li>
-                  <li>DNS resolution and IP extraction</li>
-                  <li>AI-powered analysis of scan results</li>
+            <div className="p-6 space-y-8">
+              {/* What is Server-Level Scanning? */}
+              <div className="space-y-4">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                  <div className="w-1 h-8 bg-orange-500 rounded"></div>
+                  What is Server-Level Scanning?
+                </h4>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-lg">
+                  Server-level scanning is a systematic, automated inspection of a server and the services it exposes to the internet. The goal is to discover:
+                </p>
+                <ul className="list-none space-y-3 ml-4">
+                  <li className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-gray-700 dark:text-gray-300">which services and ports are open (e.g., web server, SSH, database),</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-gray-700 dark:text-gray-300">which software and versions are running,</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-gray-700 dark:text-gray-300">obvious misconfigurations or known vulnerable components (e.g., outdated SSL/TLS, vulnerable server modules),</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-gray-700 dark:text-gray-300">surface details that an attacker could use to probe further.</span>
+                  </li>
                 </ul>
+                <div className="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 p-4 rounded-r-lg mt-4">
+                  <p className="text-gray-800 dark:text-gray-200 italic leading-relaxed">
+                    Think of it like a health check and vulnerability reconnaissance performed from the outside-in: we identify weak or exposed places so you can fix them before someone else finds them.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-semibold mb-2">Commands Executed:</h4>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>nikto -h &lt;target&gt; -e -output nikto_report.txt</li>
-                  <li>sqlmap -u &lt;target&gt; --dbs</li>
-                  <li>nmap -sV -p- -oN nmap_scan.txt &lt;target&gt;</li>
-                  <li>sslscan &lt;target&gt;</li>
-                  <li>host &lt;target&gt;</li>
-                  <li>nmap -sV &lt;target_ip&gt;</li>
-                  <li>nmap -sC &lt;target_ip&gt;</li>
-                </ul>
+
+              {/* Why do we need Server-Level Scanning? */}
+              <div className="space-y-4">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                  <div className="w-1 h-8 bg-orange-500 rounded"></div>
+                  Why do we need Server-Level Scanning?
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-5 border border-blue-200 dark:border-blue-800">
+                    <h5 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                      Prevent breaches before they happen
+                    </h5>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      Finding misconfigurations, old software, or exposed admin interfaces early reduces the chance of a successful attack.
+                    </p>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-5 border border-green-200 dark:border-green-800">
+                    <h5 className="font-semibold text-green-900 dark:text-green-100 mb-2 flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                      Prioritize fixes
+                    </h5>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      Scans help you focus resources on the highest-risk problems (e.g., an exposed admin page vs. a minor header misconfiguration).
+                    </p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-5 border border-purple-200 dark:border-purple-800">
+                    <h5 className="font-semibold text-purple-900 dark:text-purple-100 mb-2 flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                      Meet compliance and audits
+                    </h5>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      Many standards (PCI, ISO, etc.) expect regular scans and evidence of remediation.
+                    </p>
+                  </div>
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-5 border border-yellow-200 dark:border-yellow-800">
+                    <h5 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-2 flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      Improve incident response
+                    </h5>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      Knowing your server's attack surface helps you respond faster and more accurately if an incident occurs.
+                    </p>
+                  </div>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-5 border border-indigo-200 dark:border-indigo-800 md:col-span-2">
+                    <h5 className="font-semibold text-indigo-900 dark:text-indigo-100 mb-2 flex items-center gap-2">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      Maintain customer trust
+                    </h5>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      Regular scanning and remediation show due diligence to customers and partners.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* How we help */}
+              <div className="space-y-4">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                  <div className="w-1 h-8 bg-orange-500 rounded"></div>
+                  How we help — our Server-Level Scanning service (high level)
+                </h4>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
+                  We run a carefully controlled and authorized set of reconnaissance and scanning tools (the same class of tools used by defenders and penetration testers) against your server(s). For each scan we:
+                </p>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
+                      1
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Confirm written authorization</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">No scans are run without your explicit permission.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
+                      2
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Perform discovery</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Identify live hosts, open ports, and running services.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
+                      3
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Fingerprint software</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Determine server software and versions (web server, application server, TLS library).</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
+                      4
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Check common web/vuln issues</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Automated checks for insecure configs, outdated components, SSL/TLS weaknesses, and common web server vulnerabilities.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
+                      5
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Collect and collate results</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Create a clear, actionable report with severity, explanation, and recommended fixes.</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
+                    <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
+                      6
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Deliver the report</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Provide the report and (optionally) a walkthrough session to explain findings and remediation steps.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1682,7 +1873,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
               </div>
             </div>
           ) : (
-            <div className="space-y-6">
+            <div className="space-y-6 w-full max-w-full overflow-x-hidden box-border">
               {/* 1. Scan Completion Status */}
               <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
                 <div className="flex items-center space-x-2 mb-2">
@@ -1730,7 +1921,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
               {/* Command Results - Display using commandConfigs */}
               {tgptConvertedResults && tgptConvertedResults.commandResults && Object.keys(tgptConvertedResults.commandResults).length > 0 && (
-                <div className="space-y-6">
+                <div className="space-y-6 w-full max-w-full overflow-x-hidden box-border">
                   {commandConfigs.map(config => {
                     const analyzed = tgptConvertedResults.commandResults[config.key]
                     if (!analyzed) return null
@@ -1741,7 +1932,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                         <div key={config.key} className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-xl p-6 shadow-lg">
                           <div className="flex items-start gap-4 mb-4 pb-4 border-b border-yellow-200 dark:border-yellow-800">
                             <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-xl">
-                              <span className="text-3xl">{config.icon}</span>
+                              {config.icon && <config.icon size={32} className="text-yellow-600 dark:text-yellow-400" />}
                             </div>
                             <div className="flex-1">
                               <h4 className="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mb-2">{config.name}</h4>
@@ -1765,24 +1956,24 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     }
                     
                     return (
-                      <div key={config.key} className="bg-orange-50 dark:bg-orange-900/20 border-2 border-orange-200 dark:border-orange-800 rounded-xl p-6 shadow-lg">
-                        <div className="flex items-start gap-4 mb-4 pb-4 border-b border-orange-200 dark:border-orange-800">
-                          <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl">
-                            <span className="text-3xl">{config.icon}</span>
+                      <div key={config.key} className="bg-orange-50 dark:bg-orange-900/20 border-2 border-orange-200 dark:border-orange-800 rounded-xl p-6 shadow-lg w-full max-w-full overflow-hidden box-border">
+                        <div className="flex items-start gap-4 mb-4 pb-4 border-b border-orange-200 dark:border-orange-800 w-full max-w-full overflow-hidden">
+                          <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex-shrink-0">
+                            {config.icon && <config.icon size={32} className="text-orange-600 dark:text-orange-400" />}
                           </div>
-                          <div className="flex-1">
-                            <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 mb-2">{config.name}</h4>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{config.description}</p>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 mb-2 break-words">{config.name}</h4>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 break-words">{config.description}</p>
                           </div>
                         </div>
                         
                         {/* What We Did & What We Got */}
                         {(analyzed.whatWeDid || analyzed.whatWeGot) && (
-                          <div className="mb-6 space-y-3">
+                          <div className="mb-6 space-y-3 max-w-full overflow-hidden">
                             {analyzed.whatWeDid && (
-                              <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                              <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-w-full overflow-hidden">
                                 <h5 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">What We Did</h5>
-                                <p className="text-sm text-gray-700 dark:text-gray-300">
+                                <p className="text-sm text-gray-700 dark:text-gray-300 break-words whitespace-normal max-w-full">
                                   {typeof analyzed.whatWeDid === 'string' ? analyzed.whatWeDid : 
                                    typeof analyzed.whatWeDid === 'object' ? JSON.stringify(analyzed.whatWeDid, null, 2) : 
                                    String(analyzed.whatWeDid)}
@@ -1790,9 +1981,9 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                               </div>
                             )}
                             {analyzed.whatWeGot && (
-                              <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                              <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-w-full overflow-hidden">
                                 <h5 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">What We Got</h5>
-                                <p className="text-sm text-gray-700 dark:text-gray-300">
+                                <p className="text-sm text-gray-700 dark:text-gray-300 break-words whitespace-normal max-w-full">
                                   {typeof analyzed.whatWeGot === 'string' ? analyzed.whatWeGot : 
                                    typeof analyzed.whatWeGot === 'object' ? JSON.stringify(analyzed.whatWeGot, null, 2) : 
                                    String(analyzed.whatWeGot)}
@@ -1804,7 +1995,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                         
                         {/* Summary */}
                         {analyzed.summary && typeof analyzed.summary === 'object' && (
-                          <div className="mb-6 bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                          <div className="mb-6 bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-w-full overflow-hidden">
                             <h5 className="text-lg font-semibold text-orange-900 dark:text-orange-100 mb-3">Summary</h5>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                               {Object.entries(analyzed.summary).map(([key, value]) => {
@@ -1851,85 +2042,186 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                         
                         {/* Findings */}
                         {analyzed.findings && Array.isArray(analyzed.findings) && analyzed.findings.length > 0 && (
-                          <div className="mb-6">
-                            <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Findings ({analyzed.findings.length})</h5>
-                            <div className="space-y-3">
-                              {analyzed.findings.map((finding, idx) => {
-                                const otherProps = Object.entries(finding).filter(([key]) => 
-                                  !['type', 'name', 'severity'].includes(key.toLowerCase())
-                                )
-                                
-                                return (
-                                  <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                                    <div className="flex items-start justify-between mb-3">
-                                      <h6 className="font-semibold text-gray-900 dark:text-white">
-                                        {finding.type || finding.name || `Finding ${idx + 1}`}
-                                      </h6>
-                                      {finding.severity && (
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          <div className="mb-6 max-w-full overflow-hidden">
+                            <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">{config.name} - Findings ({analyzed.findings.length})</h5>
+                            {/* Grid layout for SSL/TLS Scan and Nmap Version Scan (IP) - 3-4 findings per row */}
+                            {(config.key === 'sslscan' || config.key === 'nmapSVIP') ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 w-full max-w-full overflow-hidden">
+                                {analyzed.findings.map((finding, idx) => {
+                                  // Get description - handle all possible formats
+                                  let description = finding.description || finding.text || finding.info || ''
+                                  
+                                  // If it's an array, check if it's a character array or regular array
+                                  if (Array.isArray(description)) {
+                                    if (description.length > 0 && typeof description[0] === 'string' && description[0].length === 1) {
+                                      // Character array - join it
+                                      description = description.join('')
+                                    } else {
+                                      // Regular array - join with space
+                                      description = description.map(d => typeof d === 'string' ? d : JSON.stringify(d)).join(' ')
+                                    }
+                                  } else if (typeof description === 'object') {
+                                    // Object - stringify it
+                                    description = JSON.stringify(description, null, 2)
+                                  } else {
+                                    // String or other - convert to string
+                                    description = String(description)
+                                  }
+                                  
+                                  return (
+                                    <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700 w-full max-w-full overflow-hidden box-border min-w-0">
+                                      <div className="flex items-start justify-between mb-2">
+                                        <span className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ${
                                           finding.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
-                                            finding.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
-                                            finding.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
-                                            'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                          finding.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
+                                          finding.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
+                                          'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
                                         }`}>
-                                          {finding.severity.toUpperCase()}
+                                          {finding.type || finding.severity || 'info'}
                                         </span>
+                                      </div>
+                                      <p className="text-sm text-gray-700 dark:text-gray-300 break-words whitespace-normal w-full max-w-full min-w-0">
+                                        {description}
+                                      </p>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <div className="space-y-3 max-w-full overflow-hidden">
+                                {analyzed.findings.map((finding, idx) => {
+                                  // Get description first - this is the main content
+                                  let description = finding.description || finding.text || finding.info || finding.message || ''
+                                  
+                                  // Handle description properly - prevent character-by-character display
+                                  if (Array.isArray(description)) {
+                                    if (description.length > 0) {
+                                      // Check if it's a character array (all single chars)
+                                      const isCharArray = description.every(item => typeof item === 'string' && item.length === 1)
+                                      if (isCharArray) {
+                                        description = description.join('')
+                                      } else {
+                                        description = description.map(d => {
+                                          if (typeof d === 'string') return d
+                                          if (typeof d === 'object') return JSON.stringify(d)
+                                          return String(d)
+                                        }).join(' ')
+                                      }
+                                    } else {
+                                      description = ''
+                                    }
+                                  } else if (typeof description === 'object' && description !== null) {
+                                    description = JSON.stringify(description, null, 2)
+                                  } else {
+                                    description = String(description || '')
+                                  }
+                                  
+                                  // Get other properties (excluding description fields)
+                                  const otherProps = Object.entries(finding).filter(([key]) => 
+                                    !['type', 'name', 'severity', 'description', 'text', 'info', 'message'].includes(key.toLowerCase())
+                                  )
+                                  
+                                  return (
+                                    <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700 max-w-full overflow-hidden">
+                                      <div className="flex items-start justify-between mb-3">
+                                        <h6 className="font-semibold text-gray-900 dark:text-white break-words">
+                                          {config.name} - {finding.type || finding.name || `Finding ${idx + 1}`}
+                                        </h6>
+                                        {finding.severity && (
+                                          <span className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
+                                            finding.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                                              finding.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
+                                              finding.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
+                                              'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                          }`}>
+                                            {finding.severity.toUpperCase()}
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      {/* Display description if available */}
+                                      {description && (
+                                        <div className="mb-3">
+                                          <p className="text-sm text-gray-700 dark:text-gray-300 break-words whitespace-normal">
+                                            {description}
+                                          </p>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Display other properties */}
+                                      {otherProps.length > 0 && (
+                                        <div className="space-y-2">
+                                          {otherProps.map(([key, value]) => {
+                                            if (value === null || value === undefined || 
+                                                (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
+                                                (Array.isArray(value) && value.length === 0)) {
+                                              return null
+                                            }
+                                            
+                                            const formattedKey = key
+                                              .replace(/([A-Z])/g, ' $1')
+                                              .replace(/^./, str => str.toUpperCase())
+                                              .trim()
+                                            
+                                            let displayValue = value
+                                            if (typeof value === 'boolean') {
+                                              displayValue = value ? 'Yes' : 'No'
+                                            } else if (typeof value === 'object' && !Array.isArray(value)) {
+                                              displayValue = JSON.stringify(value, null, 2)
+                                            } else if (Array.isArray(value)) {
+                                              // Check if array contains single-character strings (character array)
+                                              if (value.length > 0 && typeof value[0] === 'string' && value[0].length === 1 && 
+                                                  value.every(v => typeof v === 'string' && v.length === 1)) {
+                                                // Character array - join it
+                                                displayValue = value.join('')
+                                              } else {
+                                                // Regular array - join with comma
+                                                displayValue = value.map(v => {
+                                                  if (typeof v === 'string') return v
+                                                  if (typeof v === 'object') return JSON.stringify(v)
+                                                  return String(v)
+                                                }).join(', ')
+                                              }
+                                            } else {
+                                              // Ensure it's a string
+                                              displayValue = String(value)
+                                            }
+                                            
+                                            return (
+                                              <div key={key} className="text-sm max-w-full overflow-hidden">
+                                                <span className="font-medium text-gray-700 dark:text-gray-300">{formattedKey}:</span>
+                                                <span className="ml-2 text-gray-600 dark:text-gray-400 break-words whitespace-normal">{displayValue}</span>
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
                                       )}
                                     </div>
-                                    
-                                    <div className="space-y-2">
-                                      {otherProps.map(([key, value]) => {
-                                        if (value === null || value === undefined || 
-                                            (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
-                                            (Array.isArray(value) && value.length === 0)) {
-                                          return null
-                                        }
-                                        
-                                        const formattedKey = key
-                                          .replace(/([A-Z])/g, ' $1')
-                                          .replace(/^./, str => str.toUpperCase())
-                                          .trim()
-                                        
-                                        let displayValue = value
-                                        if (typeof value === 'boolean') {
-                                          displayValue = value ? 'Yes' : 'No'
-                                        } else if (typeof value === 'object') {
-                                          displayValue = JSON.stringify(value, null, 2)
-                                        }
-                                        
-                                        return (
-                                          <div key={key} className="text-sm">
-                                            <span className="font-medium text-gray-700 dark:text-gray-300">{formattedKey}:</span>
-                                            <span className="ml-2 text-gray-600 dark:text-gray-400">{String(displayValue)}</span>
-                                          </div>
-                                        )
-                                      })}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
                         )}
                         
                         {/* Vulnerabilities */}
                         {analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0 && (
-                          <div className="mb-6">
-                            <h5 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-3">Vulnerabilities ({analyzed.vulnerabilities.length})</h5>
-                            <div className="space-y-3">
+                          <div className="mb-6 max-w-full overflow-hidden">
+                            <h5 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-3">{config.name} - Vulnerabilities ({analyzed.vulnerabilities.length})</h5>
+                            <div className="space-y-3 max-w-full overflow-hidden">
                               {analyzed.vulnerabilities.map((vuln, idx) => {
                                 const otherProps = Object.entries(vuln).filter(([key]) => 
                                   !['type', 'name', 'severity'].includes(key.toLowerCase())
                                 )
                                 
                                 return (
-                                  <div key={idx} className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800">
+                                  <div key={idx} className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800 max-w-full overflow-hidden">
                                     <div className="flex items-start justify-between mb-3">
-                                      <h6 className="font-semibold text-red-900 dark:text-red-100">
-                                        {vuln.type || vuln.name || `Vulnerability ${idx + 1}`}
+                                      <h6 className="font-semibold text-red-900 dark:text-red-100 break-words">
+                                        {config.name} - {vuln.type || vuln.name || `Vulnerability ${idx + 1}`}
                                       </h6>
                                       {vuln.severity && (
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                        <span className={`px-2 py-1 rounded text-xs font-medium flex-shrink-0 ml-2 ${
                                           vuln.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
                                             vuln.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
                                             vuln.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
@@ -1940,7 +2232,7 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                                       )}
                                     </div>
                                     
-                                    <div className="space-y-2">
+                                    <div className="space-y-2 max-w-full overflow-hidden">
                                       {otherProps.map(([key, value]) => {
                                         if (value === null || value === undefined || 
                                             (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
@@ -1956,14 +2248,24 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                                         let displayValue = value
                                         if (typeof value === 'boolean') {
                                           displayValue = value ? 'Yes' : 'No'
-                                        } else if (typeof value === 'object') {
+                                        } else if (typeof value === 'object' && !Array.isArray(value)) {
                                           displayValue = JSON.stringify(value, null, 2)
+                                        } else if (Array.isArray(value)) {
+                                          // Check if character array
+                                          if (value.length > 0 && typeof value[0] === 'string' && value[0].length === 1 && 
+                                              value.every(v => typeof v === 'string' && v.length === 1)) {
+                                            displayValue = value.join('')
+                                          } else {
+                                            displayValue = value.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join(', ')
+                                          }
+                                        } else {
+                                          displayValue = String(value)
                                         }
                                         
                                         return (
-                                          <div key={key} className="text-sm">
+                                          <div key={key} className="text-sm max-w-full overflow-hidden">
                                             <span className="font-medium text-red-700 dark:text-red-300">{formattedKey}:</span>
-                                            <span className="ml-2 text-red-600 dark:text-red-400">{String(displayValue)}</span>
+                                            <span className="ml-2 text-red-600 dark:text-red-400 break-words whitespace-normal">{displayValue}</span>
                                           </div>
                                         )
                                       })}
@@ -1975,14 +2277,96 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                           </div>
                         )}
                         
+                        {/* Overall Risk Assessment */}
+                        {(() => {
+                          // Calculate overall risk based on findings and vulnerabilities
+                          const hasCritical = analyzed.vulnerabilities?.some(v => v.severity === 'critical') || 
+                                            analyzed.findings?.some(f => f.severity === 'critical')
+                          const hasHigh = analyzed.vulnerabilities?.some(v => v.severity === 'high') || 
+                                         analyzed.findings?.some(f => f.severity === 'high')
+                          const hasMedium = analyzed.vulnerabilities?.some(v => v.severity === 'medium') || 
+                                           analyzed.findings?.some(f => f.severity === 'medium')
+                          
+                          let riskLevel = 'Safe'
+                          let riskColor = 'green'
+                          let riskBg = 'bg-green-50 dark:bg-green-900/20'
+                          let riskBorder = 'border-green-200 dark:border-green-800'
+                          
+                          if (hasCritical) {
+                            riskLevel = 'High Risk'
+                            riskColor = 'red'
+                            riskBg = 'bg-red-50 dark:bg-red-900/20'
+                            riskBorder = 'border-red-200 dark:border-red-800'
+                          } else if (hasHigh) {
+                            riskLevel = 'High Risk'
+                            riskColor = 'red'
+                            riskBg = 'bg-red-50 dark:bg-red-900/20'
+                            riskBorder = 'border-red-200 dark:border-red-800'
+                          } else if (hasMedium) {
+                            riskLevel = 'Moderate Risk'
+                            riskColor = 'orange'
+                            riskBg = 'bg-orange-50 dark:bg-orange-900/20'
+                            riskBorder = 'border-orange-200 dark:border-orange-800'
+                          } else if (analyzed.vulnerabilities?.length > 0 || analyzed.findings?.length > 0) {
+                            riskLevel = 'Low Risk'
+                            riskColor = 'yellow'
+                            riskBg = 'bg-yellow-50 dark:bg-yellow-900/20'
+                            riskBorder = 'border-yellow-200 dark:border-yellow-800'
+                          }
+                          
+                          return (
+                            <div className={`mb-6 ${riskBg} rounded-lg p-6 border-2 ${riskBorder} max-w-full overflow-hidden`}>
+                              <div className="flex items-center justify-between mb-4">
+                                <h5 className="text-xl font-bold text-gray-900 dark:text-white">Overall Risk Assessment</h5>
+                                <span className={`px-4 py-2 rounded-lg text-lg font-bold ${
+                                  riskColor === 'red' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                                  riskColor === 'orange' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
+                                  riskColor === 'yellow' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
+                                  'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                                }`}>
+                                  {riskLevel}
+                                </span>
+                              </div>
+                              <div className="space-y-3">
+                                <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4">
+                                  <h6 className="font-semibold text-gray-900 dark:text-white mb-2">Summary</h6>
+                                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                                    {riskLevel === 'Safe' ? 
+                                      'Your server appears to be secure with no significant vulnerabilities detected.' :
+                                      riskLevel === 'Low Risk' ?
+                                      'Your server has some minor issues that should be addressed.' :
+                                      riskLevel === 'Moderate Risk' ?
+                                      'Your server has moderate security concerns that require attention.' :
+                                      'Your server has critical security vulnerabilities that require immediate action.'}
+                                  </p>
+                                </div>
+                                {analyzed.vulnerabilities && analyzed.vulnerabilities.length > 0 && (
+                                  <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4">
+                                    <h6 className="font-semibold text-red-600 dark:text-red-400 mb-2">
+                                      Vulnerabilities Found: {analyzed.vulnerabilities.length}
+                                    </h6>
+                                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                                      {analyzed.vulnerabilities.length} security vulnerability{analyzed.vulnerabilities.length > 1 ? 'ies' : ''} {analyzed.vulnerabilities.length > 1 ? 'were' : 'was'} detected during the scan.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })()}
+                        
                         {/* Recommendations */}
                         {analyzed.recommendations && Array.isArray(analyzed.recommendations) && analyzed.recommendations.length > 0 && (
-                          <div className="mb-6">
-                            <h5 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3">Recommendations ({analyzed.recommendations.length})</h5>
+                          <div className="mb-6 max-w-full overflow-hidden">
+                            <h5 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-3">{config.name} - Recommendations & Solutions ({analyzed.recommendations.length})</h5>
                             <div className="space-y-2">
                               {analyzed.recommendations.map((rec, idx) => (
                                 <div key={idx} className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
-                                  <p className="text-sm text-blue-900 dark:text-blue-100">{rec}</p>
+                                  <p className="text-sm text-blue-900 dark:text-blue-100">
+                                    {typeof rec === 'string' ? rec : 
+                                     typeof rec === 'object' ? JSON.stringify(rec, null, 2) : 
+                                     String(rec)}
+                                  </p>
                                 </div>
                               ))}
                             </div>

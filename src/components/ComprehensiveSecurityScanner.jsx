@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useToast } from '../context/ToastContext'
 import FrameworkDetector from '../scanners/framework-detection'
 import ToolInstaller from './ToolInstaller'
@@ -372,6 +372,11 @@ const ComprehensiveSecurityScanner = () => {
       
       return newSet
     })
+  }
+
+  // Clear all scan selections
+  const handleClearSelections = () => {
+    setSelectedScans(new Set())
   }
 
   // Get scans to run based on selection
@@ -1370,6 +1375,63 @@ const ComprehensiveSecurityScanner = () => {
     }
   }, [])
 
+  // Track which scans have already sent notifications
+  const notifiedScansRef = useRef(new Set())
+
+  // Helper function to send notification for a completed scan
+  const sendScanNotification = useCallback((testId, testName) => {
+    const scanKey = `${testId}-completed`
+    
+    // Only send notification once per scan
+    if (notifiedScansRef.current.has(scanKey)) {
+      return
+    }
+    
+    notifiedScansRef.current.add(scanKey)
+    
+    // Send desktop push notification for individual scan completion
+    if (window.cyberGuard?.showNotification) {
+      try {
+        console.log(`[NOTIFICATION] Sending notification for ${testName} completion`)
+        const notificationPromise = window.cyberGuard.showNotification({
+          title: `${testName} Completed`,
+          body: `${testName} for ${targetUrl || 'target'} has been completed successfully.`,
+          viewId: 'overview'
+        })
+        
+        if (notificationPromise && typeof notificationPromise.then === 'function') {
+          notificationPromise.then(() => {
+            console.log(`[NOTIFICATION] ✅ Notification sent successfully for ${testName}`)
+          }).catch(err => {
+            console.error(`[NOTIFICATION] ❌ Failed to send notification for ${testName}:`, err?.message || 'Unknown error')
+          })
+        } else {
+          console.log(`[NOTIFICATION] ⚠️ Notification call returned non-promise for ${testName}`)
+        }
+      } catch (err) {
+        console.error(`[NOTIFICATION] ❌ Error sending notification for ${testName}:`, err?.message || 'Unknown error')
+      }
+    } else {
+      console.warn('[NOTIFICATION] ⚠️ window.cyberGuard.showNotification is not available')
+    }
+  }, [targetUrl])
+
+  // Watch for individual scan completions and send notifications
+  useEffect(() => {
+    // Get all available scans (not just selected ones) to check for completions
+    const allScans = securityTests
+    
+    // Check each scan and send notification when it completes
+    allScans.forEach(test => {
+      const result = scanResults[test.id] || newScanResults[test.id]
+      
+      // Send notification for each completed scan (only once per scan)
+      if (result && result.status === 'completed') {
+        sendScanNotification(test.id, test.name)
+      }
+    })
+  }, [scanResults, newScanResults, sendScanNotification])
+
   // Watch for scan completion - check when completedTests or scanResults change
   useEffect(() => {
     if (!isScanning && !backgroundScanning) {
@@ -1412,7 +1474,23 @@ const ComprehensiveSecurityScanner = () => {
         return result && result.status === 'completed'
       }).length
       
-      showSuccess(`Security scan completed! ${completedCount} of ${scansToCheck.length} scans completed successfully.`)
+      // Send desktop push notification when all scans complete (no snackbar)
+      if (window.cyberGuard?.showNotification) {
+        try {
+          window.cyberGuard.showNotification({
+            title: 'Comprehensive Security Scan Completed',
+            body: `All security scans completed! ${completedCount} of ${scansToCheck.length} scans completed successfully.`,
+            viewId: 'overview'
+          }).catch(err => {
+            console.log('Notification not available:', err?.message || 'Unknown error')
+          })
+        } catch (err) {
+          console.log('Notification not available:', err?.message || 'Unknown error')
+        }
+      }
+      
+      // Reset notification tracking for next scan
+      notifiedScansRef.current.clear()
     }
   }, [completedTests, scanResults, newScanResults, isScanning, backgroundScanning])
 
@@ -5917,6 +5995,8 @@ const ComprehensiveSecurityScanner = () => {
     setExpandedFindings(new Set())
     setScanStartTime(null)
     setScanEndTime(null)
+    // Reset notification tracking for new scan
+    notifiedScansRef.current.clear()
     
     const startTime = Date.now()
     setScanStartTime(startTime)
@@ -7513,11 +7593,11 @@ const ComprehensiveSecurityScanner = () => {
             {/* Help Icon Button - Top Right */}
             <button
               onClick={() => setShowHelpDialog(true)}
-              className="absolute top-0 right-0 w-10 h-10 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-md hover:shadow-lg z-20"
+              className="absolute top-0 right-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:shadow-blue-500/70 hover:scale-110 transition-all duration-200 z-20"
               title="View detailed scan information"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
             </button>
             
@@ -7587,15 +7667,24 @@ const ComprehensiveSecurityScanner = () => {
                     }}
                   >
                     <div className="p-2 flex-shrink-0">
-                      <label className="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={selectedScans.has('all-scans')}
-                          onChange={() => handleScanSelection('all-scans')}
-                          className="w-4 h-4 text-orange-500 rounded focus:ring-orange-500"
-                        />
-                        <span className="font-semibold text-gray-900 dark:text-gray-100">All Scans</span>
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="flex items-center space-x-2 p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg cursor-pointer flex-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedScans.has('all-scans')}
+                            onChange={() => handleScanSelection('all-scans')}
+                            className="w-4 h-4 text-orange-500 rounded focus:ring-orange-500"
+                          />
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">All Scans</span>
+                        </label>
+                        <button
+                          onClick={handleClearSelections}
+                          className="px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                          title="Clear all selections"
+                        >
+                          Clear
+                        </button>
+                      </div>
                       <div className="border-t border-gray-200 dark:border-slate-600 my-2"></div>
                     </div>
                     <div 
@@ -12154,11 +12243,9 @@ const ComprehensiveSecurityScanner = () => {
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setShowHelpDialog(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                  className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  ×
                 </button>
               </div>
             </div>

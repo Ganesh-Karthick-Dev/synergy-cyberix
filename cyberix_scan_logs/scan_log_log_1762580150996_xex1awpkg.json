@@ -1,0 +1,12 @@
+{
+  "id": "log_1762580150996_xex1awpkg",
+  "timestamp": "2025-11-08T05:35:50.996Z",
+  "scanType": "server",
+  "scanName": "Server Scan",
+  "target": "webnox.i",
+  "status": "completed",
+  "startTime": "2025-11-08T05:20:50.996Z",
+  "endTime": "2025-11-08T05:35:50.996Z",
+  "duration": 900000,
+  "result": "Server scan completed successfully"
+}

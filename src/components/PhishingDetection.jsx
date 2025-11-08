@@ -215,6 +215,21 @@ function PhishingDetection() {
       setProgress(0);
       setProgressMessage('');
       setScanResults(mockResults);
+      
+      // Send notification
+      if (window.cyberGuard?.showNotification) {
+        try {
+          window.cyberGuard.showNotification({
+            title: 'Phishing Detection Completed',
+            body: `Phishing detection scan for ${url} has been completed successfully.`,
+            viewId: 'phishing-scan'
+          }).catch(err => {
+            console.log('Notification not available:', err?.message || 'Unknown error')
+          })
+        } catch (err) {
+          console.log('Notification not available:', err?.message || 'Unknown error')
+        }
+      }
 
     } catch (error) {
       console.error('Mock scan error:', error);

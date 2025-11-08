@@ -1,0 +1,12 @@
+{
+  "id": "log_1762579082242_x92s0tp85",
+  "timestamp": "2025-11-08T05:18:02.242Z",
+  "scanType": "server",
+  "scanName": "Server Scan",
+  "target": "webn",
+  "status": "completed",
+  "startTime": "2025-11-08T05:03:02.242Z",
+  "endTime": "2025-11-08T05:18:02.242Z",
+  "duration": 900000,
+  "result": "Server scan completed successfully"
+}

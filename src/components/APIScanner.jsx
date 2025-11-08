@@ -302,6 +302,21 @@ function APIScanner() {
       setProgress(0);
       setProgressMessage('');
       setScanResults(mockResults);
+      
+      // Send notification
+      if (window.cyberGuard?.showNotification) {
+        try {
+          window.cyberGuard.showNotification({
+            title: 'API Scanner Completed',
+            body: `API scanner for ${url} has been completed successfully.`,
+            viewId: 'api-scan'
+          }).catch(err => {
+            console.log('Notification not available:', err?.message || 'Unknown error')
+          })
+        } catch (err) {
+          console.log('Notification not available:', err?.message || 'Unknown error')
+        }
+      }
 
     } catch (error) {
       console.error('API scan error:', error);

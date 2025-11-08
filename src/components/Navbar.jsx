@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
+import { useNotifications } from '../context/NotificationContext'
 
 function Navbar({ onLogout, currentView }) {
   const { isDark, toggleTheme } = useTheme()
+  const { notifications, unreadCount, markAsRead, markAllAsRead, clearAll } = useNotifications()
   const [showNotifications, setShowNotifications] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [systemStatus, setSystemStatus] = useState({
@@ -104,29 +106,30 @@ function Navbar({ onLogout, currentView }) {
     }
   }
 
-  const notifications = [
-    {
-      id: 1,
-      title: 'Security Alert',
-      message: 'Suspicious login attempt detected',
-      time: '2 min ago',
-      type: 'warning'
-    },
-    {
-      id: 2,
-      title: 'System Update',
-      message: 'Security patches available',
-      time: '1 hour ago',
-      type: 'info'
-    },
-    {
-      id: 3,
-      title: 'Threat Blocked',
-      message: 'Malware attempt successfully blocked',
-      time: '3 hours ago',
-      type: 'success'
+  // Format time for display
+  const formatTime = (timestamp) => {
+    if (!timestamp) return 'Just now'
+    const now = Date.now()
+    const diff = now - timestamp
+    const seconds = Math.floor(diff / 1000)
+    const minutes = Math.floor(seconds / 60)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`
+    if (minutes > 0) return `${minutes} min ago`
+    return 'Just now'
+  }
+
+  // Handle notification click
+  const handleNotificationClick = (notification) => {
+    if (!notification.read) {
+      markAsRead(notification.id)
     }
-  ]
+    // Close notification panel
+    setShowNotifications(false)
+  }
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm border-b border-gray-200 dark:border-slate-700 shadow-sm">
@@ -281,9 +284,11 @@ function Navbar({ onLogout, currentView }) {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                 </svg>
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                  <span className="text-xs text-white font-medium">{notifications.length}</span>
-                </div>
+                {unreadCount > 0 && (
+                  <div className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                    <span className="text-xs text-white font-medium">{unreadCount}</span>
+                  </div>
+                )}
               </button>
 
               {showNotifications && (
@@ -292,41 +297,76 @@ function Navbar({ onLogout, currentView }) {
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Notifications</h3>
                   </div>
                   <div className="max-h-96 overflow-y-auto">
-                    {notifications.map((notification) => (
-                      <div key={notification.id} className="p-4 border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
-                        <div className="flex items-start">
-                          <div className={`p-1 rounded-full mr-3 mt-1 ${
-                            notification.type === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' :
-                            notification.type === 'info' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
-                            'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                          }`}>
-                            {notification.type === 'warning' ? (
-                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                              </svg>
-                            ) : notification.type === 'info' ? (
-                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                              </svg>
-                            ) : (
-                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                              </svg>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{notification.title}</p>
-                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{notification.message}</p>
-                            <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{notification.time}</p>
+                    {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-gray-500 dark:text-gray-400">
+                        <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                        </svg>
+                        <p className="text-sm">No notifications</p>
+                      </div>
+                    ) : (
+                      notifications.map((notification) => (
+                        <div 
+                          key={notification.id} 
+                          onClick={() => handleNotificationClick(notification)}
+                          className={`p-4 border-b border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors cursor-pointer ${
+                            !notification.read ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''
+                          }`}
+                        >
+                          <div className="flex items-start">
+                            <div className={`p-1 rounded-full mr-3 mt-1 ${
+                              notification.type === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' :
+                              notification.type === 'info' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' :
+                              'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                            }`}>
+                              {notification.type === 'warning' ? (
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                              ) : notification.type === 'info' ? (
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <p className={`text-sm font-medium ${!notification.read ? 'font-semibold' : ''} text-gray-900 dark:text-gray-100`}>
+                                  {notification.title}
+                                </p>
+                                {!notification.read && (
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">{notification.message}</p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">{formatTime(notification.timestamp)}</p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
-                  <div className="p-4 border-t border-gray-200 dark:border-slate-700">
-                    <button className="text-sm text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 font-medium">
-                      View all notifications
-                    </button>
+                  <div className="p-4 border-t border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                    {notifications.length > 0 && (
+                      <>
+                        <button 
+                          onClick={markAllAsRead}
+                          className="text-sm text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300 font-medium"
+                        >
+                          Mark all as read
+                        </button>
+                        <button 
+                          onClick={clearAll}
+                          className="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
+                        >
+                          Clear all
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

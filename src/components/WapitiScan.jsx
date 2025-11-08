@@ -336,6 +336,21 @@ const WapitiScan = ({
         }
         
         showSuccess('Scan completed successfully!')
+        
+        // Send desktop push notification
+        if (window.cyberGuard?.showNotification) {
+          try {
+            window.cyberGuard.showNotification({
+              title: `${detectionType || 'Wapiti'} Scan Completed`,
+              body: `Scan completed successfully for ${siteUrl}`,
+              viewId: detectionType?.toLowerCase() || 'wapiti-scan'
+            }).catch(err => {
+              console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
+            })
+          } catch (err) {
+            console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
+          }
+        }
       }
     }
 
@@ -1006,30 +1021,47 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-full overflow-x-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex-1 min-w-0">
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white break-words">{title}</h2>
-          <p className="text-gray-600 dark:text-gray-400 mt-2 break-words">{description}</p>
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden">
+      {/* Header with Glassmorphism */}
+      <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-8 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl relative overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-5">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500 rounded-full -translate-y-16 translate-x-16"></div>
+          <div className="absolute bottom-0 left-0 w-24 h-24 bg-amber-500 rounded-full translate-y-12 -translate-x-12"></div>
         </div>
-        <button
-          onClick={() => setShowHelpDialog(true)}
-          className="p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-          title="Help"
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
-      </div>
+        
+        <div className="relative z-10 space-y-6">
+          {/* Header with Help Icon */}
+          <div className="relative">
+            <button
+              onClick={() => setShowHelpDialog(true)}
+              className="absolute top-0 right-0 w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:shadow-blue-500/70 hover:scale-110 transition-all duration-200 z-20"
+              title="View detailed scan information"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            </button>
+            
+            <div className="flex items-center space-x-3 mb-6 pr-12">
+              <div className="p-2 bg-orange-500/20 rounded-lg">
+                <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{title}</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{description}</p>
+              </div>
+            </div>
+          </div>
 
-      {/* URL Input */}
-      <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
-        <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wide">
-          Site URL
-        </label>
-        <div className="flex gap-3">
+          {/* URL Input */}
+          <div className="space-y-6 w-full max-w-full overflow-x-hidden">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wide">
+              Site URL
+            </label>
+            <div className="flex gap-3">
           <input
             type="text"
             value={siteUrl}
@@ -1054,7 +1086,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                 : 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-green-500/50'
             } disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none`}
           >
-            {isDetecting ? (
+            {isScanning || isDetecting ? (
               <>
                 <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -1071,39 +1103,36 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                 Stop Scan
               </>
             ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Start Scan
-              </>
+              <span>Start Scan</span>
             )}
           </button>
-        </div>
-        {detectionResult !== null && (
-          <div className={`mt-3 p-3 rounded-lg flex items-center gap-2 ${
-            detectionResult 
-              ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
-              : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-          }`}>
-            {detectionResult ? (
-              <>
-                <svg className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-green-700 dark:text-green-300 font-medium">Site confirmed as {detectionType}. Ready to scan!</span>
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span className="text-red-700 dark:text-red-300 font-medium">This site is not {detectionType}. This feature is specifically designed for {detectionType} sites only.</span>
-              </>
+            </div>
+            {detectionResult !== null && (
+              <div className={`mt-3 p-3 rounded-lg flex items-center gap-2 ${
+                detectionResult 
+                  ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' 
+                  : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+              }`}>
+                {detectionResult ? (
+                  <>
+                    <svg className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-green-700 dark:text-green-300 font-medium">Site confirmed as {detectionType}. Ready to scan!</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-red-700 dark:text-red-300 font-medium">This site is not {detectionType}. This feature is specifically designed for {detectionType} sites only.</span>
+                  </>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
+          </div>
+        </div>
 
       {/* Timing Info */}
       {startTime && (
@@ -1503,21 +1532,25 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
 
       {/* Help Dialog */}
       {showHelpDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Help</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
+              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">{title}</h3>
               <button
                 onClick={() => setShowHelpDialog(false)}
-                className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <div className="text-gray-700 dark:text-gray-300">
-              {helpContent || 'Help content will be provided later.'}
+            <div className="p-6 space-y-8">
+              {typeof helpContent === 'string' ? (
+                <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                  {helpContent}
+                </div>
+              ) : (
+                helpContent
+              )}
             </div>
           </div>
         </div>

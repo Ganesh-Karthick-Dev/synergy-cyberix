@@ -78,6 +78,21 @@ function SecurityAnalyzer() {
       setSnackbar('Analysis completed')
       try { summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) } catch {}
       setTimeout(() => setSnackbar(null), 3000)
+      
+      // Send notification
+      if (window.cyberGuard?.showNotification) {
+        try {
+          window.cyberGuard.showNotification({
+            title: 'Security Analysis Completed',
+            body: `Security analysis for ${url.trim() || 'target'} has been completed successfully.`,
+            viewId: 'website-audit'
+          }).catch(err => {
+            console.log('Notification not available:', err?.message || 'Unknown error')
+          })
+        } catch (err) {
+          console.log('Notification not available:', err?.message || 'Unknown error')
+        }
+      }
     }
     
     window.cyberGuard.onSecurityAnalyzerProgress?.(onProgress)

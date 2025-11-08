@@ -8,6 +8,7 @@ import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { GlobalScanProvider } from './context/GlobalScanContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { NotificationProvider } from './context/NotificationContext'
 import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import logo from './assets/webp/Cybersecurity research-02.webp'
@@ -556,11 +557,13 @@ function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <GlobalScanProvider>
-          <ScanningProvider>
-            <AppContent />
-          </ScanningProvider>
-        </GlobalScanProvider>
+        <NotificationProvider>
+          <GlobalScanProvider>
+            <ScanningProvider>
+              <AppContent />
+            </ScanningProvider>
+          </GlobalScanProvider>
+        </NotificationProvider>
       </ToastProvider>
     </ThemeProvider>
   )

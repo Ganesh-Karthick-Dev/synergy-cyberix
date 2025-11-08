@@ -149,6 +149,16 @@ contextBridge.exposeInMainWorld('cyberGuard', {
     if (handler) {
       ipcRenderer.removeListener('notification:clicked', handler)
     }
+  },
+  onNotificationSent: (listener) => {
+    const handler = (_e, data) => listener(data)
+    ipcRenderer.on('notification:sent', handler)
+    return handler
+  },
+  removeNotificationSentListener: (handler) => {
+    if (handler) {
+      ipcRenderer.removeListener('notification:sent', handler)
+    }
   }
 });
 
