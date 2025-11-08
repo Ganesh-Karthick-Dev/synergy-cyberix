@@ -8,7 +8,9 @@ import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
 import WslUserCreationDialog from './components/WslUserCreationDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
+import { GlobalScanProvider } from './context/GlobalScanContext'
 import { ThemeProvider } from './context/ThemeContext'
+import { NotificationProvider } from './context/NotificationContext'
 import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
@@ -403,60 +405,86 @@ const AppContent = () => {
             console.warn('Repo setup skipped/failed:', e?.message)
           }
           
-      // Check which tools are missing
-      const password = getSecurePassword()
-      if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
-        console.log('🔧 [APP] Calling checkRequiredToolsOnly with password:', password ? 'EXISTS' : 'NULL')
-        const toolCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
-        
-        console.log('🔧 [APP] ===== TOOL CHECK RESULT =====')
-        console.log('🔧 [APP] Tool check result:', toolCheck)
-        console.log('🔧 [APP] Tool check success:', toolCheck?.success)
-        console.log('🔧 [APP] Tool check missingTools:', toolCheck?.missingTools)
-        console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
-        console.log('🔧 [APP] ===== END TOOL CHECK RESULT =====')
-        
-        if (toolCheck && toolCheck.success) {
+          // Check which tools are missing
+          const password = getSecurePassword()
+          if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
+            console.log('🔧 [APP] Calling checkRequiredToolsOnly with password:', password ? 'EXISTS' : 'NULL')
+            
+            // Add timeout to prevent hanging
+            const toolCheckPromise = window.cyberGuard.checkRequiredToolsOnly(password)
+            const timeoutPromise = new Promise((resolve) => {
+              setTimeout(() => {
+                console.log('⚠️ [APP] Tool check timeout, proceeding anyway...')
+                resolve({ success: false, timeout: true })
+              }, 30000) // 30 second timeout
+            })
+            
+            const toolCheck = await Promise.race([toolCheckPromise, timeoutPromise])
+            
+            console.log('🔧 [APP] ===== TOOL CHECK RESULT =====')
+            console.log('🔧 [APP] Tool check result:', toolCheck)
+            console.log('🔧 [APP] Tool check success:', toolCheck?.success)
+            console.log('🔧 [APP] Tool check missingTools:', toolCheck?.missingTools)
+            console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
+            console.log('🔧 [APP] ===== END TOOL CHECK RESULT =====')
+            
+            // Check tgpt in background (non-blocking)
+            if (password && window.cyberGuard && window.cyberGuard.checkAndInstallTgpt) {
+              window.cyberGuard.checkAndInstallTgpt(password).catch(err => {
+                console.log('⚠️ [APP] tgpt check/install failed (non-blocking):', err)
+              })
+            }
+            
+            if (toolCheck && toolCheck.success) {
               console.log('✅ [APP] All tools are ready!')
               // Navigate directly to dashboard
+              setIsCheckingCredentials(false)
               setTimeout(() => {
                 setIsAuthenticated(true)
-              }, 800)
+              }, 500)
             } else if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
               console.log('⚠️ [APP] Some tools are missing:', toolCheck.missingTools)
-              console.log('🔧 [APP] Missing tools detected, stopping here for now')
+              console.log('🔧 [APP] Missing tools detected, proceeding anyway')
               // Just show the missing tools info and navigate to dashboard
               showError(`Missing ${toolCheck.missingTools.length} tools: ${toolCheck.missingTools.join(', ')}. Please install them manually.`)
+              setIsCheckingCredentials(false)
               setTimeout(() => {
                 setIsAuthenticated(true)
-              }, 2000)
+              }, 1500)
             } else {
               console.log('✅ [APP] Tool check completed, navigating to dashboard')
+              setIsCheckingCredentials(false)
               setTimeout(() => {
                 setIsAuthenticated(true)
-              }, 800)
+              }, 500)
             }
           } else {
             console.log('✅ [APP] Tool check API not available, navigating to dashboard')
+            setIsCheckingCredentials(false)
             setTimeout(() => {
               setIsAuthenticated(true)
-            }, 800)
+            }, 500)
           }
         } else {
           console.log('❌ [APP] Stored password is invalid, asking for new password')
+          setIsCheckingCredentials(false)
           // Password is invalid, ask for new password
           setShowWslPasswordDialog(true)
         }
       } else {
         console.log('🔐 [APP] No stored WSL password found, asking for password')
+        setIsCheckingCredentials(false)
         // No stored password, ask for password
         setShowWslPasswordDialog(true)
       }
     } catch (error) {
       console.error('❌ [APP] Post-login flow failed:', error)
-      showError('Failed to initialize system. Please try again.')
-    } finally {
       setIsCheckingCredentials(false)
+      showError('Failed to initialize system. Please try again.')
+      // Still allow access to dashboard even if check fails
+      setTimeout(() => {
+        setIsAuthenticated(true)
+      }, 2000)
     }
   }
 
@@ -881,9 +909,13 @@ function App() {
   return (
     <ThemeProvider>
       <ToastProvider>
-        <ScanningProvider>
-          <AppContent />
-        </ScanningProvider>
+        <NotificationProvider>
+          <GlobalScanProvider>
+            <ScanningProvider>
+              <AppContent />
+            </ScanningProvider>
+          </GlobalScanProvider>
+        </NotificationProvider>
       </ToastProvider>
     </ThemeProvider>
   )

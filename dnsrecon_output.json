@@ -1,147 +1,229 @@
 [
     {
-        "arguments": "/usr/bin/dnsrecon -d cricbuzz.com -j dnsrecon_output.json",
-        "date": "2025-11-05 06:32:35.871163",
+        "arguments": "/usr/bin/dnsrecon -d webnox.in -j dnsrecon_output.json",
+        "date": "2025-11-08 09:52:08.772161",
         "type": "ScanInfo"
     },
     {
-        "address": "67.228.254.4",
-        "domain": "cricbuzz.com",
-        "mname": "ns1.softlayer.com",
+        "address": "173.245.58.93",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
         "type": "SOA"
     },
     {
-        "address": "2607:f0d0:0:f:1::1",
-        "domain": "cricbuzz.com",
-        "mname": "ns1.softlayer.com",
+        "address": "108.162.192.93",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
         "type": "SOA"
     },
     {
-        "Version": "",
-        "address": "67.228.255.5",
-        "domain": "cricbuzz.com",
+        "address": "172.64.32.93",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
+        "type": "SOA"
+    },
+    {
+        "address": "2a06:98c1:50::ac40:205d",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
+        "type": "SOA"
+    },
+    {
+        "address": "2606:4700:50::adf5:3a5d",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
+        "type": "SOA"
+    },
+    {
+        "address": "2803:f800:50::6ca2:c05d",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
+        "type": "SOA"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "162.159.44.8",
+        "domain": "webnox.in",
         "recursive": "True",
-        "target": "ns2.softlayer.com",
+        "target": "leland.ns.cloudflare.com",
         "type": "NS"
     },
     {
-        "Version": "",
-        "address": "2607:f0d0:0:f:2::1",
-        "domain": "cricbuzz.com",
-        "recursive": "False",
-        "target": "ns2.softlayer.com",
-        "type": "NS"
-    },
-    {
-        "Version": "\"undisclosed\"",
-        "address": "67.228.254.4",
-        "domain": "cricbuzz.com",
+        "Version": "\"2025.11.1\"",
+        "address": "172.64.35.8",
+        "domain": "webnox.in",
         "recursive": "True",
-        "target": "ns1.softlayer.com",
+        "target": "leland.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "108.162.195.8",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "leland.ns.cloudflare.com",
         "type": "NS"
     },
     {
         "Version": "",
-        "address": "2607:f0d0:0:f:1::1",
-        "domain": "cricbuzz.com",
+        "address": "2606:4700:58::a29f:2c08",
+        "domain": "webnox.in",
         "recursive": "False",
-        "target": "ns1.softlayer.com",
+        "target": "leland.ns.cloudflare.com",
         "type": "NS"
     },
     {
-        "address": "142.251.12.26",
-        "domain": "cricbuzz.com",
-        "exchange": "aspmx.l.google.com",
-        "type": "MX"
+        "Version": "",
+        "address": "2803:f800:50::6ca2:c308",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "leland.ns.cloudflare.com",
+        "type": "NS"
     },
     {
-        "address": "172.217.78.27",
-        "domain": "cricbuzz.com",
-        "exchange": "alt2.aspmx.l.google.com",
-        "type": "MX"
+        "Version": "",
+        "address": "2a06:98c1:50::ac40:2308",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "leland.ns.cloudflare.com",
+        "type": "NS"
     },
     {
-        "address": "192.178.164.27",
-        "domain": "cricbuzz.com",
-        "exchange": "alt4.aspmx.l.google.com",
-        "type": "MX"
+        "Version": "\"2025.11.1\"",
+        "address": "108.162.192.93",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "172.64.32.93",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "173.245.58.93",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2a06:98c1:50::ac40:205d",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2606:4700:50::adf5:3a5d",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2803:f800:50::6ca2:c05d",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
     },
     {
         "address": "142.250.101.27",
-        "domain": "cricbuzz.com",
+        "domain": "webnox.in",
         "exchange": "alt3.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "192.178.164.26",
+        "domain": "webnox.in",
+        "exchange": "alt4.aspmx.l.google.com",
         "type": "MX"
     },
     {
         "address": "192.178.163.27",
-        "domain": "cricbuzz.com",
+        "domain": "webnox.in",
         "exchange": "alt1.aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "2404:6800:4003:c0f::1b",
-        "domain": "cricbuzz.com",
-        "exchange": "aspmx.l.google.com",
-        "type": "MX"
-    },
-    {
-        "address": "2607:f8b0:4023:1c05::1a",
-        "domain": "cricbuzz.com",
+        "address": "172.217.78.27",
+        "domain": "webnox.in",
         "exchange": "alt2.aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "2607:f8b0:4023:2009::1b",
-        "domain": "cricbuzz.com",
-        "exchange": "alt4.aspmx.l.google.com",
+        "address": "74.125.24.27",
+        "domain": "webnox.in",
+        "exchange": "aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "2607:f8b0:4023:c06::1b",
-        "domain": "cricbuzz.com",
+        "address": "2607:f8b0:4023:c06::1a",
+        "domain": "webnox.in",
         "exchange": "alt3.aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "2607:f8b0:400e:c17::1a",
-        "domain": "cricbuzz.com",
+        "address": "2607:f8b0:4023:2009::1a",
+        "domain": "webnox.in",
+        "exchange": "alt4.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2607:f8b0:400e:c17::1b",
+        "domain": "webnox.in",
         "exchange": "alt1.aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "13.235.191.202",
-        "domain": "cricbuzz.com",
-        "name": "cricbuzz.com",
+        "address": "2607:f8b0:4023:1c05::1a",
+        "domain": "webnox.in",
+        "exchange": "alt2.aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "2404:6800:4003:c06::1b",
+        "domain": "webnox.in",
+        "exchange": "aspmx.l.google.com",
+        "type": "MX"
+    },
+    {
+        "address": "68.183.92.114",
+        "domain": "webnox.in",
+        "name": "webnox.in",
         "type": "A"
     },
     {
-        "domain": "cricbuzz.com",
-        "name": "cricbuzz.com",
-        "strings": "google-site-verification=6qCbU2ucmIR9vTgDb21zzFsHBUZkMuE5TZe2hDXu2-w",
+        "domain": "webnox.in",
+        "name": "webnox.in",
+        "strings": "v=spf1 include:_spf.google.com ~all",
         "type": "TXT"
     },
     {
-        "domain": "cricbuzz.com",
-        "name": "cricbuzz.com",
-        "strings": "google-site-verification=YumzUXJdhlFP9XYW-7E0W0wjg1vxiuQGxlLvr-Vgwiw",
+        "domain": "webnox.in",
+        "name": "webnox.in",
+        "strings": "v=spf1 include:_spf.odoo.com include:_spf.google.com ~all",
         "type": "TXT"
     },
     {
-        "domain": "cricbuzz.com",
-        "name": "cricbuzz.com",
-        "strings": "v=spf1 ip4:169.38.73.165 ip4:161.202.169.175 include:_spf.google.com -all",
+        "domain": "webnox.in",
+        "name": "_dmarc.webnox.in",
+        "strings": "v=DMARC1; p=none;",
         "type": "TXT"
     },
     {
-        "domain": "cricbuzz.com",
-        "name": "cricbuzz.com",
-        "strings": "MS=ms59781144",
-        "type": "TXT"
-    },
-    {
-        "domain": "cricbuzz.com",
-        "name": "_dmarc.cricbuzz.com",
-        "strings": "v=DMARC1; p=reject; rua=mailto:dmarc@cricbuzz.com, mailto:dmarc@cricbuzz.com; pct=100; adkim=s; aspf=s",
+        "domain": "webnox.in",
+        "name": "_dmarc.webnox.in",
+        "strings": "v=DMARC1; p=none; rua=mailto:contact@webnox.in",
         "type": "TXT"
     }
 ]

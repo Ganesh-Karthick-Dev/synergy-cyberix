@@ -1,0 +1,12 @@
+{
+  "id": "log_1762580151009_vbbhtxlbp",
+  "timestamp": "2025-11-08T05:35:51.009Z",
+  "scanType": "server",
+  "scanName": "Server Scan",
+  "target": "web",
+  "status": "completed",
+  "startTime": "2025-11-08T05:20:51.009Z",
+  "endTime": "2025-11-08T05:35:51.009Z",
+  "duration": 900000,
+  "result": "Server scan completed successfully"
+}

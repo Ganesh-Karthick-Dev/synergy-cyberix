@@ -50,7 +50,7 @@ function Sidebar({ menuItems, activeView, onViewChange, collapsed, onToggleColla
       </div>
 
       {/* Navigation Menu */}
-      <nav className="px-3 py-6 space-y-2">
+      <nav className="px-3 py-6 space-y-2 overflow-y-auto h-[calc(100vh-200px)] scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600 scrollbar-track-transparent">
         <ul className="space-y-1">
           {menuItems.map((item) => (
             <li key={item.id}>

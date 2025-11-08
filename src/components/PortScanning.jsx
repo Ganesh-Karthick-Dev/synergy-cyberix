@@ -440,6 +440,21 @@ if __name__=='__main__':
       addLog(`Total Elapsed Time: ${formatElapsedTime(finalElapsed)}`, 'info')
       
       showSuccess('Port scan completed successfully!')
+      
+      // Send notification
+      if (window.cyberGuard?.showNotification) {
+        try {
+          window.cyberGuard.showNotification({
+            title: 'Port Scan Completed',
+            body: `Port scan for ${targetUrl || ipAddress || 'target'} has been completed successfully.`,
+            viewId: 'port-scan'
+          }).catch(err => {
+            console.log('Notification not available:', err?.message || 'Unknown error')
+          })
+        } catch (err) {
+          console.log('Notification not available:', err?.message || 'Unknown error')
+        }
+      }
     } catch (error) {
       const endDateTime = new Date()
       setEndTime(endDateTime.getTime())
@@ -503,9 +518,19 @@ if __name__=='__main__':
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
-      <div className="rounded-2xl shadow-2xl border border-white/30 dark:border-white/20 p-6 bg-gradient-to-br from-white/40 via-white/30 to-white/20 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
+      <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-6 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 dark:from-gray-100 dark:to-gray-300 bg-clip-text text-transparent">Port Scanning</h2>
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-orange-500/20 rounded-lg">
+              <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Port Scanning</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Identify open ports and running services on target hosts</p>
+            </div>
+          </div>
           <div className="flex items-center gap-3">
             {/* Filters aligned right & only visible when results exist */}
             {scanResult?.nmap_scan?.hosts?.length > 0 && (
@@ -554,10 +579,10 @@ if __name__=='__main__':
             )}
             <button
               onClick={() => setShowHelp(true)}
-              className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:shadow-blue-500/70 hover:scale-110 transition-all duration-200"
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:shadow-blue-500/70 hover:scale-110 transition-all duration-200"
               title="About this scan"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
             </button>
@@ -718,7 +743,7 @@ if __name__=='__main__':
       )}
       {/* Logs Section */}
       {logs.length > 0 && (
-        <div className="rounded-2xl shadow-2xl border border-white/30 dark:border-white/20 p-6 bg-gradient-to-br from-white/40 via-white/30 to-white/20 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
+        <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-6 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scan Logs</h3>
             <div className="flex space-x-2">
@@ -767,7 +792,7 @@ if __name__=='__main__':
 
       {/* Results Section */}
       {scanResult && (
-        <div className="rounded-2xl shadow-2xl border border-white/30 dark:border-white/20 p-6 bg-gradient-to-br from-white/40 via-white/30 to-white/20 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
+        <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-6 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scan Results</h3>
             

@@ -1,9 +1,22 @@
 /**
  * Grok API Service for AI Suggestions
  * Handles API calls to Grok (xAI) for generating security scan suggestions
- * Now uses the centralized API service with axios interceptors
  */
 
+// Get API key from environment variable (Vite uses import.meta.env, Node.js uses process.env)
+const GROK_API_KEY = import.meta.env.VITE_GROK_API_KEY || (typeof process !== 'undefined' && process.env ? process.env.GROK_API_KEY : undefined)
+const GROK_API_URL = 'https://api.x.ai/v1/chat/completions'
+
+// Validate API key is present (only warn in development, not in production)
+// This is an optional feature, so don't spam console warnings
+if (!GROK_API_KEY && import.meta.env.DEV) {
+  // Only show warning in development mode
+  console.warn('⚠️ GROK_API_KEY is not set. AI suggestions will not work. Please set VITE_GROK_API_KEY in your .env file.')
+}
+
+/**
+ * Now uses the centralized API service with axios interceptors
+ */
 import { aiApi } from '../services/index.js'
 
 /**

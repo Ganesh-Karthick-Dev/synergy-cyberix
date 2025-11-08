@@ -1,9 +1,15 @@
 import { useScanning } from '../context/ScanningContext'
+import { useGlobalScanState } from '../context/GlobalScanContext'
 
 function ScanningIndicator() {
   const { scanStatus, abortScan } = useScanning()
+  const { activeScans } = useGlobalScanState()
 
   if (!scanStatus.isScanning) return null
+  
+  // Hide ScanningIndicator for Network Scan - FloatingProgressCard handles it
+  const hasNetworkScanFloatingCard = activeScans.some(s => s.scanType === 'Network Scan' && s.viewId === 'network-scan')
+  if (hasNetworkScanFloatingCard) return null
 
   return (
     <div className="fixed bottom-4 right-4 z-50">
