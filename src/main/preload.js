@@ -6,6 +6,12 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   installWsl: () => ipcRenderer.invoke('os:installWsl'),
   onWslInstallLog: (listener) => ipcRenderer.on('os:wslInstallLog', (_e, data) => listener(data)),
   onWslInstallDone: (listener) => ipcRenderer.once('os:wslInstallDone', (_e, ok) => listener(ok)),
+  // WSL Installation and User Management
+  installWslDirect: () => ipcRenderer.invoke('wsl:install'),
+  createWslUser: (username, password) => ipcRenderer.invoke('wsl:createUser', username, password),
+  validateWslCredentials: (username, password) => ipcRenderer.invoke('wsl:validateCredentials', username, password),
+  onWslInstallProgress: (listener) => ipcRenderer.on('wsl:installProgress', (_e, message) => listener(message)),
+  onWslUserCreateProgress: (listener) => ipcRenderer.on('wsl:userCreateProgress', (_e, message) => listener(message)),
   startScan: (target) => ipcRenderer.invoke('scan:start', target),
   onScanProgress: (listener) => ipcRenderer.on('scan:progress', (_e, upd) => listener(upd)),
   onScanDone: (listener) => ipcRenderer.on('scan:done', (_e, data) => listener(data)),
@@ -82,6 +88,11 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   startMaldefScan: (url) => ipcRenderer.invoke('maldef:start', url),
   onMaldefProgress: (listener) => ipcRenderer.on('maldef:progress', (_e, upd) => listener(upd)),
   onMaldefDone: (listener) => ipcRenderer.on('maldef:done', (_e, data) => listener(data)),
+  cancelMaldefScan: () => ipcRenderer.invoke('maldef:cancel'),
+  // Malware & Defacement Tools
+  checkMaldefTools: () => ipcRenderer.invoke('maldef:checkTools'),
+  installMaldefTools: (password) => ipcRenderer.invoke('maldef:installTools', password),
+  onMaldefToolsProgress: (listener) => ipcRenderer.on('maldef:toolsProgress', (_e, upd) => listener(upd)),
   // Setup
   selectDirectory: () => ipcRenderer.invoke('setup:selectDirectory'),
   createDirectory: (path) => ipcRenderer.invoke('setup:createDirectory', path),
@@ -159,6 +170,52 @@ contextBridge.exposeInMainWorld('cyberGuard', {
     if (handler) {
       ipcRenderer.removeListener('notification:sent', handler)
     }
+  }
+  checkRequiredToolsOnly: (password) => ipcRenderer.invoke('tools:checkRequiredToolsOnly', password),
+  // Phishing detection with dnstwist
+  runDnstwist: (domain, password) => ipcRenderer.invoke('phishing:runDnstwist', domain, password),
+  onPhishingLog: (listener) => {
+    const handler = (_e, line) => listener(line);
+    ipcRenderer.on('phishing:log', handler);
+    // Return cleanup function
+    return () => {
+      ipcRenderer.removeListener('phishing:log', handler);
+    };
+  },
+  // Convert JSON to readable text using tgpt
+  convertPhishingJsonToText: (jsonData) => ipcRenderer.invoke('phishing:convertJsonToText', jsonData),
+  // Convert malware/defacement JSON to readable text using tgpt
+  convertMaldefJsonToText: (jsonData) => ipcRenderer.invoke('maldef:convertJsonToText', jsonData),
+  // Setup/installer (rootless with -u root inside WSL)
+  checkWSLRootless: () => ipcRenderer.invoke('check-wsl'),
+  checkAllToolsRootless: () => ipcRenderer.invoke('check-tools'),
+  installAllToolsRootless: () => ipcRenderer.invoke('install-tools'),
+  onInstallProgress: (listener) => ipcRenderer.on('install-progress', (_e, progress) => listener(progress)),
+  // GitHub OAuth and Repository Scanner
+  initiateGitHubAuth: () => ipcRenderer.invoke('github:initiate-auth'),
+  pollGitHubToken: (deviceCode, userCode) => ipcRenderer.invoke('github:poll-token', deviceCode, userCode),
+  onGitHubAuthProgress: (listener) => {
+    const handler = (_e, progress) => listener(progress);
+    ipcRenderer.on('github:auth-progress', handler);
+    return () => ipcRenderer.removeListener('github:auth-progress', handler);
+  },
+  getGitHubRepositories: (accessToken) => ipcRenderer.invoke('github:get-repositories', accessToken),
+  onGitHubReposProgress: (listener) => {
+    const handler = (_e, progress) => listener(progress);
+    ipcRenderer.on('github:repos-progress', handler);
+    return () => ipcRenderer.removeListener('github:repos-progress', handler);
+  },
+  // GitHub Repository Scanner (replaces old API scanner)
+  startAPIScan: (repositories, accessToken) => ipcRenderer.invoke('apiscan:start', repositories, accessToken),
+  onAPIScanProgress: (listener) => {
+    const handler = (_e, progress) => listener(progress);
+    ipcRenderer.on('apiscan:progress', handler);
+    return () => ipcRenderer.removeListener('apiscan:progress', handler);
+  },
+  onAPIScanComplete: (listener) => {
+    const handler = (_e, results) => listener(results);
+    ipcRenderer.on('apiscan:complete', handler);
+    return () => ipcRenderer.removeListener('apiscan:complete', handler);
   }
 });
 

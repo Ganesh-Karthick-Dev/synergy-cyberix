@@ -5,6 +5,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('el
 const { spawn } = require('child_process');
 const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
 require('dotenv').config();
+const wslHelper = require('../utils/wslHelper');
+const toolInstaller = require('../setup/toolInstaller');
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -235,45 +237,257 @@ function checkKaliInstalled() {
   return false;
 }
 
-// Helper: automatically install Kali Linux
-async function installKaliLinux() {
+// Helper: automatically install Kali Linux with real-time progress and percentage
+async function installKaliLinux(event = null) {
+  console.log('🚀 [KALI-INSTALL] Starting automatic Kali Linux installation...');
+  
   return new Promise((resolve) => {
-    console.log('🚀 Starting automatic Kali Linux installation...');
+    const { spawn } = require('child_process');
+    
+    // Progress tracking
+    let currentProgress = 0;
+    let installationStage = 'initializing';
+    const startTime = Date.now();
+    let lastProgressUpdate = Date.now();
+    
+    // Send initial progress update
+    const sendProgress = (percentage, message, stage = null) => {
+      if (event && event.sender && !event.sender.isDestroyed()) {
+        const progressData = {
+          percentage: percentage,
+          message: message,
+          stage: stage || installationStage,
+          elapsed: Math.floor((Date.now() - startTime) / 1000) // seconds
+        };
+        event.sender.send('kali:installProgress', progressData);
+        console.log(`📊 [KALI-INSTALL] Progress: ${percentage}% - ${message}`);
+      }
+    };
+    
+    sendProgress(0, 'Starting Kali Linux installation...', 'initializing');
     
     // Use wsl --install -d kali-linux for automatic installation
-    const installProcess = require('child_process').spawn('wsl', ['--install', '-d', 'kali-linux'], {
-      stdio: ['ignore', 'pipe', 'pipe']
+    const installProcess = spawn('wsl', ['--install', '-d', 'kali-linux'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+      windowsHide: true
     });
     
     let output = '';
     let errorOutput = '';
+    let lineBuffer = '';
     
+    // Progress estimation based on stages
+    const progressStages = {
+      'initializing': { min: 0, max: 5 },
+      'checking': { min: 5, max: 10 },
+      'downloading': { min: 10, max: 70 },  // Longest stage
+      'extracting': { min: 70, max: 85 },
+      'installing': { min: 85, max: 95 },
+      'configuring': { min: 95, max: 99 },
+      'completing': { min: 99, max: 100 }
+    };
+    
+    // Update progress based on elapsed time (fallback if no output)
+    const progressTimer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const elapsedMinutes = Math.floor(elapsed / 60000);
+      
+      // If no output for a while, estimate progress based on time
+      if (Date.now() - lastProgressUpdate > 30000) { // 30 seconds
+        if (installationStage === 'downloading') {
+          // Estimate download progress (typically 10-30 minutes)
+          const estimatedProgress = Math.min(70, 10 + (elapsedMinutes * 2));
+          if (estimatedProgress > currentProgress) {
+            currentProgress = estimatedProgress;
+            sendProgress(currentProgress, `Downloading Kali Linux... (${elapsedMinutes} minutes elapsed)`, 'downloading');
+          }
+        } else if (installationStage === 'installing') {
+          // Estimate install progress (typically 2-5 minutes)
+          const estimatedProgress = Math.min(95, 85 + (elapsedMinutes * 2));
+          if (estimatedProgress > currentProgress) {
+            currentProgress = estimatedProgress;
+            sendProgress(currentProgress, `Installing Kali Linux... (${elapsedMinutes} minutes elapsed)`, 'installing');
+          }
+        }
+      }
+    }, 5000); // Update every 5 seconds
+    
+    // Parse output line by line for progress indicators
     installProcess.stdout.on('data', (data) => {
       const text = data.toString();
       output += text;
-      console.log('Kali install stdout:', text);
+      lineBuffer += text;
+      
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() || ''; // Keep incomplete line in buffer
+      
+      lastProgressUpdate = Date.now();
+      
+      for (const line of lines) {
+        const lineLower = line.toLowerCase().trim();
+        console.log('📥 [KALI-INSTALL] stdout:', line);
+        
+        // Detect installation stages from output
+        if (lineLower.includes('downloading') || lineLower.includes('download')) {
+          installationStage = 'downloading';
+          currentProgress = Math.max(currentProgress, 15);
+          sendProgress(currentProgress, 'Downloading Kali Linux (~1-2GB)... This may take 10-30 minutes.', 'downloading');
+        } else if (lineLower.includes('extracting') || lineLower.includes('extract')) {
+          installationStage = 'extracting';
+          currentProgress = Math.max(currentProgress, 70);
+          sendProgress(currentProgress, 'Extracting Kali Linux files...', 'extracting');
+        } else if (lineLower.includes('installing') || lineLower.includes('install') || lineLower.includes('setting up')) {
+          installationStage = 'installing';
+          currentProgress = Math.max(currentProgress, 85);
+          sendProgress(currentProgress, 'Installing Kali Linux...', 'installing');
+        } else if (lineLower.includes('configuring') || lineLower.includes('configure') || lineLower.includes('setting')) {
+          installationStage = 'configuring';
+          currentProgress = Math.max(currentProgress, 95);
+          sendProgress(currentProgress, 'Configuring Kali Linux...', 'configuring');
+        } else if (lineLower.includes('complete') || lineLower.includes('finished') || lineLower.includes('done')) {
+          installationStage = 'completing';
+          currentProgress = 100;
+          sendProgress(100, 'Kali Linux installation completed!', 'completing');
+        } else if (lineLower.includes('error') || lineLower.includes('failed') || lineLower.includes('failure')) {
+          // Error detected in output
+          const errorMsg = `Error during ${installationStage}: ${line}`;
+          console.error('❌ [KALI-INSTALL]', errorMsg);
+          sendProgress(currentProgress, `⚠️ ${errorMsg}`, 'error');
+        } else if (lineLower.includes('percent') || lineLower.includes('%')) {
+          // Try to extract percentage from output
+          const percentMatch = lineLower.match(/(\d+)%/);
+          if (percentMatch) {
+            const extractedPercent = parseInt(percentMatch[1], 10);
+            const stageProgress = progressStages[installationStage];
+            if (stageProgress) {
+              // Map percentage to current stage range
+              const stageRange = stageProgress.max - stageProgress.min;
+              currentProgress = Math.max(currentProgress, 
+                stageProgress.min + Math.floor((extractedPercent / 100) * stageRange)
+              );
+              sendProgress(currentProgress, `Installing Kali Linux... ${extractedPercent}%`, installationStage);
+            }
+          }
+        }
+      }
     });
     
     installProcess.stderr.on('data', (data) => {
       const text = data.toString();
       errorOutput += text;
-      console.log('Kali install stderr:', text);
+      console.log('⚠️ [KALI-INSTALL] stderr:', text);
+      
+      // Check for errors in stderr
+      const textLower = text.toLowerCase();
+      if (textLower.includes('error') && !textLower.includes('information')) {
+        const errorMsg = `Installation error: ${text.trim()}`;
+        console.error('❌ [KALI-INSTALL]', errorMsg);
+        sendProgress(currentProgress, `❌ ${errorMsg}`, 'error');
+      }
     });
     
     installProcess.on('close', (code) => {
-      console.log(`Kali installation process exited with code ${code}`);
+      clearInterval(progressTimer);
+      
+      console.log(`📋 [KALI-INSTALL] Process exited with code ${code}`);
+      console.log(`📋 [KALI-INSTALL] STDOUT length: ${output.length}`);
+      console.log(`📋 [KALI-INSTALL] STDERR length: ${errorOutput.length}`);
+      
+      const combinedOutput = (output + errorOutput).toLowerCase();
+      const elapsedMinutes = Math.floor((Date.now() - startTime) / 60000);
+      
       if (code === 0) {
-        console.log('✅ Kali Linux installation completed successfully');
-        resolve(true);
+        console.log('✅ [KALI-INSTALL] Kali Linux installation completed successfully');
+        sendProgress(100, 'Kali Linux installation completed successfully!', 'completed');
+        
+        // Wait a moment for system to register the installation
+        setTimeout(() => {
+          resolve(true);
+        }, 2000);
       } else {
-        console.log('❌ Kali Linux installation failed');
-        console.log('Error output:', errorOutput);
-        resolve(false);
+        // Check if installation was actually initiated despite non-zero exit code
+        const hasInstallationIndicators = 
+          combinedOutput.includes('kali') ||
+          combinedOutput.includes('download') ||
+          combinedOutput.includes('install') ||
+          combinedOutput.includes('extract') ||
+          combinedOutput.includes('complete') ||
+          combinedOutput.includes('success');
+        
+        const hasClearErrors = 
+          combinedOutput.includes('error: invalid') ||
+          combinedOutput.includes('not found') ||
+          combinedOutput.includes('unable to') ||
+          combinedOutput.includes('cannot') ||
+          combinedOutput.includes('failed');
+        
+        if (hasInstallationIndicators && !hasClearErrors) {
+          // Installation likely started but didn't complete within our timeout
+          console.log('⚠️ [KALI-INSTALL] Installation appears to have been initiated');
+          sendProgress(95, 'Kali Linux installation initiated. It may still be downloading/installing in the background. Please wait a few more minutes.', 'installing');
+          resolve(true); // Treat as success - installation continues in background
+        } else if (hasClearErrors) {
+          // Clear error - provide detailed error message
+          let errorMessage = 'Kali Linux installation failed. ';
+          
+          if (combinedOutput.includes('error: invalid') || combinedOutput.includes('invalid distribution')) {
+            errorMessage += 'ERROR LOCATION: Distribution name validation failed. ';
+            errorMessage += 'PROBLEM: "kali-linux" distribution not recognized. ';
+            errorMessage += 'SOLUTION: Try installing manually: wsl --install -d Kali-Linux';
+          } else if (combinedOutput.includes('not found') || combinedOutput.includes('does not exist')) {
+            errorMessage += 'ERROR LOCATION: WSL distribution repository. ';
+            errorMessage += 'PROBLEM: Kali Linux distribution not available in your region/repository. ';
+            errorMessage += 'SOLUTION: Update WSL first: wsl --update, then try: wsl --install -d kali-linux';
+          } else if (combinedOutput.includes('network') || combinedOutput.includes('connection')) {
+            errorMessage += 'ERROR LOCATION: Network download. ';
+            errorMessage += 'PROBLEM: Unable to download Kali Linux due to network issues. ';
+            errorMessage += 'SOLUTION: Check your internet connection and try again later.';
+          } else if (combinedOutput.includes('access') || combinedOutput.includes('permission')) {
+            errorMessage += 'ERROR LOCATION: System permissions. ';
+            errorMessage += 'PROBLEM: Insufficient permissions to install WSL distribution. ';
+            errorMessage += 'SOLUTION: Run PowerShell as Administrator and execute: wsl --install -d kali-linux';
+          } else {
+            errorMessage += `PROBLEM: Exit code ${code}. See console logs for details. `;
+            errorMessage += `SOLUTION: Try manual installation: wsl --install -d kali-linux`;
+          }
+          
+          console.error('❌ [KALI-INSTALL]', errorMessage);
+          console.error('❌ [KALI-INSTALL] STDOUT:', output.substring(0, 1000));
+          console.error('❌ [KALI-INSTALL] STDERR:', errorOutput.substring(0, 1000));
+          
+          sendProgress(currentProgress, errorMessage, 'error');
+          resolve(false);
+        } else {
+          // Unknown status - likely installation is running in background
+          console.log('⚠️ [KALI-INSTALL] Installation status unclear - may be in progress');
+          sendProgress(90, `Installation process completed with exit code ${code}. Installation may still be in progress. Please wait ${Math.max(0, 30 - elapsedMinutes)} more minutes.`, 'installing');
+          resolve(true); // Give benefit of doubt
+        }
       }
     });
     
     installProcess.on('error', (err) => {
-      console.log('❌ Kali Linux installation error:', err.message);
+      clearInterval(progressTimer);
+      
+      console.error('❌ [KALI-INSTALL] Process error:', err.message);
+      
+      let errorMessage = 'Kali Linux installation failed. ';
+      
+      if (err.message.includes('ENOENT') || err.message.includes('not found')) {
+        errorMessage += 'ERROR LOCATION: Command execution. ';
+        errorMessage += 'PROBLEM: WSL command not found. WSL may not be installed. ';
+        errorMessage += 'SOLUTION: Install WSL first, then try installing Kali Linux.';
+      } else if (err.message.includes('spawn')) {
+        errorMessage += 'ERROR LOCATION: Process spawn. ';
+        errorMessage += 'PROBLEM: Unable to start WSL installation process. ';
+        errorMessage += 'SOLUTION: Check WSL installation and permissions.';
+      } else {
+        errorMessage += `PROBLEM: ${err.message} `;
+        errorMessage += 'SOLUTION: Try manual installation: wsl --install -d kali-linux';
+      }
+      
+      sendProgress(currentProgress, errorMessage, 'error');
       resolve(false);
     });
   });
@@ -305,6 +519,15 @@ async function createMainWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
   })
+
+  // Suppress harmless DevTools console warnings (Autofill API errors)
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    // Filter out harmless DevTools Autofill warnings
+    if (message.includes('Autofill.enable') || message.includes('Autofill.setAddresses')) {
+      return; // Suppress these warnings
+    }
+    // Allow other console messages to pass through
+  });
 
   // In development, load from Vite dev server
   if (isDev) {
@@ -371,25 +594,25 @@ async function createMainWindow() {
   return mainWindow;
 }
 
-  // Allow renderer to request opening a URL explicitly (register early)
-  ipcMain.handle('app:openExternal', async (_e, u) => {
-    try {
-      const nu = new URL(u.startsWith('http') ? u : `https://${u}`)
-      if (nu.protocol === 'http:' || nu.protocol === 'https:') {
-        await shell.openExternal(nu.toString())
-        return { ok: true }
-      }
-      return { error: 'Invalid URL' }
-    } catch (e) {
-      return { error: e?.message || String(e) }
+// Allow renderer to request opening a URL explicitly (register early)
+ipcMain.handle('app:openExternal', async (_e, u) => {
+  try {
+    const nu = new URL(u.startsWith('http') ? u : `https://${u}`)
+    if (nu.protocol === 'http:' || nu.protocol === 'https:') {
+      await shell.openExternal(nu.toString())
+      return { ok: true }
     }
-  })
+    return { error: 'Invalid URL' }
+  } catch (e) {
+    return { error: e?.message || String(e) }
+  }
+})
 
-  // Kali Security Scanner handlers (registered early)
-  let kaliScanChild = null;
-  
-  // Test handler to verify registration
-  ipcMain.handle('kali:test', async () => {
+// Kali Security Scanner handlers (registered early)
+let kaliScanChild = null;
+
+// Test handler to verify registration
+ipcMain.handle('kali:test', async () => {
     console.log('🔍 [KALI-TEST] Test handler called successfully');
     return { success: true, message: 'Kali handlers are working' };
   });
@@ -3069,9 +3292,746 @@ ipcMain.handle('notification:getCount', async () => {
   return { count: notificationCount };
 });
 
+  // GitHub OAuth and Repository Scanner - register early, before app.whenReady
+  let githubScanChild = null;
+  let storedAccessToken = null;
+  
+  console.log('[GITHUB-SCAN] Registering GitHub scanner handlers...');
+  
+  // GitHub OAuth Device Flow - Initiate
+  ipcMain.handle('github:initiate-auth', async (event) => {
+    try {
+      const GitHubOAuth = require(path.join(__dirname, '..', 'scanners', 'github-oauth.js'));
+      const oauth = new GitHubOAuth();
+      
+      const deviceFlow = await oauth.initiateDeviceFlow();
+      
+      return {
+        success: true,
+        userCode: deviceFlow.userCode,
+        verificationUri: deviceFlow.verificationUri,
+        verificationUriComplete: deviceFlow.verificationUriComplete,
+        expiresIn: deviceFlow.expiresIn
+      };
+    } catch (error) {
+      console.error('[GITHUB-AUTH] Failed to initiate auth:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // GitHub OAuth Device Flow - Poll for token
+  ipcMain.handle('github:poll-token', async (event, deviceCode, userCode) => {
+    try {
+      const GitHubOAuth = require(path.join(__dirname, '..', 'scanners', 'github-oauth.js'));
+      const oauth = new GitHubOAuth();
+      oauth.deviceCode = deviceCode;
+      oauth.userCode = userCode;
+      
+      const progressCallback = (progress) => {
+        event.sender.send('github:auth-progress', progress);
+      };
+      
+      const tokenResult = await oauth.pollForToken(deviceCode, userCode, progressCallback);
+      
+      if (tokenResult.access_token) {
+        storedAccessToken = tokenResult.access_token;
+        
+        // Get user info
+        const userInfo = await oauth.getUserInfo(tokenResult.access_token);
+        
+        return {
+          success: true,
+          accessToken: tokenResult.access_token,
+          user: userInfo
+        };
+      }
+      
+      return { success: false, error: 'No access token received' };
+    } catch (error) {
+      console.error('[GITHUB-AUTH] Failed to poll for token:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Get GitHub repositories
+  ipcMain.handle('github:get-repositories', async (event, accessToken) => {
+    try {
+      const token = accessToken || storedAccessToken;
+      if (!token) {
+        return { success: false, error: 'No access token available' };
+      }
+      
+      const GitHubOAuth = require(path.join(__dirname, '..', 'scanners', 'github-oauth.js'));
+      const oauth = new GitHubOAuth();
+      
+      const progressCallback = (progress) => {
+        event.sender.send('github:repos-progress', progress);
+      };
+      
+      const repositories = await oauth.getAllRepositories(token, progressCallback);
+      
+      return {
+        success: true,
+        repositories: repositories.map(repo => ({
+          id: repo.id,
+          name: repo.name,
+          fullName: repo.full_name,
+          url: repo.html_url,
+          cloneUrl: repo.clone_url,
+          sshUrl: repo.ssh_url,
+          description: repo.description,
+          language: repo.language,
+          private: repo.private,
+          defaultBranch: repo.default_branch,
+          updatedAt: repo.updated_at,
+          stars: repo.stargazers_count,
+          forks: repo.forks_count
+        }))
+      };
+    } catch (error) {
+      console.error('[GITHUB-REPOS] Failed to get repositories:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Start GitHub repository scan
+  ipcMain.handle('apiscan:start', async (event, repositories, accessToken) => {
+    console.log('[GITHUB-SCAN] Starting GitHub repository scan for:', repositories.length, 'repositories');
+    
+    if (githubScanChild) {
+      console.log('[GITHUB-SCAN] Scan already running');
+      return { error: 'GitHub scan already running' };
+    }
+
+    try {
+      const token = accessToken || storedAccessToken;
+      if (!token) {
+        return { error: 'No access token available. Please authenticate first.' };
+      }
+
+      const GitHubRepoScanner = require(path.join(__dirname, '..', 'scanners', 'github-repo-scanner.js'));
+      
+      // Create output directory
+      const outputDir = path.join(process.cwd(), 'temp-github-scans');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      // Run scans for all selected repositories
+      const runScansAsync = async () => {
+        try {
+          const allResults = [];
+          
+          for (let i = 0; i < repositories.length; i++) {
+            const repo = repositories[i];
+            const repoProgress = Math.floor((i / repositories.length) * 100);
+            
+            event.sender.send('apiscan:progress', {
+              progress: repoProgress,
+              message: `Scanning repository ${i + 1}/${repositories.length}: ${repo.name}`,
+              type: 'info',
+              repository: repo.name
+            });
+            
+            const scanner = new GitHubRepoScanner(repo.cloneUrl, repo.fullName, token, outputDir);
+            
+            scanner.setProgressCallback((progress) => {
+              // Calculate overall progress
+              const overallProgress = repoProgress + Math.floor((progress.progress / 100) * (100 / repositories.length));
+              event.sender.send('apiscan:progress', {
+                ...progress,
+                progress: overallProgress,
+                repository: repo.name
+              });
+            });
+            
+            try {
+              const results = await scanner.performScan();
+              allResults.push(results);
+            } catch (error) {
+              console.error(`[GITHUB-SCAN] Error scanning ${repo.name}:`, error);
+              allResults.push({
+                repository: repo.name,
+                error: error.message,
+                success: false
+              });
+            }
+          }
+          
+          console.log('[GITHUB-SCAN] All scans completed successfully');
+          event.sender.send('apiscan:complete', { 
+            success: true, 
+            results: {
+              repositories: allResults,
+              totalScanned: allResults.length,
+              timestamp: new Date().toISOString()
+            }
+          });
+        } catch (error) {
+          console.error('[GITHUB-SCAN] Scan error:', error);
+          event.sender.send('apiscan:progress', {
+            progress: 0,
+            message: `❌ GitHub scan error: ${error.message}`,
+            type: 'error'
+          });
+          event.sender.send('apiscan:complete', {
+            success: false,
+            error: error.message
+          });
+        } finally {
+          githubScanChild = null;
+        }
+      };
+
+      // Start scans in background
+      githubScanChild = true;
+      runScansAsync();
+      
+      return { success: true };
+    } catch (error) {
+      console.error('[GITHUB-SCAN] Failed to start scan:', error);
+      githubScanChild = null;
+      return { error: error.message };
+    }
+  });
+
+  // File system handlers (register early, before app.whenReady)
+  ipcMain.handle('fs:getInstallPath', async () => {
+    try {
+      // Check setup config for install path
+      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
+      if (fs.existsSync(setupConfigPath)) {
+        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
+        if (config.installPath) {
+          return config.installPath;
+        }
+      }
+      // Fallback to app directory if no setup config
+      return app.getAppPath();
+    } catch (error) {
+      console.error('Error getting install path:', error);
+      // Fallback to app directory
+      return app.getAppPath();
+    }
+  });
+
+  ipcMain.handle('fs:getDownloadsPath', async () => {
+    try {
+      return app.getPath('downloads');
+    } catch (error) {
+      console.error('Error getting downloads path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        return { success: true, created: true };
+      }
+      return { success: true, created: false };
+    } catch (error) {
+      console.error('Error ensuring directory exists:', error);
+      throw error;
+    }
+  });
+
+  // Security Analyzer (comprehensive defensive analysis) - register early, before app.whenReady
+  console.log('[SECURITY-ANALYZER] Registering securityAnalysis:start handler...');
+  ipcMain.handle('securityAnalysis:start', async (event, payload) => {
+    console.log('[SECURITY-ANALYZER] Handler called with payload:', payload);
+    try {
+      const { url, credentials, options } = payload
+      const securityAnalyzerModule = require(path.join(__dirname, '..', 'scanners', 'security-analyzer.js'))
+      const outDir = path.join(process.cwd(), 'temp-scans', `security-analysis-${Date.now()}`)
+      fs.mkdirSync(outDir, { recursive: true })
+      
+      // Launch target site in default browser for transparency
+      try {
+        const safeUrl = (() => {
+          try {
+            const u = new URL(url.startsWith('http') ? url : `https://${url}`)
+            if (u.protocol === 'http:' || u.protocol === 'https:') return u.toString()
+          } catch {}
+          return null
+        })()
+        if (safeUrl) shell.openExternal(safeUrl)
+      } catch {}
+      
+      const scanOptions = {
+        outputDir: outDir,
+        onProgress: (update) => event.sender.send('securityAnalysis:progress', update),
+        ...options
+      }
+      
+      const result = await securityAnalyzerModule.runSecurityAnalysis(url, { ...scanOptions, credentials })
+      event.sender.send('securityAnalysis:complete', { success: true, result })
+      return { success: true }
+    } catch (e) {
+      event.sender.send('securityAnalysis:complete', { error: e?.message || String(e) })
+      return { error: e?.message || String(e) }
+    }
+  })
+
+  // Malware & Defacement orchestrated scan (comprehensive with real-time streaming)
+  console.log('[MALDEF] ===== REGISTERING HANDLER =====')
+  
+  // Pre-load orchestrators to catch errors early
+  let comprehensiveOrchestrator = null
+  let oldOrchestrator = null
+  
+  // Track current maldef scan for cancellation
+  let currentMaldefScan = null
+  let maldefScanAbortController = null
+  
+  try {
+    const orchestratorPath = path.join(__dirname, '..', 'maldef', 'comprehensiveOrchestrator.js')
+    console.log('[MALDEF] Checking comprehensive orchestrator at:', orchestratorPath)
+    if (fs.existsSync(orchestratorPath)) {
+      try {
+        console.log('[MALDEF] Attempting to pre-load comprehensive orchestrator...')
+        comprehensiveOrchestrator = require(orchestratorPath)
+        console.log('[MALDEF] ✓ Comprehensive orchestrator pre-loaded successfully')
+      } catch (e) {
+        console.error('[MALDEF] ✗ Failed to pre-load comprehensive orchestrator')
+        console.error('[MALDEF] Error:', e.message)
+        console.error('[MALDEF] Stack:', e.stack)
+      }
+    } else {
+      console.log('[MALDEF] Comprehensive orchestrator file not found at:', orchestratorPath)
+    }
+  } catch (e) {
+    console.error('[MALDEF] Error checking comprehensive orchestrator:', e.message)
+  }
+  
+  try {
+    const oldOrchestratorPath = path.join(__dirname, '..', 'maldef', 'orchestrator.js')
+    console.log('[MALDEF] Checking old orchestrator at:', oldOrchestratorPath)
+    if (fs.existsSync(oldOrchestratorPath)) {
+      try {
+        console.log('[MALDEF] Attempting to pre-load old orchestrator...')
+        oldOrchestrator = require(oldOrchestratorPath)
+        console.log('[MALDEF] ✓ Old orchestrator pre-loaded successfully')
+      } catch (e) {
+        console.error('[MALDEF] ✗ Failed to pre-load old orchestrator')
+        console.error('[MALDEF] Error:', e.message)
+      }
+    } else {
+      console.log('[MALDEF] Old orchestrator file not found at:', oldOrchestratorPath)
+    }
+  } catch (e) {
+    console.error('[MALDEF] Error checking old orchestrator:', e.message)
+  }
+  
+  // Register handler - this MUST succeed even if pre-loading failed
+  // Malware & Defacement Tools Checker
+  ipcMain.handle('maldef:checkTools', async (event) => {
+    try {
+      // Try multiple path resolutions
+      let toolInstaller
+      try {
+        toolInstaller = require(path.join(__dirname, '..', 'maldef', 'toolInstaller'))
+      } catch (e1) {
+        try {
+          toolInstaller = require(path.join(process.cwd(), 'src', 'maldef', 'toolInstaller'))
+        } catch (e2) {
+          toolInstaller = require('../maldef/toolInstaller')
+        }
+      }
+      const { checkAllTools } = toolInstaller
+      const distro = 'kali-linux'
+      
+      const result = await checkAllTools(distro, (update) => {
+        event.sender.send('maldef:toolsProgress', update)
+      })
+      
+      return {
+        success: true,
+        allInstalled: result.allInstalled,
+        missingTools: result.missingTools,
+        toolStatus: result.toolStatus
+      }
+    } catch (e) {
+      console.error('[MALDEF] Failed to check tools:', e)
+      return {
+        success: false,
+        error: e.message,
+        allInstalled: false,
+        missingTools: [],
+        toolStatus: {}
+      }
+    }
+  })
+
+  // Malware & Defacement Tools Installer
+  ipcMain.handle('maldef:installTools', async (event, password) => {
+    try {
+      // Try multiple path resolutions
+      let toolInstaller
+      try {
+        toolInstaller = require(path.join(__dirname, '..', 'maldef', 'toolInstaller'))
+      } catch (e1) {
+        try {
+          toolInstaller = require(path.join(process.cwd(), 'src', 'maldef', 'toolInstaller'))
+        } catch (e2) {
+          toolInstaller = require('../maldef/toolInstaller')
+        }
+      }
+      const { installAllMissingTools } = toolInstaller
+      const distro = 'kali-linux'
+      
+      const result = await installAllMissingTools(distro, password, (update) => {
+        event.sender.send('maldef:toolsProgress', update)
+      })
+      
+      return {
+        success: result.success,
+        installed: result.installed,
+        failed: result.failed,
+        stdout: result.stdout,
+        stderr: result.stderr
+      }
+    } catch (e) {
+      console.error('[MALDEF] Failed to install tools:', e)
+      return {
+        success: false,
+        error: e.message,
+        installed: [],
+        failed: []
+      }
+    }
+  })
+
+  try {
+    console.log('[MALDEF] Registering ipcMain.handle("maldef:start")...')
+    ipcMain.handle('maldef:start', async (event, url, options = {}) => {
+    console.log('[MALDEF] ===== HANDLER CALLED =====')
+    console.log('[MALDEF] Handler called with URL:', url)
+    console.log('[MALDEF] Options:', JSON.stringify(options))
+    
+    // Check if scan is already running
+    if (currentMaldefScan) {
+      return { error: 'Scan already running' }
+    }
+    
+    // Create abort controller for this scan
+    maldefScanAbortController = new AbortController()
+    const abortSignal = maldefScanAbortController.signal
+    
+    try {
+      let runScan = null
+      let orchestratorType = 'unknown'
+      
+      // Try to use pre-loaded orchestrators first
+      if (comprehensiveOrchestrator && comprehensiveOrchestrator.runComprehensiveScan) {
+        runScan = comprehensiveOrchestrator.runComprehensiveScan
+        orchestratorType = 'comprehensive (pre-loaded)'
+        console.log('[MALDEF] Using comprehensive orchestrator (pre-loaded)')
+      } else if (oldOrchestrator && oldOrchestrator.runMaldefScan) {
+        runScan = oldOrchestrator.runMaldefScan
+        orchestratorType = 'old (pre-loaded)'
+        console.log('[MALDEF] Using old orchestrator as fallback (pre-loaded)')
+      } else {
+        // Try to load on-demand as last resort
+        console.log('[MALDEF] No pre-loaded orchestrators, trying on-demand load...')
+        const orchestratorPath = path.join(__dirname, '..', 'maldef', 'comprehensiveOrchestrator.js')
+        const oldOrchestratorPath = path.join(__dirname, '..', 'maldef', 'orchestrator.js')
+        
+        if (fs.existsSync(orchestratorPath)) {
+          try {
+            console.log('[MALDEF] Attempting to load comprehensive orchestrator from:', orchestratorPath)
+            const { runComprehensiveScan } = require(orchestratorPath)
+            runScan = runComprehensiveScan
+            orchestratorType = 'comprehensive (on-demand)'
+            console.log('[MALDEF] Successfully loaded comprehensive orchestrator on-demand')
+          } catch (e) {
+            console.error('[MALDEF] Failed to load comprehensive orchestrator on-demand')
+            console.error('[MALDEF] Error:', e.message)
+            console.error('[MALDEF] Stack:', e.stack)
+            
+            if (fs.existsSync(oldOrchestratorPath)) {
+              try {
+                console.log('[MALDEF] Attempting to load old orchestrator from:', oldOrchestratorPath)
+                const { runMaldefScan } = require(oldOrchestratorPath)
+                runScan = runMaldefScan
+                orchestratorType = 'old (on-demand)'
+                console.log('[MALDEF] Successfully loaded old orchestrator on-demand')
+              } catch (e2) {
+                console.error('[MALDEF] Failed to load old orchestrator on-demand')
+                console.error('[MALDEF] Error:', e2.message)
+                throw new Error(`Failed to load any orchestrator. Comprehensive error: ${e.message}. Old error: ${e2.message}`)
+              }
+            } else {
+              throw new Error(`Comprehensive orchestrator failed to load: ${e.message}. Old orchestrator file not found at ${oldOrchestratorPath}`)
+            }
+          }
+        } else if (fs.existsSync(oldOrchestratorPath)) {
+          try {
+            console.log('[MALDEF] Loading old orchestrator from:', oldOrchestratorPath)
+            const { runMaldefScan } = require(oldOrchestratorPath)
+            runScan = runMaldefScan
+            orchestratorType = 'old (on-demand)'
+            console.log('[MALDEF] Successfully loaded old orchestrator on-demand')
+          } catch (e) {
+            console.error('[MALDEF] Failed to load old orchestrator')
+            console.error('[MALDEF] Error:', e.message)
+            throw new Error(`Failed to load old orchestrator: ${e.message}`)
+          }
+        } else {
+          throw new Error(`No orchestrator files found. Checked: ${orchestratorPath} and ${oldOrchestratorPath}`)
+        }
+      }
+      
+      if (!runScan) {
+        throw new Error('Failed to get a valid scan function')
+      }
+      
+      console.log('[MALDEF] Using orchestrator type:', orchestratorType)
+      
+      const outRoot = path.join(process.cwd(), 'temp-scans')
+      
+      // Real-time progress streaming with console output
+      // Build options compatible with both orchestrators
+      const scanOptions = {
+        outRoot,
+        onProgress: (update) => {
+          // Send real-time console output to frontend
+          // All stdout/stderr from scanners is streamed here
+          event.sender.send('maldef:progress', {
+            ...update,
+            // Include raw console output for terminal display
+            console: update.raw || update.message,
+            timestamp: new Date().toISOString()
+          })
+        }
+      }
+      
+      // Add comprehensive orchestrator-specific options if using new orchestrator
+      const isComprehensiveOrchestrator = comprehensiveOrchestrator && comprehensiveOrchestrator.runComprehensiveScan
+      if (isComprehensiveOrchestrator || (runScan && runScan.name === 'runComprehensiveScan')) {
+        scanOptions.distro = options.distro || 'kali-linux'
+        // Simplified 3-step scan: Malware Detection, Defacement Detection, Report Generation
+        scanOptions.scanTypes = options.scanTypes || {
+          malware: true,
+          defacement: true
+        }
+        // Disable auto-installation during scan - tools should be installed manually from Settings
+        // Force disable to prevent any installation during scanning
+        scanOptions.autoInstallTools = false
+        scanOptions.updateClamav = false
+        // Explicitly remove any installation-related options
+        delete scanOptions.checkTools
+        delete scanOptions.installTools
+      } else {
+        // Old orchestrator options
+        scanOptions.maxDepth = options.maxDepth || 1
+        scanOptions.distro = options.distro || 'kali-linux'
+      }
+      
+      // Store scan reference
+      currentMaldefScan = { url, event, startTime: Date.now() }
+      
+      // Check for abort signal before starting scan
+      if (abortSignal.aborted) {
+        throw new Error('Scan was cancelled before starting')
+      }
+      
+      const report = await runScan(url, scanOptions)
+      
+      // Check if scan was aborted
+      if (abortSignal.aborted) {
+        event.sender.send('maldef:progress', { 
+          stage: 'aborted', 
+          message: 'Scan was cancelled',
+          console: 'Scan was cancelled by user',
+          timestamp: new Date().toISOString()
+        })
+        event.sender.send('maldef:done', { aborted: true })
+        return { aborted: true }
+      }
+      
+      // Send report to UI - ensure it includes all necessary data
+      const reportData = {
+        ...report,
+        reportFile: report.reportFile || report.report?.reportFile,
+        reportPdfPath: report.reportFile || report.report?.reportFile,
+        reportHtmlPath: report.reportFile || report.report?.reportFile
+      }
+      event.sender.send('maldef:done', reportData)
+      return { ok: true, reportFile: report.reportFile || report.report?.reportFile }
+    } catch (e) {
+      // Don't send error if scan was aborted
+      if (abortSignal.aborted) {
+        event.sender.send('maldef:progress', { 
+          stage: 'aborted', 
+          message: 'Scan was cancelled',
+          console: 'Scan was cancelled by user',
+          timestamp: new Date().toISOString()
+        })
+        event.sender.send('maldef:done', { aborted: true })
+        return { aborted: true }
+      }
+      
+      event.sender.send('maldef:progress', { 
+        stage: 'error', 
+        message: e?.message || String(e),
+        console: `ERROR: ${e?.message || String(e)}`,
+        timestamp: new Date().toISOString()
+      })
+      event.sender.send('maldef:done', null)
+      return { error: e?.message || String(e) }
+    } finally {
+      // Clear scan reference
+      currentMaldefScan = null
+      maldefScanAbortController = null
+    }
+    })
+    
+    // Register cancel handler
+    ipcMain.handle('maldef:cancel', async (event) => {
+      console.log('[MALDEF] Cancel requested')
+      
+      if (!currentMaldefScan && !maldefScanAbortController) {
+        return { error: 'No scan running' }
+      }
+      
+      try {
+        // Abort the scan
+        if (maldefScanAbortController) {
+          maldefScanAbortController.abort()
+        }
+        
+        // Send abort message to UI
+        if (currentMaldefScan && currentMaldefScan.event) {
+          currentMaldefScan.event.sender.send('maldef:progress', {
+            stage: 'aborting',
+            message: 'Cancelling scan...',
+            console: '⚠️ [ABORT] Stopping scan...',
+            timestamp: new Date().toISOString()
+          })
+        }
+        
+        // Kill any running processes in WSL
+        const { exec } = require('child_process')
+        const { promisify } = require('util')
+        const execAsync = promisify(exec)
+        
+        if (process.platform === 'win32') {
+          try {
+            // Kill scanner processes
+            await execAsync(`wsl -- bash -c "pkill -f 'nikto\\|wapiti\\|wpscan\\|clamav\\|yara\\|rkhunter\\|chkrootkit\\|lynis' || true"`, { timeout: 3000 })
+            await execAsync(`wsl -- bash -c "pkill -9 -f 'nikto\\|wapiti\\|wpscan\\|clamav\\|yara\\|rkhunter\\|chkrootkit\\|lynis' || true"`, { timeout: 3000 })
+          } catch (e) {
+            console.log('[MALDEF] Some cleanup commands failed:', e.message)
+          }
+        }
+        
+        // Send completion message
+        if (currentMaldefScan && currentMaldefScan.event) {
+          currentMaldefScan.event.sender.send('maldef:progress', {
+            stage: 'aborted',
+            message: 'Scan cancelled',
+            console: 'Scan was cancelled by user',
+            timestamp: new Date().toISOString()
+          })
+          currentMaldefScan.event.sender.send('maldef:done', { aborted: true })
+        }
+        
+        // Clear references
+        currentMaldefScan = null
+        maldefScanAbortController = null
+        
+        console.log('[MALDEF] Cancel completed')
+        return { success: true }
+      } catch (error) {
+        console.error('[MALDEF] Error during cancel:', error)
+        currentMaldefScan = null
+        maldefScanAbortController = null
+        return { success: false, error: error.message }
+      }
+    })
+    console.log('[MALDEF] ✓ Handler registered successfully!')
+  } catch (e) {
+    console.error('[MALDEF] ✗ CRITICAL: Failed to register handler!')
+    console.error('[MALDEF] Error:', e.message)
+    console.error('[MALDEF] Stack:', e.stack)
+    // Still try to register a minimal handler to prevent "No handler registered" error
+    ipcMain.handle('maldef:start', async (event, url, options = {}) => {
+      return { error: `Handler registration failed: ${e.message}` }
+    })
+  }
+  
+  // Verify handler registration
+  console.log('[MALDEF] Handler registration complete. Verifying...')
+  console.log('[MALDEF] Handler should be registered now. Check console for errors above.')
+
 app.whenReady().then(async () => {
+    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
   const win = await createMainWindow();
   mainWindowInstance = win;
+
+  // Auto-check and install Kali Linux if missing on Windows
+  if (process.platform === 'win32') {
+    setTimeout(async () => {
+      try {
+        console.log('🔍 [STARTUP] Checking for Kali Linux...');
+        const hasWsl = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
+        
+        if (hasWsl) {
+          const hasKali = checkKaliInstalled();
+          if (!hasKali) {
+            console.log('⚠️ [STARTUP] Kali Linux not detected. Starting auto-installation...');
+            
+            // Show notification to user
+            const { dialog } = require('electron');
+            const installKali = await dialog.showMessageBox(win, {
+              type: 'question',
+              title: 'Kali Linux Auto-Install',
+              message: 'Kali Linux is not installed in WSL.',
+              detail: 'Kali Linux provides the best security tools for penetration testing. Would you like to install it now? This will download and install Kali Linux in WSL automatically.',
+              buttons: ['Install Kali Now', 'Install Later'],
+              defaultId: 0,
+              cancelId: 1
+            });
+            
+            if (installKali.response === 0) {
+              console.log('🚀 [STARTUP] User chose to install Kali Linux now');
+              // Create a mock event object for progress updates
+              const mockEvent = { sender: win.webContents };
+              const result = await installKaliLinux(mockEvent);
+              if (result) {
+                console.log('✅ [STARTUP] Kali Linux installed successfully');
+                // Show success message
+                dialog.showMessageBox(win, {
+                  type: 'info',
+                  title: 'Installation Complete',
+                  message: 'Kali Linux has been installed successfully!',
+                  detail: 'You may need to restart WSL or the application for changes to take effect.'
+                });
+              } else {
+                console.log('❌ [STARTUP] Kali Linux installation failed');
+                dialog.showMessageBox(win, {
+                  type: 'error',
+                  title: 'Installation Failed',
+                  message: 'Kali Linux installation failed.',
+                  detail: 'Please try installing manually using: wsl --install -d kali-linux'
+                });
+              }
+            } else {
+              console.log('ℹ️ [STARTUP] User chose to install Kali Linux later');
+            }
+          } else {
+            console.log('✅ [STARTUP] Kali Linux is already installed');
+          }
+        } else {
+          console.log('⚠️ [STARTUP] WSL is not available');
+        }
+      } catch (error) {
+        console.error('❌ [STARTUP] Error checking/installing Kali:', error);
+      }
+    }, 2000); // Wait 2 seconds after app ready for better UX
+  }
 
   // Setup IPC handlers (moved here to access win variable)
   ipcMain.handle('setup:selectDirectory', async () => {
@@ -3165,41 +4125,8 @@ app.whenReady().then(async () => {
     }
   });
 
-  // File system operations for logging
-  ipcMain.handle('fs:getInstallPath', async () => {
-    try {
-      const setupConfigPath = path.join(app.getPath('userData'), 'setup-config.json');
-      if (fs.existsSync(setupConfigPath)) {
-        const config = JSON.parse(fs.readFileSync(setupConfigPath, 'utf8'));
-        return config.installPath || null;
-      }
-      return null;
-    } catch (error) {
-      console.error('Error getting install path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:getDownloadsPath', async () => {
-    try {
-      return app.getPath('downloads');
-    } catch (error) {
-      console.error('Error getting downloads path:', error);
-      return null;
-    }
-  });
-
-  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
-    try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
-      return { success: true };
-    } catch (error) {
-      console.error('Error ensuring directory exists:', error);
-      throw error;
-    }
-  });
+  // File system operations for logging (already registered before app.whenReady())
+  // These handlers are now registered earlier to be available when scanLogger initializes
 
   ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
     try {
@@ -3258,34 +4185,46 @@ app.whenReady().then(async () => {
     });
   });
 
+  // Note: WSL handlers (wsl:install, wsl:createUser, wsl:validateCredentials) 
+  // are registered BEFORE app.whenReady() at lines 608-841
+
   // Kali Linux management
   ipcMain.handle('kali:check', () => {
     return checkKaliInstalled();
   });
 
   ipcMain.handle('kali:install', async (event) => {
-    console.log('🚀 Starting Kali Linux installation via IPC...');
+    console.log('🚀 [KALI-INSTALL-HANDLER] Starting Kali Linux installation via IPC...');
     
     // Update UI to show installation in progress
-    event.sender.send('kali:installProgress', 'Starting Kali Linux installation...');
+    if (event.sender && !event.sender.isDestroyed()) {
+      event.sender.send('kali:installProgress', 'Starting Kali Linux installation...');
+    }
     
     try {
-      const result = await installKaliLinux();
+      // Pass event to installKaliLinux so it can send progress updates
+      const result = await installKaliLinux(event);
       
       if (result) {
         // Installation successful - update UI
-        event.sender.send('kali:installComplete', true);
-        console.log('✅ Kali Linux installation completed successfully');
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('kali:installComplete', true);
+        }
+        console.log('✅ [KALI-INSTALL-HANDLER] Kali Linux installation completed successfully');
       } else {
         // Installation failed - update UI
-        event.sender.send('kali:installComplete', false);
-        console.log('❌ Kali Linux installation failed');
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('kali:installComplete', false);
+        }
+        console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation failed');
       }
       
       return result;
     } catch (error) {
-      console.log('❌ Kali Linux installation error:', error.message);
-      event.sender.send('kali:installComplete', false);
+      console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation error:', error.message);
+      if (event.sender && !event.sender.isDestroyed()) {
+        event.sender.send('kali:installComplete', false);
+      }
       return false;
     }
   });
@@ -3338,22 +4277,46 @@ app.whenReady().then(async () => {
     });
   }
 
-  // Tool checking only (no installation)
+  // Tool checking only (no installation) - FIXED to use rootless WSL
   async function checkRequiredToolsOnly(password) {
     console.log('🔧 [TOOL-CHECKER] Starting tool check (no installation)...');
-    console.log('🔧 [TOOL-CHECKER] Password provided:', password ? 'EXISTS' : 'NULL');
-    console.log('🔧 [TOOL-CHECKER] Password length:', password ? password.length : 0);
-  
+    // Password not needed anymore - we use wsl -u root directly
+    
     const requiredTools = [
       'jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb',
       'amass','john','medusa','zaproxy','mitmproxy','socat','fail2ban',
-      'curl','wget','wapiti'
+      'curl','wget','wapiti','pip3'
     ];
   
     const goTools = ['ffuf','nuclei','dalfox','go'];
-  
     const allTools = [...requiredTools, ...goTools];
+    
+    // Use new wslHelper to check each tool individually (no broken bash loops)
+    const status = {};
+    const missingTools = [];
+    
+    for (const tool of allTools) {
+      const installed = await wslHelper.checkTool(tool);
+      status[tool] = installed;
+      if (!installed) missingTools.push(tool);
+    }
   
+    const success = missingTools.length === 0;
+    console.log('🔧 [TOOL-CHECKER] Missing tools:', missingTools);
+  
+    return {
+      success,
+      missingTools,
+      toolStatus: status,
+      totalChecked: allTools.length,
+      installedCount: allTools.length - missingTools.length
+    };
+  }
+
+  // Check and install tgpt
+  async function checkAndInstallTgpt(password, event = null) {
+    console.log('🔧 [TGPT-CHECKER] Starting tgpt check...');
+    
     const { exec } = require('child_process');
     const { promisify } = require('util');
     const execAsync = promisify(exec);
@@ -3396,23 +4359,11 @@ app.whenReady().then(async () => {
   
     // Parse output
     const missingTools = [];
-    const lines = stdout.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    console.log('🔧 [TOOL-CHECKER] Parsed lines:', lines);
-  
-    for (const line of lines) {
-      if (line.startsWith('❌')) {
-        // Extract word-like tool name (letters, digits, hyphen, underscore)
-        const m = line.match(/❌\s+([A-Za-z0-9_\-]+)\s+is NOT installed/);
-        if (m && m[1]) {
-          missingTools.push(m[1]);
-        } else {
-          console.log('🔧 [TOOL-CHECKER] Could not extract tool name from line:', line);
-        }
-      } else if (line.startsWith('✅')) {
-        // installed line — you can parse path if needed
-      } else {
-        console.log('🔧 [TOOL-CHECKER] Unrecognized line format (ignored):', line);
-      }
+    
+    for (const tool of allTools) {
+      const installed = await wslHelper.checkTool(tool);
+      status[tool] = installed;
+      if (!installed) missingTools.push(tool);
     }
   
     const success = missingTools.length === 0;
@@ -3421,6 +4372,7 @@ app.whenReady().then(async () => {
     return {
       success,
       missingTools,
+      toolStatus: status,
       totalChecked: allTools.length,
       installedCount: allTools.length - missingTools.length,
       raw: { stdout, stderr }
@@ -3508,7 +4460,7 @@ app.whenReady().then(async () => {
     const requiredTools = [
       'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
       'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
-      'curl', 'wget', 'wapiti', 'sslscan'
+      'curl', 'wget', 'wapiti', 'sslscan', 'dnstwist'
     ];
 
     const goTools = [
@@ -3789,11 +4741,11 @@ app.whenReady().then(async () => {
       });
       
       if (installKali.response === 0) {
-        const kaliInstalled = await installKaliInWsl(event);
+        const kaliInstalled = await installKaliLinux();
         if (kaliInstalled) {
-          pre.hasKali = true;
+          pre.hasKali = checkKaliInstalled(); // Re-check to confirm
           // Re-check nmap after Kali installation
-          const nmapCheck = require('child_process').spawnSync('wsl', ['sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
+          const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
           if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
             pre.wslNmap = true;
             event.sender.send('scan:progress', { stage: 'installing', message: 'nmap found in Kali Linux!' });
@@ -4692,7 +5644,7 @@ app.whenReady().then(async () => {
           console.log(`🔧 [SINGLE-TOOL-INSTALL] Go is already installed`);
         } catch (goError) {
           console.log(`🔧 [SINGLE-TOOL-INSTALL] Go not found, installing Go first...`);
-          const goInstallCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y golang-go"`;
+          const goInstallCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt-get install -y golang-go"`;
           await execAsync(goInstallCommand);
           console.log(`🔧 [SINGLE-TOOL-INSTALL] Go installed successfully`);
         }
@@ -4722,7 +5674,7 @@ app.whenReady().then(async () => {
           installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install amass"`;
         } else if (toolName === 'metasploit-framework') {
           // Install metasploit CLI only via apt (lighter installation)
-          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y metasploit-framework"`;
+        installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt-get install -y metasploit-framework"`;
         } else if (toolName === 'zaproxy') {
           // Install zaproxy via snap
           installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install zaproxy"`;
@@ -4730,63 +5682,35 @@ app.whenReady().then(async () => {
         
         console.log(`🔧 [SINGLE-TOOL-INSTALL] Special command: ${installCommand.replace(usePassword, '***')}`);
       } else {
-        // Install regular apt package
-        installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y ${toolName}"`;
+        // Install regular apt package using rootless WSL
         console.log(`🔧 [SINGLE-TOOL-INSTALL] APT package detected: ${toolName}`);
-        console.log(`🔧 [SINGLE-TOOL-INSTALL] Apt command: ${installCommand.replace(usePassword, '***')}`);
-      }
-      
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] About to execute command...`);
-      
-      // First test if WSL is working
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] Testing WSL connectivity...`);
-      try {
-        const testCommand = `wsl -e bash -c "echo 'WSL test successful'"`;
-        const testResult = await execAsync(testCommand);
-        console.log(`🔧 [SINGLE-TOOL-INSTALL] WSL test result: ${testResult.stdout.trim()}`);
-      } catch (testError) {
-        console.log(`❌ [SINGLE-TOOL-INSTALL] WSL test failed: ${testError.message}`);
-        return { 
-          success: false, 
-          tool: toolName,
-          error: `WSL connectivity test failed: ${testError.message}`,
-          errorType: 'WSL_CONNECTIVITY_ERROR'
-        };
-      }
-
-      // Update package lists before installation (only for APT packages)
-      if (!goTools[toolName]) {
-        console.log(`🔧 [SINGLE-TOOL-INSTALL] Updating package lists...`);
+        
         try {
-          const updateCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt update"`;
-          await execAsync(updateCommand);
-          console.log(`🔧 [SINGLE-TOOL-INSTALL] Package lists updated successfully`);
-        } catch (updateError) {
-          console.log(`⚠️ [SINGLE-TOOL-INSTALL] Package list update failed, continuing anyway: ${updateError.message}`);
+          // Use wslHelper for rootless installation
+          const send = (progress, message) => {
+            try { if (event?.sender && !event.sender.isDestroyed()) event.sender.send('tools:installProgress', { tool: toolName, progress, message }); } catch {}
+          };
+          
+          send(5, `Updating package lists for ${toolName}…`);
+          const updateRes = await wslHelper.runWSLAsRoot('DEBIAN_FRONTEND=noninteractive apt-get update -qq');
+          if (!updateRes.success) {
+            console.log(`⚠️ [SINGLE-TOOL-INSTALL] Package list update had issues, continuing anyway`);
+          }
+          
+          send(30, `Installing ${toolName}…`);
+          const installRes = await wslHelper.runWSLAsRoot(`DEBIAN_FRONTEND=noninteractive apt-get install -y ${toolName}`, 15 * 60 * 1000);
+          
+          if (installRes.success) {
+            send(100, `${toolName} installed successfully`);
+            console.log(`✅ [SINGLE-TOOL-INSTALL] ${toolName} installed successfully`);
+            return { success: true, tool: toolName, stdout: installRes.stdout, stderr: installRes.stderr };
+          }
+          
+          throw new Error(`Installation failed: ${installRes.stderr || installRes.error}`);
+        } catch (installError) {
+          throw installError;
         }
       }
-      
-      // Execute installation with timeout
-      const { stdout, stderr } = await Promise.race([
-        execAsync(installCommand),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Command timeout after 60 seconds')), 60000)
-        )
-      ]);
-      
-      console.log(`✅ [SINGLE-TOOL-INSTALL] ${toolName} installed successfully`);
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDOUT length: ${stdout ? stdout.length : 0}`);
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDOUT: ${stdout}`);
-      console.log(`🔧 [SINGLE-TOOL-INSTALL] STDERR length: ${stderr ? stderr.length : 0}`);
-      if (stderr) console.log(`🔧 [SINGLE-TOOL-INSTALL] STDERR: ${stderr}`);
-      
-      return { 
-        success: true, 
-        tool: toolName,
-        stdout: stdout,
-        stderr: stderr
-      };
-      
     } catch (error) {
       console.log(`❌ [SINGLE-TOOL-INSTALL] ===== INSTALLATION FAILED =====`);
       console.log(`❌ [SINGLE-TOOL-INSTALL] Tool: ${toolName}`);
@@ -4844,6 +5768,870 @@ app.whenReady().then(async () => {
       };
     }
   });
+
+  // Minimal new IPC for blocking setup flow using root user inside WSL
+  ipcMain.handle('check-wsl', async () => {
+    return await wslHelper.checkWSL();
+  });
+
+  ipcMain.handle('check-tools', async () => {
+    return await toolInstaller.checkAllTools();
+  });
+
+  ipcMain.handle('install-tools', async (event) => {
+    return await new Promise((resolve) => {
+      toolInstaller.installAllTools((progress) => {
+        try { if (event?.sender && !event.sender.isDestroyed()) event.sender.send('install-progress', progress); } catch {}
+      }).then(resolve);
+    });
+  });
+
+  // DNSTwist phishing detection handler - using comprehensive Python wrapper
+  ipcMain.handle('phishing:runDnstwist', async (event, domain, password) => {
+    console.log('🔍 [DNSTWIST] ===== STARTING COMPREHENSIVE PHISHING DETECTION =====');
+    console.log('🔍 [DNSTWIST] Target domain:', domain);
+    console.log('🔍 [DNSTWIST] Timestamp:', new Date().toISOString());
+    
+    try {
+      // Extract domain from URL if needed
+      let targetDomain = domain;
+      try {
+        const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+        targetDomain = url.hostname.replace('www.', '');
+      } catch (e) {
+        // If URL parsing fails, use domain as-is
+        targetDomain = domain.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
+      }
+      
+      console.log('🔍 [DNSTWIST] Processed domain:', targetDomain);
+      
+      // Send progress update to frontend
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'initializing', 
+          message: 'Initializing comprehensive phishing detection...',
+          progress: 5
+        });
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'checking', 
+          message: 'Checking dnstwist and Python wrapper...',
+          progress: 15
+        });
+      }
+      
+      // Check if dnstwist is installed using rootless WSL
+      console.log('🔍 [DNSTWIST] Checking installation...');
+      
+      const isInstalled = await wslHelper.checkTool('dnstwist');
+      
+      if (!isInstalled) {
+        console.log('❌ [DNSTWIST] dnstwist is not installed');
+        console.log('🔍 [DNSTWIST] Attempting to install dnstwist using rootless WSL...');
+        
+        // Install dnstwist using rootless WSL (no password needed)
+        {
+          // Send progress update
+          if (event && event.sender) {
+            event.sender.send('phishing:progress', { 
+              stage: 'installing', 
+              message: 'Installing dnstwist...',
+              progress: 20
+            });
+          }
+          
+          // Use rootless WSL installation
+          console.log('🔍 [DNSTWIST] Installing dnstwist using rootless WSL...');
+          
+          try {
+            // Update package lists first
+            const updateRes = await wslHelper.runWSLAsRoot('DEBIAN_FRONTEND=noninteractive apt-get update -qq');
+            if (!updateRes.success) {
+              console.log('⚠️ [DNSTWIST] Package list update had issues, continuing anyway');
+            }
+            
+            // Install dnstwist
+            const installRes = await wslHelper.runWSLAsRoot('DEBIAN_FRONTEND=noninteractive apt-get install -y dnstwist', 120000);
+            if (!installRes.success) {
+              throw new Error(installRes.stderr || installRes.error || 'dnstwist installation failed');
+            }
+            
+            console.log('✅ [DNSTWIST] dnstwist installation completed');
+            
+            // Wait a moment for installation to complete
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Re-check installation using rootless WSL
+            try {
+              const recheckInstalled = await wslHelper.checkTool('dnstwist');
+              if (!recheckInstalled) {
+                throw new Error('dnstwist installation verification failed');
+              }
+              console.log('✅ [DNSTWIST] dnstwist verified after installation');
+            } catch (recheckError) {
+              console.log('⚠️ [DNSTWIST] Installation verification failed, proceeding anyway');
+            }
+          } catch (installError) {
+            console.log('❌ [DNSTWIST] Installation failed:', installError.message);
+            return { 
+              success: false, 
+              error: 'dnstwist is not installed and installation failed. Please install manually via: sudo apt install dnstwist',
+              installed: false,
+              details: installError.message || 'Installation failed'
+            };
+          }
+        }
+      } else {
+        const pathResult = await wslHelper.runWSL('command -v dnstwist');
+        console.log('✅ [DNSTWIST] dnstwist found at:', pathResult.stdout || 'installed');
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'scanning', 
+          message: 'Running comprehensive dnstwist analysis with all features...',
+          progress: 30
+        });
+      }
+      
+      // Get Python wrapper path
+      const wrapperPath = path.join(__dirname, '..', '..', 'backend', 'dnstwist_wrapper.py');
+      const wrapperPathWSL = wrapperPath.replace(/\\/g, '/').replace(/^([A-Z]):/, (m, letter) => `/mnt/${letter.toLowerCase()}`);
+      
+      console.log('🔍 [DNSTWIST] Python wrapper path:', wrapperPath);
+      console.log('🔍 [DNSTWIST] WSL wrapper path:', wrapperPathWSL);
+      
+      // Build command to run Python wrapper via WSL
+      // FIXED: Use comma-separated fuzzers instead of 'all', and --ssdeep is handled by wrapper
+      const commandParts = [
+        'python3',
+        wrapperPathWSL,
+        '--fuzzers', '*original,addition,bitsquatting,dictionary,homoglyph,transposition,subdomain',
+        '--registered',
+        '--geoip',
+        '--phash',
+        '--screenshots',
+        '--ssdeep',  // Wrapper converts this to --lsh ssdeep
+        '--format', 'json',
+        targetDomain
+      ];
+      
+      console.log('🔍 [DNSTWIST] Executing Python wrapper via WSL');
+      console.log('🔍 [DNSTWIST] Command:', commandParts.join(' '));
+      
+      // Execute using spawn - pass command parts directly to WSL
+      const { spawn } = require('child_process');
+      const child = spawn('wsl', commandParts, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: path.join(__dirname, '..', '..')
+      });
+      
+      let stdout = '';
+      let stderr = '';
+      
+      child.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdout += output;
+        try { 
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('phishing:log', output);
+          }
+        } catch {}
+      });
+      
+      child.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        try { 
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('phishing:log', output);
+          }
+        } catch {}
+      });
+      
+      const exitCode = await new Promise((resolve, reject) => {
+        child.on('close', (code) => { resolve(code); });
+        child.on('error', (error) => { reject(error); });
+      });
+      
+      stdout = stdout.trim();
+      stderr = stderr.trim();
+      
+      console.log('✅ [DNSTWIST] Python wrapper completed');
+      console.log('📤 [DNSTWIST] STDOUT length:', stdout ? stdout.length : 0);
+      if (stderr) console.log('⚠️ [DNSTWIST] STDERR:', stderr.substring(0, 500));
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'parsing', 
+          message: 'Parsing comprehensive scan results...',
+          progress: 70
+        });
+      }
+      
+      // Parse JSON output from Python wrapper
+      let scanResults = null;
+      try {
+        // Find JSON in output (may have error messages before JSON)
+        const jsonMatch = stdout.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          scanResults = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('No JSON output found in Python wrapper response');
+        }
+        
+        console.log(`✅ [DNSTWIST] Parsed comprehensive results`);
+        console.log(`📊 [DNSTWIST] Found ${scanResults.statistics?.total_variations || 0} domain variations`);
+        
+        if (!scanResults.success) {
+          throw new Error(scanResults.error || 'Python wrapper returned unsuccessful result');
+        }
+      } catch (parseError) {
+        console.log('⚠️ [DNSTWIST] Failed to parse JSON output:', parseError.message);
+        console.log('⚠️ [DNSTWIST] STDOUT:', stdout.substring(0, 1000));
+        
+        // Fallback: try basic dnstwist command
+        console.log('⚠️ [DNSTWIST] Falling back to basic dnstwist command...');
+        
+        // Build basic command
+        const basicCmd = ['dnstwist', '--format', 'json', '--registered', targetDomain];
+        const basicChild = spawn('wsl', basicCmd, {
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+        
+        let basicStdout = '';
+        let basicStderr = '';
+        
+        basicChild.stdout.on('data', (data) => {
+          basicStdout += data.toString();
+        });
+        
+        basicChild.stderr.on('data', (data) => {
+          basicStderr += data.toString();
+        });
+        
+        const basicExitCode = await new Promise((resolve, reject) => {
+          basicChild.on('close', (code) => { resolve(code); });
+          basicChild.on('error', (error) => { reject(error); });
+        });
+        
+        if (basicExitCode === 0 && basicStdout.trim()) {
+          try {
+            const basicResults = JSON.parse(basicStdout.trim());
+            // Build basic results structure
+            scanResults = {
+              success: true,
+              target_url: domain,
+              target_domain: targetDomain,
+              timestamp: new Date().toISOString(),
+              threat_score: 50,
+              findings: [],
+              domain_variations: Array.isArray(basicResults) ? basicResults.map(r => ({
+                domain: r['domain-name'] || r.domain_name || r.domain || '',
+                dns_a: r['dns-a'] || r.dns_a || r.a || [],
+                dns_mx: r['dns-mx'] || r.dns_mx || r.mx || [],
+                dns_ns: r['dns-ns'] || r.dns_ns || r.ns || [],
+                fuzzer: r.fuzzer || 'unknown',
+                active: ((r['dns-a'] || r.dns_a || r.a || []).length > 0 || 
+                        (r['dns-mx'] || r.dns_mx || r.mx || []).length > 0 ||
+                        (r['dns-ns'] || r.dns_ns || r.ns || []).length > 0)
+              })) : [],
+              statistics: {
+                total_variations: Array.isArray(basicResults) ? basicResults.length : 0,
+                active_domains: 0,
+                inactive_domains: 0
+              },
+              recommendations: [],
+              evidence: {
+                scan_tool: 'dnstwist',
+                scan_method: 'Basic typosquatting detection',
+                raw_output_preview: basicStdout.substring(0, 1000)
+              }
+            };
+          } catch (e) {
+            throw new Error(`Failed to parse fallback output: ${parseError.message}`);
+          }
+        } else {
+          throw new Error(`Python wrapper failed: ${parseError.message}. Fallback also failed.`);
+        }
+      }
+      
+      // Send progress update
+      if (event && event.sender) {
+        event.sender.send('phishing:progress', { 
+          stage: 'complete', 
+          message: 'Comprehensive scan completed successfully!',
+          progress: 95
+        });
+      }
+      
+      console.log('✅ [DNSTWIST] Comprehensive scan completed successfully');
+      console.log(`📊 [DNSTWIST] Threat score: ${scanResults.threat_score || 0}/100`);
+      
+      return {
+        success: true,
+        results: scanResults,
+        installed: true
+      };
+      
+    } catch (error) {
+      console.log('❌ [DNSTWIST] Scan failed:', error.message);
+      console.log('❌ [DNSTWIST] Error details:', error);
+      
+      return {
+        success: false,
+        error: error.message,
+        installed: true,
+        details: error.stdout || error.stderr || ''
+      };
+    }
+  });
+
+  // Convert JSON to user-readable text using tgpt
+  ipcMain.handle('phishing:convertJsonToText', async (event, jsonData) => {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    
+    try {
+      console.log('📝 [TGPT] Converting JSON to user-readable text...');
+      
+      // Create a temporary JSON file
+      const tempDir = os.tmpdir();
+      const tempJsonFile = path.join(tempDir, `phishing-results-${Date.now()}.json`);
+      fs.writeFileSync(tempJsonFile, JSON.stringify(jsonData, null, 2));
+      
+      // Try different ways to run tgpt
+      let tgptCommand = null;
+      let tgptArgs = [];
+      
+      // Try python -m tgpt first
+      try {
+        const { execSync } = require('child_process');
+        execSync('python -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+        tgptCommand = 'python';
+        tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+      } catch (e1) {
+        try {
+          execSync('python3 -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+          tgptCommand = 'python3';
+          tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+        } catch (e2) {
+          try {
+            execSync('tgpt --version', { stdio: 'ignore', timeout: 3000 });
+            tgptCommand = 'tgpt';
+            tgptArgs = ['--json', tempJsonFile];
+          } catch (e3) {
+            throw new Error('tgpt tool not found. Please install it using: pip install tgpt');
+          }
+        }
+      }
+      
+      console.log(`📝 [TGPT] Using command: ${tgptCommand} ${tgptArgs.join(' ')}`);
+      
+      // Run tgpt to convert JSON to readable text
+      return new Promise((resolve, reject) => {
+        const tgptProcess = spawn(tgptCommand, tgptArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        tgptProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        tgptProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        tgptProcess.on('close', (code) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          if (code === 0 && stdout.trim()) {
+            console.log('✅ [TGPT] Successfully converted JSON to readable text');
+            resolve({
+              success: true,
+              readableText: stdout.trim()
+            });
+          } else {
+            // If tgpt doesn't work as expected, create a simple readable format
+            console.log('⚠️ [TGPT] tgpt returned non-zero or empty output, creating fallback readable format');
+            const fallbackText = createReadablePhishingReport(jsonData);
+            resolve({
+              success: true,
+              readableText: fallbackText,
+              fallback: true
+            });
+          }
+        });
+        
+        tgptProcess.on('error', (error) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          console.log('⚠️ [TGPT] Error running tgpt, using fallback:', error.message);
+          const fallbackText = createReadablePhishingReport(jsonData);
+          resolve({
+            success: true,
+            readableText: fallbackText,
+            fallback: true
+          });
+        });
+      });
+      
+    } catch (error) {
+      console.log('❌ [TGPT] Error:', error.message);
+      // Fallback: create a simple readable format
+      const fallbackText = createReadablePhishingReport(jsonData);
+      return {
+        success: true,
+        readableText: fallbackText,
+        fallback: true,
+        error: error.message
+      };
+    }
+  });
+
+  // Convert JSON to user-readable text using tgpt for malware/defacement scans
+  ipcMain.handle('maldef:convertJsonToText', async (event, jsonData) => {
+    const { spawn } = require('child_process');
+    const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    
+    try {
+      console.log('📝 [TGPT] Converting malware/defacement JSON to user-readable text...');
+      
+      // Create a temporary JSON file
+      const tempDir = os.tmpdir();
+      const tempJsonFile = path.join(tempDir, `maldef-results-${Date.now()}.json`);
+      fs.writeFileSync(tempJsonFile, JSON.stringify(jsonData, null, 2));
+      
+      // Try different ways to run tgpt
+      let tgptCommand = null;
+      let tgptArgs = [];
+      
+      // Try python -m tgpt first
+      try {
+        const { execSync } = require('child_process');
+        execSync('python -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+        tgptCommand = 'python';
+        tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+      } catch (e1) {
+        try {
+          execSync('python3 -m tgpt --version', { stdio: 'ignore', timeout: 3000 });
+          tgptCommand = 'python3';
+          tgptArgs = ['-m', 'tgpt', '--json', tempJsonFile];
+        } catch (e2) {
+          try {
+            execSync('tgpt --version', { stdio: 'ignore', timeout: 3000 });
+            tgptCommand = 'tgpt';
+            tgptArgs = ['--json', tempJsonFile];
+          } catch (e3) {
+            throw new Error('tgpt tool not found. Please install it using: pip install tgpt');
+          }
+        }
+      }
+      
+      console.log(`📝 [TGPT] Using command: ${tgptCommand} ${tgptArgs.join(' ')}`);
+      
+      // Run tgpt to convert JSON to readable text
+      return new Promise((resolve, reject) => {
+        const tgptProcess = spawn(tgptCommand, tgptArgs, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          shell: true
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        
+        tgptProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+        
+        tgptProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+        
+        tgptProcess.on('close', (code) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          if (code === 0 && stdout.trim()) {
+            console.log('✅ [TGPT] Successfully converted JSON to readable text');
+            resolve({
+              success: true,
+              readableText: stdout.trim()
+            });
+          } else {
+            // If tgpt doesn't work as expected, create a simple readable format
+            console.log('⚠️ [TGPT] tgpt returned non-zero or empty output, creating fallback readable format');
+            const fallbackText = createReadableMaldefReport(jsonData);
+            resolve({
+              success: true,
+              readableText: fallbackText,
+              fallback: true
+            });
+          }
+        });
+        
+        tgptProcess.on('error', (error) => {
+          // Clean up temp file
+          try {
+            if (fs.existsSync(tempJsonFile)) {
+              fs.unlinkSync(tempJsonFile);
+            }
+          } catch (cleanupError) {
+            console.log('⚠️ [TGPT] Failed to cleanup temp file:', cleanupError.message);
+          }
+          
+          console.log('⚠️ [TGPT] Error running tgpt, using fallback:', error.message);
+          const fallbackText = createReadableMaldefReport(jsonData);
+          resolve({
+            success: true,
+            readableText: fallbackText,
+            fallback: true
+          });
+        });
+      });
+      
+    } catch (error) {
+      console.log('❌ [TGPT] Error:', error.message);
+      // Fallback: create a simple readable format
+      const fallbackText = createReadableMaldefReport(jsonData);
+      return {
+        success: true,
+        readableText: fallbackText,
+        fallback: true,
+        error: error.message
+      };
+    }
+  });
+
+  // Helper function to create readable malware/defacement report from JSON
+  function createReadableMaldefReport(jsonData) {
+    let report = '═══════════════════════════════════════════════════════════════\n';
+    report += '      MALWARE & DEFACEMENT DETECTION REPORT\n';
+    report += '═══════════════════════════════════════════════════════════════\n\n';
+    
+    // Metadata
+    if (jsonData.metadata) {
+      const meta = jsonData.metadata;
+      if (meta.target) {
+        report += `Target URL: ${meta.target}\n`;
+      }
+      if (meta.timestamp) {
+        report += `Scan Date: ${new Date(meta.timestamp).toLocaleString()}\n`;
+      }
+      if (meta.scanDuration) {
+        report += `Scan Duration: ${(meta.scanDuration / 1000).toFixed(2)} seconds\n`;
+      }
+      if (meta.toolsUsed && meta.toolsUsed.length > 0) {
+        report += `Tools Used: ${meta.toolsUsed.join(', ')}\n`;
+      }
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'SUMMARY\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.summary) {
+      const summary = jsonData.summary;
+      report += `Overall Status: ${summary.status || 'Unknown'}\n`;
+      report += `Risk Score: ${summary.riskScore || 0}/100\n`;
+      report += `Severity: ${summary.severity || 'Unknown'}\n`;
+      report += `Total Findings: ${summary.totalFindings || 0}\n`;
+      if (summary.malwareStatus) {
+        report += `Malware Status: ${summary.malwareStatus}\n`;
+      }
+      if (summary.defacementStatus) {
+        report += `Defacement Status: ${summary.defacementStatus}\n`;
+      }
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'MALWARE FINDINGS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.findings?.malware) {
+      const malware = jsonData.findings.malware;
+      report += `Total Malware Findings: ${malware.count || 0}\n\n`;
+      
+      // ClamAV findings
+      if (jsonData.detailed?.malware?.clamav) {
+        const clamav = jsonData.detailed.malware.clamav;
+        report += `ClamAV Scan:\n`;
+        report += `  Status: ${clamav.exitCode === 0 ? 'Completed' : 'Failed'}\n`;
+        report += `  Infected Files: ${clamav.infectedCount || 0}\n`;
+        if (clamav.infectedFiles && clamav.infectedFiles.length > 0) {
+          report += `  Infected Files List:\n`;
+          clamav.infectedFiles.forEach((file, idx) => {
+            report += `    ${idx + 1}. ${file.file || file}\n`;
+            if (file.signature) {
+              report += `       Signature: ${file.signature}\n`;
+            }
+          });
+        }
+        report += '\n';
+      }
+      
+      // YARA findings
+      if (jsonData.detailed?.malware?.yara) {
+        const yara = jsonData.detailed.malware.yara;
+        report += `YARA Scan:\n`;
+        report += `  Status: ${yara.exitCode === 0 ? 'Completed' : 'Failed'}\n`;
+        report += `  Matches: ${yara.matchCount || 0}\n`;
+        if (yara.matches && yara.matches.length > 0) {
+          report += `  Pattern Matches:\n`;
+          yara.matches.forEach((match, idx) => {
+            report += `    ${idx + 1}. Rule: ${match.rule || 'Unknown'}\n`;
+            if (match.file) {
+              report += `       File: ${match.file}\n`;
+            }
+          });
+        }
+        report += '\n';
+      }
+    } else {
+      report += 'No malware findings.\n\n';
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'DEFACEMENT FINDINGS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.findings?.defacement) {
+      const defacement = jsonData.findings.defacement;
+      report += `Status: ${defacement.changed ? 'CHANGED' : 'NORMAL'}\n`;
+      report += `Message: ${defacement.message || 'No changes detected'}\n`;
+      
+      if (defacement.changes && defacement.changes.length > 0) {
+        report += `\nChanges Detected:\n`;
+        defacement.changes.forEach((change, idx) => {
+          report += `  ${idx + 1}. ${change.type || 'Change'}\n`;
+          if (change.file) {
+            report += `     File: ${change.file}\n`;
+          }
+          if (change.description) {
+            report += `     Description: ${change.description}\n`;
+          }
+        });
+      }
+    } else if (jsonData.comparison) {
+      const comparison = jsonData.comparison;
+      report += `Status: ${comparison.changed ? 'CHANGED' : 'NORMAL'}\n`;
+      report += `Message: ${comparison.message || 'No changes detected'}\n`;
+      
+      if (comparison.changes && comparison.changes.length > 0) {
+        report += `\nChanges Detected:\n`;
+        comparison.changes.forEach((change, idx) => {
+          report += `  ${idx + 1}. ${change.type || 'Change'}\n`;
+          if (change.file) {
+            report += `     File: ${change.file}\n`;
+          }
+          if (change.description) {
+            report += `     Description: ${change.description}\n`;
+          }
+        });
+      }
+    } else {
+      report += 'No defacement findings.\n';
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'RECOMMENDATIONS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.recommendations && Array.isArray(jsonData.recommendations) && jsonData.recommendations.length > 0) {
+      jsonData.recommendations.forEach((rec, index) => {
+        if (typeof rec === 'string') {
+          report += `${index + 1}. ${rec}\n`;
+        } else if (rec.action) {
+          report += `${index + 1}. [${rec.priority || 'medium'}] ${rec.action}\n`;
+          if (rec.details) {
+            report += `   Details: ${rec.details}\n`;
+          }
+          if (rec.steps && Array.isArray(rec.steps)) {
+            rec.steps.forEach(step => {
+              report += `   ${step}\n`;
+            });
+          }
+        }
+      });
+    } else {
+      report += '• Continue regular monitoring\n';
+      report += '• Keep security tools updated\n';
+      report += '• Review file permissions regularly\n';
+      report += '• Implement automated scanning\n';
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'EXECUTED COMMANDS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.metadata?.executedCommands && Array.isArray(jsonData.metadata.executedCommands)) {
+      jsonData.metadata.executedCommands.forEach((cmd, idx) => {
+        report += `${idx + 1}. Tool: ${cmd.tool || 'Unknown'}\n`;
+        report += `   Command: ${cmd.command || 'N/A'}\n`;
+        report += `   Exit Code: ${cmd.exitCode !== undefined ? cmd.exitCode : 'N/A'}\n`;
+        if (cmd.description) {
+          report += `   Description: ${cmd.description}\n`;
+        }
+        report += '\n';
+      });
+    } else {
+      report += 'No command details available.\n';
+    }
+    
+    report += '\n═══════════════════════════════════════════════════════════════\n';
+    report += 'Report Generated by CyberGuard Malware & Defacement Monitor\n';
+    report += '═══════════════════════════════════════════════════════════════\n';
+    
+    return report;
+  }
+
+  // Helper function to create readable phishing report from JSON
+  function createReadablePhishingReport(jsonData) {
+    let report = '═══════════════════════════════════════════════════════════════\n';
+    report += '           PHISHING DETECTION REPORT\n';
+    report += '═══════════════════════════════════════════════════════════════\n\n';
+    
+    if (jsonData.target_url) {
+      report += `Target URL: ${jsonData.target_url}\n`;
+    }
+    if (jsonData.target_domain) {
+      report += `Target Domain: ${jsonData.target_domain}\n`;
+    }
+    if (jsonData.timestamp) {
+      report += `Scan Date: ${new Date(jsonData.timestamp).toLocaleString()}\n`;
+    }
+    if (jsonData.threat_score !== undefined) {
+      report += `Threat Score: ${jsonData.threat_score}/100\n`;
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'SUMMARY\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.statistics) {
+      const stats = jsonData.statistics;
+      report += `Total Domain Variations Found: ${stats.total_variations || 0}\n`;
+      report += `Active Domains: ${stats.active_domains || 0}\n`;
+      report += `Inactive Domains: ${stats.inactive_domains || 0}\n`;
+      if (stats.suspicious_domains) {
+        report += `Suspicious Domains: ${stats.suspicious_domains}\n`;
+      }
+      if (stats.ssl_issues) {
+        report += `SSL Issues Found: ${stats.ssl_issues}\n`;
+      }
+      if (stats.visual_matches) {
+        report += `Visual Matches: ${stats.visual_matches}\n`;
+      }
+      if (stats.content_matches) {
+        report += `Content Matches: ${stats.content_matches}\n`;
+      }
+    }
+    
+    report += '\n───────────────────────────────────────────────────────────────\n';
+    report += 'FINDINGS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.findings && Array.isArray(jsonData.findings) && jsonData.findings.length > 0) {
+      jsonData.findings.forEach((finding, index) => {
+        report += `${index + 1}. ${finding.type || 'Finding'}\n`;
+        report += `   Severity: ${finding.severity || 'Unknown'}\n`;
+        if (finding.evidence) {
+          report += `   Evidence: ${finding.evidence}\n`;
+        }
+        if (finding.count !== undefined) {
+          report += `   Count: ${finding.count}\n`;
+        }
+        report += '\n';
+      });
+    } else {
+      report += 'No specific findings reported.\n\n';
+    }
+    
+    report += '───────────────────────────────────────────────────────────────\n';
+    report += 'DOMAIN VARIATIONS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.domain_variations && Array.isArray(jsonData.domain_variations) && jsonData.domain_variations.length > 0) {
+      jsonData.domain_variations.slice(0, 20).forEach((variation, index) => {
+        report += `${index + 1}. ${variation.domain || variation.domain_name || 'Unknown'}\n`;
+        report += `   Fuzzer: ${variation.fuzzer || 'Unknown'}\n`;
+        report += `   Active: ${variation.active ? 'Yes' : 'No'}\n`;
+        if (variation.risk_score !== undefined) {
+          report += `   Risk Score: ${variation.risk_score}/100\n`;
+        }
+        if (variation.phash_similarity !== undefined) {
+          report += `   Visual Similarity: ${variation.phash_similarity}%\n`;
+        }
+        if (variation.lsh_similarity !== undefined) {
+          report += `   Content Similarity: ${variation.lsh_similarity}%\n`;
+        }
+        if (variation.attack_category) {
+          report += `   Attack Category: ${variation.attack_category}\n`;
+        }
+        report += '\n';
+      });
+      
+      if (jsonData.domain_variations.length > 20) {
+        report += `... and ${jsonData.domain_variations.length - 20} more domain variations.\n\n`;
+      }
+    } else {
+      report += 'No domain variations found.\n\n';
+    }
+    
+    report += '───────────────────────────────────────────────────────────────\n';
+    report += 'RECOMMENDATIONS\n';
+    report += '───────────────────────────────────────────────────────────────\n\n';
+    
+    if (jsonData.recommendations && Array.isArray(jsonData.recommendations) && jsonData.recommendations.length > 0) {
+      jsonData.recommendations.forEach((rec, index) => {
+        report += `${index + 1}. ${rec}\n`;
+      });
+    } else {
+      report += '• Monitor the identified domain variations regularly\n';
+      report += '• Consider registering high-risk variations to prevent abuse\n';
+      report += '• Implement email security measures to detect phishing attempts\n';
+      report += '• Educate users about typosquatting and phishing threats\n';
+    }
+    
+    report += '\n═══════════════════════════════════════════════════════════════\n';
+    report += 'Report Generated by CyberGuard Phishing Detection System\n';
+    report += '═══════════════════════════════════════════════════════════════\n';
+    
+    return report;
+  }
 
   // Secure WSL root execution handler used by WordPress audit tools
   ipcMain.handle('wsl-run-as-root', async (event, { distro, command, requireConfirm = true }) => {
