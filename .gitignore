@@ -151,4 +151,11 @@ src/main/backend/
 
 # macOS
 *.dylib
-*.app
+*.app/release/
+/dist/
+/out/
+/build/
+/*.exe
+/*.AppImage
+/*.deb
+/*.rpm
