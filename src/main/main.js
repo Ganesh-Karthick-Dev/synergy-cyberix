@@ -506,8 +506,8 @@ async function installKaliLinux(event = null) {
   });
 }
 
-// Global icon path for notifications
-const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
+// Global icon path for notifications - Use the original Cybersecurity Research icon
+const iconPath = path.join(__dirname, '..', 'assets', 'Cybersecurity-research-02.png');
 
 async function createMainWindow() {
 
@@ -3954,7 +3954,18 @@ ipcMain.handle('notification:getCount', async () => {
   console.log('[MALDEF] Handler should be registered now. Check console for errors above.')
 
 app.whenReady().then(async () => {
-    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+  console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+
+  // Set dock icon for Linux (and macOS)
+  if (process.platform === 'linux' || process.platform === 'darwin') {
+    try {
+      app.setIcon(iconPath);
+      console.log('✅ [MAIN] Dock icon set successfully');
+    } catch (error) {
+      console.log('⚠️ [MAIN] Could not set dock icon:', error.message);
+    }
+  }
+
   const win = await createMainWindow();
   mainWindowInstance = win;
 

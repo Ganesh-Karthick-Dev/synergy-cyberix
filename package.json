@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "main": "public/electron.cjs",
-  "icon": "src/assets/Cybersecurity research-02.ico",
+  "icon": "src/assets/Cybersecurity-research-02.png",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -106,7 +106,7 @@
           ]
         }
       ],
-      "icon": "src/assets/Cybersecurity research-02.ico",
+      "icon": "src/assets/Cybersecurity-research-02.png",
       "requestedExecutionLevel": "requireAdministrator"
     },
     "nsis": {
@@ -115,9 +115,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Cybersecurity Scanner",
-      "installerIcon": "src/assets/Cybersecurity research-02.ico",
-      "uninstallerIcon": "src/assets/Cybersecurity research-02.ico",
-      "installerHeaderIcon": "src/assets/Cybersecurity research-02.ico",
+      "installerIcon": "src/assets/Cybersecurity-research-02.png",
+      "uninstallerIcon": "src/assets/Cybersecurity-research-02.png",
+      "installerHeaderIcon": "src/assets/Cybersecurity-research-02.png",
       "deleteAppDataOnUninstall": false
     },
     "portable": {
@@ -138,7 +138,7 @@
           ]
         }
       ],
-      "icon": "src/assets/Cybersecurity research-02.ico",
+      "icon": "src/assets/Cybersecurity-research-02.png",
       "category": "Utility",
       "executableName": "cybersecurity-scanner"
     }
