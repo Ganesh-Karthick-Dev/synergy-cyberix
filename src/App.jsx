@@ -909,11 +909,10 @@ const AppContent = () => {
     <NetworkStatus>
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
+          <div className="text-center w-fit mx-auto">
             <div>
             <h2
-              className="text-4xl font-bold text-white mb-4 leading-tight tracking-widest bg-orange-500 px-3 py-2 rounded"
-              style={{ fontFamily: 'Clouds, sans-serif !important' }}
+              className="cyberix-logo text-4xl font-bold text-white mb-4 leading-tight tracking-widest bg-orange-500 px-3 py-2 rounded"
             >
              Cyberix
             </h2>
@@ -965,7 +964,7 @@ const AppContent = () => {
                   type="checkbox"
                   checked={formData.rememberMe}
                   onChange={handleChange}
-                  className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 dark:border-slate-600 rounded"
+                  className="h-4 w-4 text-orange-500 focus:ring-orange-500 border-gray-300 dark:border-slate-600 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                   Remember me
@@ -973,7 +972,7 @@ const AppContent = () => {
               </div>
 
               <div>
-                <a href="#" className="text-sm text-orange-600 hover:text-orange-500 transition-colors">
+                <a href="#" className="text-sm text-orange-500 hover:text-orange-500 transition-colors">
                   Forgot password?
                 </a>
               </div>
