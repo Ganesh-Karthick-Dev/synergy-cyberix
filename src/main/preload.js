@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   onSecurityAnalyzerComplete: (listener) => ipcRenderer.on('securityAnalysis:complete', (_e, data) => listener(data)),
   openExternal: (url) => ipcRenderer.invoke('app:openExternal', url),
   checkKali: () => ipcRenderer.invoke('kali:check'),
+  checkEnvironment: () => ipcRenderer.invoke('environment:check'),
   installKali: () => ipcRenderer.invoke('kali:install'),
   onKaliInstallProgress: (listener) => ipcRenderer.on('kali:installProgress', (_e, message) => listener(message)),
   onKaliInstallComplete: (listener) => ipcRenderer.once('kali:installComplete', (_e, success) => listener(success)),

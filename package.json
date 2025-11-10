@@ -10,6 +10,8 @@
     "build:exe": "npm run build && electron-builder --win --x64",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && electron-builder --win --x64 --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --x64 --publish never",
+    "dist:all": "npm run build && electron-builder --win --linux --x64 --publish never",
     "lint": "eslint .",
     "preview": "vite preview",
     "electron": "cross-env NODE_ENV=development electron .",
@@ -76,7 +78,9 @@
       "!**/*.log",
       "!.git/**/*",
       "!.vscode/**/*",
-      "!.idea/**/*"
+      "!.idea/**/*",
+      "!node_modules/@emnapi/**/*",
+      "!node_modules/@tailwindcss/oxide-wasm32-wasi/**/*"
     ],
     "extraFiles": [
       {
@@ -118,6 +122,25 @@
     },
     "portable": {
       "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/assets/Cybersecurity research-02.ico",
+      "category": "Utility",
+      "executableName": "cybersecurity-scanner"
     }
   }
 }

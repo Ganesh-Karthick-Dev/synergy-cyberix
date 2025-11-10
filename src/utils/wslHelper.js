@@ -1,55 +1,98 @@
 const { exec } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+const os = require('os');
+const { detectKaliEnvironment } = require('../main/osCheck');
 
-const WSL_DISTRO = 'kali-linux';
+// Global environment cache
+let environmentCache = null;
 
 function escapeDoubleQuotes(s) {
   return (s || '').replace(/"/g, '\\"');
 }
 
-async function runWSLAsRoot(command) {
+// Detect and cache environment type
+async function getEnvironment() {
+  if (!environmentCache) {
+    environmentCache = await detectKaliEnvironment();
+  }
+  return environmentCache;
+}
+
+// Execute commands based on detected environment
+async function executeCommand(command, asRoot = false, useRaw = false) {
+  const env = await getEnvironment();
+
+  if (env.type === 'wsl-kali') {
+    // Windows with WSL Kali
+    return await executeWSLCommand(command, asRoot, useRaw);
+  } else if (env.type === 'native-kali') {
+    // Native Kali Linux
+    return await executeNativeCommand(command, asRoot, useRaw);
+  } else {
+    // Fallback to native Linux
+    return await executeNativeCommand(command, asRoot, useRaw);
+  }
+}
+
+// Windows WSL execution
+async function executeWSLCommand(command, asRoot = false, useRaw = false) {
   const escaped = escapeDoubleQuotes(command);
-  const full = `wsl -d ${WSL_DISTRO} -u root bash -lc "${escaped}"`;
+  let full;
+
+  if (useRaw) {
+    full = `wsl -d kali-linux ${command}`;
+  } else if (asRoot) {
+    full = `wsl -d kali-linux -u root bash -lc "${escaped}"`;
+  } else {
+    full = `wsl -d kali-linux bash -lc "${escaped}"`;
+  }
+
   try {
     const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
     return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
   } catch (error) {
     return { success: false, error: error.message, stdout: error.stdout || '', stderr: error.stderr || '' };
   }
+}
+
+// Native Linux/Kali execution
+async function executeNativeCommand(command, asRoot = false, useRaw = false) {
+  let full;
+
+  if (useRaw) {
+    full = command;
+  } else if (asRoot) {
+    const escaped = escapeDoubleQuotes(command);
+    full = `sudo bash -lc "${escaped}"`;
+  } else {
+    full = `bash -lc "${command}"`;
+  }
+
+  try {
+    const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
+    return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
+  } catch (error) {
+    return { success: false, error: error.message, stdout: error.stdout || '', stderr: error.stderr || '' };
+  }
+}
+
+// Legacy function aliases for backward compatibility
+async function runWSLAsRoot(command) {
+  return await executeCommand(command, true, false);
 }
 
 async function runWSL(command) {
-  const escaped = escapeDoubleQuotes(command);
-  const full = `wsl -d ${WSL_DISTRO} bash -lc "${escaped}"`;
-  try {
-    const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
-    return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
-  } catch (error) {
-    return { success: false, error: error.message, stdout: error.stdout || '', stderr: error.stderr || '' };
-  }
+  return await executeCommand(command, false, false);
 }
 
-// Run raw command directly in WSL without bash -c wrapper
 async function runWSLRaw(command) {
-  // Command is passed directly to WSL without bash -c wrapping
-  const full = `wsl -d ${WSL_DISTRO} ${command}`;
-  try {
-    const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
-    return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
-  } catch (error) {
-    return { success: false, error: error.message, stdout: error.stdout || '', stderr: error.stderr || '' };
-  }
+  return await executeCommand(command, false, true);
 }
 
 async function checkWSL() {
-  try {
-    const { stdout } = await execPromise('wsl -l -v');
-    const out = (stdout || '').toLowerCase();
-    return out.includes('kali') || out.includes('ubuntu');
-  } catch {
-    return false;
-  }
+  const env = await getEnvironment();
+  return env.type === 'wsl-kali';
 }
 
 async function checkTool(toolName) {
@@ -67,7 +110,8 @@ async function getToolVersion(toolName) {
 }
 
 module.exports = {
-  WSL_DISTRO,
+  getEnvironment,
+  executeCommand,
   runWSLAsRoot,
   runWSL,
   runWSLRaw,

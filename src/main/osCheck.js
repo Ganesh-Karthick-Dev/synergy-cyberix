@@ -1,11 +1,87 @@
 const os = require('os');
 const { spawn } = require('child_process');
+const fs = require('fs');
 
 function detectPlatform() {
   const platform = os.platform();
   if (platform === 'darwin') return 'mac';
   if (platform === 'win32') return 'windows';
   return 'linux';
+}
+
+// Enhanced platform detection for Kali Linux
+async function detectKaliEnvironment() {
+  const platform = os.platform();
+
+  if (platform === 'win32') {
+    // Check if WSL is available and Kali is installed
+    try {
+      const wslCheck = spawn('wsl', ['-l', '-v'], { shell: true });
+      let output = '';
+      wslCheck.stdout.on('data', (d) => output += d.toString());
+      wslCheck.stderr.on('data', (d) => output += d.toString());
+
+      return new Promise((resolve) => {
+        wslCheck.on('close', (code) => {
+          if (code === 0 && output.toLowerCase().includes('kali')) {
+            resolve({ type: 'wsl-kali', distro: 'kali-linux' });
+          } else {
+            resolve({ type: 'windows', distro: null });
+          }
+        });
+        wslCheck.on('error', () => resolve({ type: 'windows', distro: null }));
+      });
+    } catch (e) {
+      return { type: 'windows', distro: null };
+    }
+  } else if (platform === 'linux') {
+    // Check if we're on native Kali Linux
+    try {
+      // Check for Kali-specific files and commands
+      const kaliIndicators = [
+        '/etc/os-release',
+        '/usr/bin/nmap',
+        '/usr/bin/nikto'
+      ];
+
+      let isKali = false;
+
+      // Check os-release file
+      if (fs.existsSync('/etc/os-release')) {
+        const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+        if (osRelease.toLowerCase().includes('kali')) {
+          isKali = true;
+        }
+      }
+
+      // Check for Kali tools
+      const kaliTools = ['nmap', 'nikto', 'sqlmap', 'hydra'];
+      let kaliToolsCount = 0;
+      for (const tool of kaliTools) {
+        try {
+          const toolCheck = spawn('which', [tool], { shell: true });
+          await new Promise((resolve) => {
+            toolCheck.on('close', (code) => {
+              if (code === 0) kaliToolsCount++;
+              resolve();
+            });
+          });
+        } catch (e) {
+          // Tool not found, continue
+        }
+      }
+
+      if (isKali || kaliToolsCount >= 3) {
+        return { type: 'native-kali', distro: null };
+      } else {
+        return { type: 'linux', distro: null };
+      }
+    } catch (e) {
+      return { type: 'linux', distro: null };
+    }
+  } else {
+    return { type: platform, distro: null };
+  }
 }
 
 async function checkWslInstalled() {
@@ -111,6 +187,7 @@ function installWsl(onLog, onDone) {
 
 module.exports = {
   detectPlatform,
+  detectKaliEnvironment,
   checkWslInstalled,
   installWsl
 };

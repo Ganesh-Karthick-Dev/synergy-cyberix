@@ -5,6 +5,7 @@ import SetupScreen from './setup/SetupScreen'
 import Setup from './components/Setup'
 import NetworkStatus from './components/NetworkStatus'
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
+import NativeKaliPasswordDialog from './components/NativeKaliPasswordDialog'
 import WslUserCreationDialog from './components/WslUserCreationDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
@@ -14,6 +15,7 @@ import { NotificationProvider } from './context/NotificationContext'
 import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
+import authService from './utils/authService'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
@@ -35,10 +37,12 @@ const AppContent = () => {
   // New states for WSL credential flow
   const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
   const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
+  const [showNativeKaliPasswordDialog, setShowNativeKaliPasswordDialog] = useState(false)
   const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
   const [wslInstallationStatus, setWslInstallationStatus] = useState(null) // 'checking', 'installing', 'installed', 'not-installed'
+  const [environment, setEnvironment] = useState(null)
 
-  // Check setup completion status on app load
+  // Check setup completion status and environment on app load
   useEffect(() => {
     const checkSetupStatus = async () => {
       try {
@@ -46,6 +50,32 @@ const AppContent = () => {
           const setupStatus = await window.cyberGuard.checkSetupComplete()
           setSetupComplete(setupStatus.completed)
           setInstallPath(setupStatus.installPath)
+
+          // Detect environment - prioritize native Kali detection
+          const isLinux = navigator.platform.toLowerCase().includes('linux') ||
+                         navigator.userAgent.toLowerCase().includes('linux')
+          console.log('🔍 Browser platform detection - isLinux:', isLinux)
+
+          try {
+            if (window.cyberGuard && window.cyberGuard.checkEnvironment) {
+              const envResult = await window.cyberGuard.checkEnvironment()
+              setEnvironment(envResult.type)
+              console.log('🔍 Environment detected via IPC:', envResult.type)
+            } else {
+              // Fallback to browser-based detection
+              setEnvironment(isLinux ? 'native-kali' : 'wsl-kali')
+              console.log('🔍 Environment fallback to browser detection:', isLinux ? 'native-kali' : 'wsl-kali')
+            }
+          } catch (envError) {
+            console.log('Environment IPC detection failed, using browser fallback:', envError.message)
+            // Always assume native Kali on Linux, WSL on others
+            setEnvironment(isLinux ? 'native-kali' : 'wsl-kali')
+            console.log('🔍 Environment final fallback:', isLinux ? 'native-kali' : 'wsl-kali')
+          }
+        } else {
+          console.log('🔍 window.cyberGuard not available, using browser detection')
+          const isLinux = navigator.platform.toLowerCase().includes('linux')
+          setEnvironment(isLinux ? 'native-kali' : 'wsl-kali')
         }
       } catch (error) {
         console.error('Error checking setup status:', error)
@@ -57,6 +87,61 @@ const AppContent = () => {
 
     checkSetupStatus()
   }, [])
+
+  // Check authentication status on app load
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        console.log('🔐 [APP] Checking authentication status on app load...')
+        const authStatus = await authService.checkAuthStatus()
+
+        if (authStatus.authenticated && authStatus.user) {
+          console.log('✅ [APP] User is already authenticated:', authStatus.user.email)
+          setIsAuthenticated(true)
+
+          // Start post-login flow for authenticated users
+          await handlePostLoginFlow()
+        } else {
+          console.log('🔐 [APP] User not authenticated, showing login form')
+        }
+      } catch (error) {
+        console.error('❌ [APP] Auth status check failed:', error.message)
+        // Stay on login form if auth check fails
+      }
+    }
+
+    // Only check auth status if backend is available
+    if (window.cyberGuard) {
+      checkAuthStatus()
+    }
+  }, [])
+
+  // Logout function
+  const handleLogout = async () => {
+    try {
+      const loadingToastId = showLoading('🔐 Logging out...')
+
+      // Call backend logout
+      await authService.logout()
+
+      // Clear local state
+      setIsAuthenticated(false)
+      setFormData({
+        username: '',
+        password: '',
+        rememberMe: false
+      })
+
+      dismissToast(loadingToastId)
+      showSuccess('👋 Logged out successfully')
+
+    } catch (error) {
+      console.error('❌ [APP] Logout error:', error.message)
+      // Still clear local state even if backend logout fails
+      setIsAuthenticated(false)
+      showError('Logged out locally (server logout may have failed)')
+    }
+  }
 
   // Hard gate: verify WSL + tools before allowing dashboard/login
   useEffect(() => {
@@ -109,49 +194,94 @@ const AppContent = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    console.log('🎯 [APP] ===== LOGIN FORM SUBMIT START =====')
+    console.log('🎯 [APP] Form data:', {
+      username: formData.username,
+      passwordLength: formData.password ? formData.password.length : 0
+    })
+
     setIsLoading(true)
-    
+
     // Show professional loading toast
-    const loadingToastId = showLoading('🔐 Authenticating your credentials...')
+    const loadingToastId = showLoading('🔐 Authenticating with backend...')
     setCurrentToastId(loadingToastId)
-    
+
+    console.log('🎯 [APP] Loading toast shown, calling authService.login...')
+
     try {
-      // Simulate login process with realistic delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      // Check credentials
-      if (formData.username === 'admin' && formData.password === 'admin@123') {
-        // Dismiss loading toast
-        dismissToast(loadingToastId)
-        
-        // Show success toast
-        showSuccess(`🎉 Welcome back, ${formData.username}! Login successful.`, {
-          duration: 3000
-        })
-        
-        // Start the WSL credential and tool checking flow
-        await handlePostLoginFlow()
-        
-      } else {
-        // Dismiss loading toast
-        dismissToast(loadingToastId)
-        
-        // Show error toast with professional styling
-        showError('❌ Authentication failed! Invalid credentials provided.', {
-          duration: 5000
-        })
-      }
-    } catch (error) {
+      // Call backend login API
+      console.log('🎯 [APP] About to call authService.login...')
+      const loginResult = await authService.login(formData.username, formData.password)
+      console.log('🎯 [APP] authService.login returned:', loginResult)
+
       // Dismiss loading toast
       dismissToast(loadingToastId)
-      
-      // Show error toast for unexpected errors
-      showError('🌐 Connection error. Please check your network and try again.', {
-        duration: 6000
+      console.log('🎯 [APP] Loading toast dismissed')
+
+      // Show success toast
+      showSuccess(`🎉 Welcome back, ${loginResult.user.email}! Login successful.`, {
+        duration: 3000
       })
+      console.log('🎯 [APP] Success toast shown')
+
+      // Set authentication state
+      setIsAuthenticated(true)
+      console.log('🎯 [APP] Authentication state set to true')
+
+      // Start the post-login flow (environment detection, tool checking, etc.)
+      console.log('🎯 [APP] Starting post-login flow...')
+      await handlePostLoginFlow()
+      console.log('🎯 [APP] Post-login flow completed')
+
+      console.log('🎯 [APP] ===== LOGIN FORM SUBMIT SUCCESS =====')
+
+    } catch (error) {
+      console.error('❌ [APP] ===== LOGIN FORM SUBMIT ERROR =====')
+      console.error('❌ [APP] Error caught:', error)
+      console.error('❌ [APP] Error message:', error.message)
+      console.error('❌ [APP] Error stack:', error.stack)
+
+      // Dismiss loading toast
+      dismissToast(loadingToastId)
+      console.log('🎯 [APP] Loading toast dismissed (error)')
+
+      // Show error toast with professional styling
+      const errorMessage = error.message || 'Authentication failed'
+      console.log('🎯 [APP] Error message to show:', errorMessage)
+
+      // Handle specific error types
+      if (errorMessage.includes('blocked')) {
+        console.log('🚫 [APP] Showing blocked account error')
+        showError(`🚫 ${errorMessage}`, {
+          duration: 8000
+        })
+      } else if (errorMessage.includes('Invalid credentials')) {
+        console.log('❌ [APP] Showing invalid credentials error')
+        showError('❌ Invalid email or password. Please check your credentials.', {
+          duration: 6000
+        })
+      } else if (errorMessage.includes('Too many login attempts')) {
+        console.log('⏰ [APP] Showing too many attempts error')
+        showError('⏰ Too many login attempts. Please wait before trying again.', {
+          duration: 10000
+        })
+      } else if (errorMessage.includes('Connection') || errorMessage.includes('network') || errorMessage.includes('Cannot connect')) {
+        console.log('🌐 [APP] Showing connection error')
+        showError('🌐 Connection error. Please check your internet connection and try again.', {
+          duration: 6000
+        })
+      } else {
+        console.log('❌ [APP] Showing generic error')
+        showError(`❌ ${errorMessage}`, {
+          duration: 6000
+        })
+      }
+
+      console.log('🎯 [APP] ===== LOGIN FORM SUBMIT ERROR END =====')
     } finally {
       setIsLoading(false)
       setCurrentToastId(null)
+      console.log('🎯 [APP] Finally block executed, isLoading set to false')
     }
   }
 
@@ -469,13 +599,21 @@ const AppContent = () => {
           console.log('❌ [APP] Stored password is invalid, asking for new password')
           setIsCheckingCredentials(false)
           // Password is invalid, ask for new password
-          setShowWslPasswordDialog(true)
+          if (environment === 'native-kali') {
+            setShowNativeKaliPasswordDialog(true)
+          } else {
+            setShowWslPasswordDialog(true)
+          }
         }
       } else {
-        console.log('🔐 [APP] No stored WSL password found, asking for password')
+        console.log('🔐 [APP] No stored password found, asking for password')
         setIsCheckingCredentials(false)
         // No stored password, ask for password
-        setShowWslPasswordDialog(true)
+        if (environment === 'native-kali') {
+          setShowNativeKaliPasswordDialog(true)
+        } else {
+          setShowWslPasswordDialog(true)
+        }
       }
     } catch (error) {
       console.error('❌ [APP] Post-login flow failed:', error)
@@ -488,21 +626,7 @@ const AppContent = () => {
     }
   }
 
-  const handleLogout = () => {
-    // Show logout toast
-    showSuccess('👋 Successfully logged out! See you next time.', {
-      duration: 2500
-    })
-    
-    setTimeout(() => {
-      setIsAuthenticated(false)
-      setFormData({
-        username: '',
-        password: '',
-        rememberMe: false
-      })
-    }, 500)
-  }
+  // Removed duplicate handleLogout - using the async version above
 
   const handlePrefillCredentials = () => {
     setFormData(prev => ({
@@ -593,6 +717,60 @@ const AppContent = () => {
 
   const handleWslPasswordCancel = () => {
     setShowWslPasswordDialog(false)
+    // User cancelled, stay on login screen
+  }
+
+  const handleNativeKaliPasswordSuccess = async (password) => {
+    console.log('✅ [APP] Native Kali sudo password validated, checking tools...')
+    setShowNativeKaliPasswordDialog(false)
+
+    try {
+      // Check which tools are missing on native Kali
+      if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
+        console.log('🔧 [APP] Calling checkRequiredToolsOnly with password for native Kali:', password ? 'EXISTS' : 'NULL')
+        const toolCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
+
+        console.log('🔧 [APP] ===== TOOL CHECK RESULT (NATIVE KALI PASSWORD SUCCESS) =====')
+        console.log('🔧 [APP] Tool check result:', toolCheck)
+        console.log('🔧 [APP] Tool check success:', toolCheck?.success)
+        console.log('🔧 [APP] Tool check missingTools:', toolCheck?.missingTools)
+        console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
+        console.log('🔧 [APP] ===== END TOOL CHECK RESULT (NATIVE KALI PASSWORD SUCCESS) =====')
+
+        if (toolCheck && toolCheck.success) {
+          console.log('✅ [APP] All tools are ready on native Kali!')
+          showSuccess('All security tools are ready! You can now use all scanning features.')
+          // Navigate directly to dashboard
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 800)
+        } else if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
+          console.log('⚠️ [APP] Some tools are missing on native Kali:', toolCheck.missingTools)
+          showError(`Missing ${toolCheck.missingTools.length} tools: ${toolCheck.missingTools.join(', ')}. Please install them manually with 'sudo apt install'.`)
+          // Still navigate to dashboard - user can use available tools
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 2000)
+        } else {
+          console.log('✅ [APP] Tool check completed for native Kali, navigating to dashboard')
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 800)
+        }
+      } else {
+        console.log('✅ [APP] Tool check API not available, navigating to dashboard')
+        setTimeout(() => {
+          setIsAuthenticated(true)
+        }, 800)
+      }
+    } catch (error) {
+      console.error('❌ [APP] Tool check failed for native Kali:', error)
+      showError('Failed to check security tools. Please try again.')
+    }
+  }
+
+  const handleNativeKaliPasswordCancel = () => {
+    setShowNativeKaliPasswordDialog(false)
     // User cancelled, stay on login screen
   }
 
@@ -893,6 +1071,13 @@ const AppContent = () => {
       isOpen={showWslPasswordDialog}
       onClose={handleWslPasswordCancel}
       onSuccess={handleWslPasswordSuccess}
+    />
+
+    {/* Native Kali Password Dialog */}
+    <NativeKaliPasswordDialog
+      isOpen={showNativeKaliPasswordDialog}
+      onClose={handleNativeKaliPasswordCancel}
+      onSuccess={handleNativeKaliPasswordSuccess}
     />
 
     {/* WSL User Creation Dialog */}
