@@ -913,7 +913,7 @@ const AppContent = () => {
             <div>
             <h2
               className="text-4xl font-bold text-white mb-4 leading-tight tracking-widest bg-orange-500 px-3 py-2 rounded"
-              style={{ fontFamily: 'Clouds, sans-serif' }}
+              style={{ fontFamily: 'Clouds, sans-serif !important' }}
             >
              Cyberix
             </h2>
