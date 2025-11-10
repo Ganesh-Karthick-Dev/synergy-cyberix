@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Custom font for Cyberix logo */
+@font-face {
+  font-family: 'Clouds';
+  src: url('./assets/clouds.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Enable class-based dark mode without a Tailwind config (Tailwind v4) */
 @custom-variant dark (&:where(.dark, .dark *));
 

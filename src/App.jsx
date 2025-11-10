@@ -911,7 +911,10 @@ const AppContent = () => {
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
             <div>
-            <h2 className="text-3xl font-bold text-white bg-orange-500 w-fit text-center mx-auto p-3 rounded-lg mb-2">
+            <h2
+              className="text-4xl font-bold text-white mb-4 leading-tight tracking-widest bg-orange-500 px-3 py-2 rounded"
+              style={{ fontFamily: 'Clouds, sans-serif' }}
+            >
              Cyberix
             </h2>
             </div>
@@ -998,11 +1001,11 @@ const AppContent = () => {
             </div>
           </form>
 
-          <div className="mt-6 text-center">
+          {/* <div className="mt-6 text-center">
             <p className="text-sm text-gray-600 dark:text-gray-300">
               Credentials are prefilled for your convenience
             </p>
-          </div>
+          </div> */}
         </div>
 
         <div className="text-center">
