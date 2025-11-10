@@ -65,6 +65,18 @@ function Dashboard({ onLogout }) {
     }
   }, [])
 
+  // Check URL parameters for view (e.g., after OAuth redirect)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const viewParam = urlParams.get('view')
+    if (viewParam) {
+      setActiveView(viewParam)
+      // Clean up URL by removing the view parameter
+      const newUrl = window.location.pathname + (window.location.search.replace(/[?&]view=[^&]*/, '').replace(/^&/, '?') || '')
+      window.history.replaceState({}, '', newUrl)
+    }
+  }, [])
+
   // Simple dashboard initialization - credentials and tools are now handled in App.jsx
   useEffect(() => {
     const initializeDashboard = async () => {
@@ -172,7 +184,7 @@ function Dashboard({ onLogout }) {
       case 'phishing-scan':
         return <PhishingDetection />
       case 'api-scan':
-        return <APIScanner />
+        return <APIScanner onNavigate={(view) => setActiveView(view)} />
       // case 'security':
       //   return <SecurityCenter />
       case 'malware-defacement':

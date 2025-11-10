@@ -217,6 +217,88 @@ export const authApi = {
     return localStorage.getItem('auth_token') ||
            sessionStorage.getItem('auth_token') ||
            null
+  },
+
+  /**
+   * Initiate GitHub OAuth login
+   * Redirects user to GitHub OAuth page
+   * @param {Object} options - OAuth options
+   * @param {string} options.redirect - URL to redirect to after successful login (default: '/')
+   * @returns {void} Redirects to GitHub OAuth page
+   */
+  async loginWithGitHub(options = {}) {
+    try {
+      // Use current window origin for redirect to ensure correct port
+      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+      const redirect = options.redirect || '/'
+      
+      // If redirect is relative, prepend current origin
+      const fullRedirect = redirect.startsWith('http') 
+        ? redirect 
+        : `${currentOrigin}${redirect}`
+      
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/api'
+      const authUrl = `${baseUrl}/auth/github?redirect=${encodeURIComponent(fullRedirect)}`
+      
+      console.log('🔐 [GitHub OAuth] Initiating login with redirect:', fullRedirect)
+      console.log('🔐 [GitHub OAuth] Auth URL:', authUrl)
+      
+      // Redirect to GitHub OAuth endpoint
+      if (typeof window !== 'undefined') {
+        window.location.href = authUrl
+      }
+    } catch (error) {
+      console.error('Failed to initiate GitHub OAuth login:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Check if user is authenticated after GitHub OAuth callback
+   * This should be called after redirect from GitHub OAuth
+   * @returns {Promise<Object>} User profile if authenticated, null if not authenticated
+   */
+  async checkGitHubAuth() {
+    try {
+      // Check if we have cookies set by the backend
+      // Use apiHelpers.get to ensure credentials are included
+      const response = await apiHelpers.get(API_ENDPOINTS.AUTH.PROFILE, {
+        withCredentials: true // Important: include cookies
+      })
+      
+      // If successful, user is authenticated
+      if (response.data?.data) {
+        // Store user info if needed
+        return response.data
+      }
+      
+      return null
+    } catch (error) {
+      // Handle 401 errors gracefully - user is simply not authenticated
+      // Don't log as error since this is expected behavior
+      if (error.response?.status === 401) {
+        console.log('User is not authenticated with GitHub OAuth')
+        return null
+      }
+      
+      // For other errors, log but don't throw
+      console.error('Failed to check GitHub authentication:', error)
+      return null
+    }
+  },
+
+  /**
+   * Get GitHub repositories for authenticated user
+   * @returns {Promise<Object>} Repositories response
+   */
+  async getGitHubRepositories() {
+    try {
+      const response = await api.get('/auth/github/repositories')
+      return response.data
+    } catch (error) {
+      console.error('Failed to get GitHub repositories:', error)
+      throw error
+    }
   }
 }
 

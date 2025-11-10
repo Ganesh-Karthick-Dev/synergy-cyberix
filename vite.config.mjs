@@ -9,8 +9,9 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
-    port: 5173,
-    strictPort: false,
+    port: 3000,
+    strictPort: true, // Enforce port 3000
+    host: true, // Allow external connections
   },
   build: {
     outDir: 'dist',

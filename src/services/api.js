@@ -7,7 +7,7 @@ import axios from 'axios'
 
 // API Configuration
 const API_CONFIG = {
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/api',
   TIMEOUT: 30000, // 30 seconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000
@@ -17,6 +17,7 @@ const API_CONFIG = {
 const api = axios.create({
   baseURL: API_CONFIG.BASE_URL,
   timeout: API_CONFIG.TIMEOUT,
+  withCredentials: true, // Important: include cookies for authentication
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json'
@@ -40,12 +41,37 @@ api.interceptors.request.use(
     const token = getAuthToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+      // Debug logging for token
+      if (import.meta.env.DEV) {
+        console.log(`🔐 [API] Token found, adding Authorization header`, {
+          tokenLength: token.length,
+          tokenPreview: token.substring(0, 20) + '...',
+          url: config.url,
+          source: localStorage.getItem('auth_token') === token ? 'localStorage' : 
+                 sessionStorage.getItem('auth_token') === token ? 'sessionStorage' : 'unknown'
+        })
+      }
+    } else {
+      // Debug logging when no token - check all possible sources
+      if (import.meta.env.DEV) {
+        const localToken = localStorage.getItem('auth_token');
+        const sessionToken = sessionStorage.getItem('auth_token');
+        const cyberGuardToken = window.cyberGuard?.getAuthToken?.();
+        
+        console.log(`⚠️ [API] No token found for request: ${config.url}`, {
+          localStorage: localToken ? `Has token (${localToken.length} chars)` : 'No token',
+          sessionStorage: sessionToken ? `Has token (${sessionToken.length} chars)` : 'No token',
+          cyberGuard: cyberGuardToken ? `Has token (${cyberGuardToken.length} chars)` : 'No token',
+          allKeys: Object.keys(localStorage).filter(k => k.includes('token') || k.includes('auth'))
+        })
+      }
     }
 
     // Log request in development
     if (import.meta.env.DEV) {
       console.log(`🚀 [API] ${config.method?.toUpperCase()} ${config.url}`, {
         requestId: config.metadata.requestId,
+        hasAuth: !!config.headers.Authorization,
         data: config.data,
         params: config.params
       })
@@ -150,8 +176,14 @@ function handleUnauthorizedError(error, originalRequest) {
   // Clear invalid token
   clearAuthToken()
 
+  // Don't redirect for auth check endpoints - these are expected to fail if not authenticated
+  const authCheckEndpoints = ['/auth/profile', '/auth/github', '/auth/github/callback']
+  const isAuthCheckEndpoint = authCheckEndpoints.some(endpoint => 
+    originalRequest?.url?.includes(endpoint)
+  )
+
   // If this is not a retry and we have refresh logic, attempt refresh
-  if (!originalRequest._retry && originalRequest.url !== '/auth/login') {
+  if (!originalRequest._retry && originalRequest.url !== '/auth/login' && !isAuthCheckEndpoint) {
     // Redirect to login or trigger re-authentication
     if (typeof window !== 'undefined') {
       // In Electron renderer process, emit event to main process
@@ -160,7 +192,8 @@ function handleUnauthorizedError(error, originalRequest) {
       }
 
       // For web environment, redirect to login
-      if (window.location) {
+      // Only redirect if we're not already on a page that handles auth gracefully
+      if (window.location && !window.location.pathname.includes('/api-scanner')) {
         window.location.href = '/login'
       }
     }
@@ -276,11 +309,21 @@ function showErrorToast(message) {
 function getAuthToken() {
   // Check multiple sources for auth token
   if (typeof window !== 'undefined') {
-    return (
-      localStorage.getItem('auth_token') ||
-      sessionStorage.getItem('auth_token') ||
-      window.cyberGuard?.getAuthToken?.()
-    )
+    const localToken = localStorage.getItem('auth_token');
+    const sessionToken = sessionStorage.getItem('auth_token');
+    const cyberGuardToken = window.cyberGuard?.getAuthToken?.();
+    
+    // Debug logging in development
+    if (import.meta.env.DEV && !localToken && !sessionToken && !cyberGuardToken) {
+      console.warn('⚠️ [getAuthToken] No token found in any source', {
+        localStorage: localToken ? 'Has token' : 'No token',
+        sessionStorage: sessionToken ? 'Has token' : 'No token',
+        cyberGuard: cyberGuardToken ? 'Has token' : 'No token',
+        allLocalStorageKeys: Object.keys(localStorage).filter(k => k.includes('token') || k.includes('auth'))
+      });
+    }
+    
+    return localToken || sessionToken || cyberGuardToken || null;
   }
   return null
 }

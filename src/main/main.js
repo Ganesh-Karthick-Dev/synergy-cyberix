@@ -511,6 +511,13 @@ async function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // webSecurity: false is required for this cybersecurity scanning app to:
+      // - Load local files and resources
+      // - Bypass CORS restrictions for security scanning
+      // - Access local network resources
+      // WARNING: This disables web security features. Only use in trusted environments.
+      // Note: This will trigger an Electron security warning about allowRunningInsecureContent,
+      // which is expected and suppressed in the console message handler below.
       webSecurity: false
     }
   });
@@ -520,11 +527,16 @@ async function createMainWindow() {
     mainWindow.show()
   })
 
-  // Suppress harmless DevTools console warnings (Autofill API errors)
+  // Suppress harmless DevTools console warnings (Autofill API errors and Electron security warnings)
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
     // Filter out harmless DevTools Autofill warnings
     if (message.includes('Autofill.enable') || message.includes('Autofill.setAddresses')) {
       return; // Suppress these warnings
+    }
+    // Suppress Electron security warnings about allowRunningInsecureContent in development
+    // These warnings are expected when webSecurity is disabled for security scanning purposes
+    if (message.includes('Electron Security Warning') && message.includes('allowRunningInsecureContent')) {
+      return; // Suppress this warning - it's expected for this cybersecurity scanning app
     }
     // Allow other console messages to pass through
   });
@@ -532,7 +544,7 @@ async function createMainWindow() {
   // In development, load from Vite dev server
   if (isDev) {
     // Try multiple ports that Vite might use
-    const ports = [6977, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6978, 5173, 3000];
+    const ports = [3000, 5173, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6977, 6978];
     let loaded = false;
     
     for (const port of ports) {
@@ -585,8 +597,8 @@ async function createMainWindow() {
     if (isDev) {
       setTimeout(() => {
         console.log('Attempting to reload from current Vite port...')
-        // Try to reload from the current Vite port (6977 based on terminal output)
-        mainWindow.loadURL('http://localhost:6977/')
+        // Try to reload from the current Vite port (default: 3000)
+        mainWindow.loadURL('http://localhost:3000/')
       }, 1000)
     }
   })
