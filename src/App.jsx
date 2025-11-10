@@ -21,8 +21,8 @@ import logo from './assets/webp/Cybersecurity research-02.webp'
 const AppContent = () => {
   const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
   const [formData, setFormData] = useState({
-    username: '',
-    password: '',
+    username: 'pakih63038@nyfhk.com',
+    password: 'Th@X%5PJ$gu^',
     rememberMe: false
   })
   const [isLoading, setIsLoading] = useState(false)
@@ -628,31 +628,6 @@ const AppContent = () => {
 
   // Removed duplicate handleLogout - using the async version above
 
-  const handlePrefillCredentials = () => {
-    setFormData(prev => ({
-      ...prev,
-      username: 'admin',
-      password: 'admin@123'
-    }))
-    
-    // Show success toast
-    showSuccess('✅ Demo credentials filled! Ready to sign in.', {
-      duration: 2000
-    })
-  }
-
-  const handleClearCredentials = () => {
-    setFormData(prev => ({
-      ...prev,
-      username: '',
-      password: ''
-    }))
-    
-    // Show info toast
-    showSuccess('🗑️ Credentials cleared!', {
-      duration: 1500
-    })
-  }
 
   const handleWslPasswordSuccess = async (password) => {
     console.log('✅ [APP] WSL password validated, checking tools...')
@@ -1020,40 +995,12 @@ const AppContent = () => {
                 )}
               </button>
               
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={handlePrefillCredentials}
-                  disabled={isLoading}
-                  className="flex justify-center py-2 px-4 border border-orange-300 dark:border-orange-600 rounded-md shadow-sm text-sm font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/20 hover:bg-orange-100 dark:hover:bg-orange-900/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                  Fill Demo
-                </button>
-                
-                <button
-                  type="button"
-                  onClick={handleClearCredentials}
-                  disabled={isLoading}
-                  className="flex justify-center py-2 px-4 border border-gray-300 dark:border-slate-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-slate-700 hover:bg-gray-100 dark:hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  Clear
-                </button>
-              </div>
             </div>
           </form>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Demo Credentials:<br />
-              <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200 px-2 py-1 rounded">
-                Username: admin | Password: admin@123
-              </span>
+              Credentials are prefilled for your convenience
             </p>
           </div>
         </div>
