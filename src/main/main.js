@@ -127,26 +127,39 @@ function clearStoredPassword() {
 }
 
 // Helper: check if Kali Linux is installed in WSL
-function checkKaliInstalled() {
-  // Method 1: Check with wsl --status (most reliable)
+async function checkKaliInstalled() {
+  // First, check if we're on native Kali Linux
   try {
-    const sp = require('child_process').spawnSync('wsl', ['--status'], { 
+    const { detectKaliEnvironment } = require('./osCheck');
+    const env = await detectKaliEnvironment();
+
+    if (env.type === 'native-kali') {
+      console.log('✅ Native Kali Linux detected - no installation needed');
+      return true;
+    }
+  } catch (e) {
+    console.log('Environment detection error:', e.message);
+  }
+
+  // Method 1: Check with wsl --status (for Windows WSL users)
+  try {
+    const sp = require('child_process').spawnSync('wsl', ['--status'], {
       encoding: 'utf8',
       timeout: 5000 // Reduced timeout
     });
-    
+
     if (sp.status === 0) {
       const rawOutput = (sp.stdout || '').trim();
       // Clean up Unicode null characters that Windows PowerShell sometimes adds
       const output = rawOutput.replace(/\u0000/g, '');
       console.log('WSL status output:', output); // Debug logging
-      
+
       // Check if Kali Linux is mentioned in the status
       const lowerOutput = output.toLowerCase();
-      const hasKali = lowerOutput.includes('kali-linux') || 
+      const hasKali = lowerOutput.includes('kali-linux') ||
                      lowerOutput.includes('kali_linux') ||
                      lowerOutput.includes('kali');
-      
+
       if (hasKali) {
         console.log('✅ Kali detected via wsl --status'); // Debug logging
         return true;
@@ -493,8 +506,8 @@ async function installKaliLinux(event = null) {
   });
 }
 
-// Global icon path for notifications
-const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
+// Global icon path for notifications - Use the original Cybersecurity Research icon
+const iconPath = path.join(__dirname, '..', 'assets', 'Cybersecurity-research-02.png');
 
 async function createMainWindow() {
 
@@ -546,21 +559,54 @@ async function createMainWindow() {
     // Try multiple ports that Vite might use
     const ports = [3000, 5173, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6977, 6978];
     let loaded = false;
-    
-    for (const port of ports) {
-      try {
+
+    // Function to try loading from a port with proper promise handling
+    const tryLoadPort = (port) => {
+      return new Promise((resolve) => {
         const url = `http://localhost:${port}/`;
         console.log(`Trying to load from: ${url}`);
-        await mainWindow.loadURL(url);
+
+        // Set up event listeners before loading
+        const onFinishLoad = () => {
+          console.log(`✅ Successfully loaded from port ${port}`);
+          cleanup();
+          resolve(true);
+        };
+
+        const onFailLoad = (event, errorCode, errorDescription) => {
+          console.log(`❌ Failed to load from port ${port}: ${errorDescription} (${errorCode})`);
+          cleanup();
+          resolve(false);
+        };
+
+        const cleanup = () => {
+          mainWindow.webContents.removeListener('did-finish-load', onFinishLoad);
+          mainWindow.webContents.removeListener('did-fail-load', onFailLoad);
+        };
+
+        mainWindow.webContents.once('did-finish-load', onFinishLoad);
+        mainWindow.webContents.once('did-fail-load', onFailLoad);
+
+        // Load the URL
+        mainWindow.loadURL(url);
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          cleanup();
+          resolve(false);
+        }, 5000);
+      });
+    };
+
+    // Try ports sequentially
+    for (const port of ports) {
+      const success = await tryLoadPort(port);
+      if (success) {
         loaded = true;
-        console.log(`✅ Successfully loaded from port ${port}`);
         break;
-      } catch (error) {
-        console.log(`❌ Failed to load from port ${port}:`, error.message);
-        continue;
       }
     }
-    
+
     if (!loaded) {
       console.log('❌ Failed to load from any port, showing error page');
       mainWindow.loadURL(`data:text/html,
@@ -574,6 +620,7 @@ async function createMainWindow() {
               <li>The Vite server is running on one of these ports: ${ports.join(', ')}</li>
               <li>Check the terminal for the correct port number</li>
             </ul>
+            <p><strong>Expected port:</strong> 5173 (Vite default)</p>
             <p><strong>Current time:</strong> ${new Date().toLocaleString()}</p>
             <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Retry</button>
           </body>
@@ -3911,10 +3958,7 @@ ipcMain.handle('notification:getCount', async () => {
     console.error('[MALDEF] ✗ CRITICAL: Failed to register handler!')
     console.error('[MALDEF] Error:', e.message)
     console.error('[MALDEF] Stack:', e.stack)
-    // Still try to register a minimal handler to prevent "No handler registered" error
-    ipcMain.handle('maldef:start', async (event, url, options = {}) => {
-      return { error: `Handler registration failed: ${e.message}` }
-    })
+    // Don't register a fallback handler - let the main registration handle this
   }
   
   // Verify handler registration
@@ -3922,7 +3966,18 @@ ipcMain.handle('notification:getCount', async () => {
   console.log('[MALDEF] Handler should be registered now. Check console for errors above.')
 
 app.whenReady().then(async () => {
-    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+  console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+
+  // Set dock icon for Linux (and macOS)
+  if (process.platform === 'linux' || process.platform === 'darwin') {
+    try {
+      app.setIcon(iconPath);
+      console.log('✅ [MAIN] Dock icon set successfully');
+    } catch (error) {
+      console.log('⚠️ [MAIN] Could not set dock icon:', error.message);
+    }
+  }
+
   const win = await createMainWindow();
   mainWindowInstance = win;
 
@@ -3934,7 +3989,7 @@ app.whenReady().then(async () => {
         const hasWsl = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
         
         if (hasWsl) {
-          const hasKali = checkKaliInstalled();
+          const hasKali = await checkKaliInstalled();
           if (!hasKali) {
             console.log('⚠️ [STARTUP] Kali Linux not detected. Starting auto-installation...');
             
@@ -4144,22 +4199,50 @@ app.whenReady().then(async () => {
   // are registered BEFORE app.whenReady() at lines 608-841
 
   // Kali Linux management
-  ipcMain.handle('kali:check', () => {
-    return checkKaliInstalled();
+  ipcMain.handle('kali:check', async () => {
+    return await checkKaliInstalled();
+  });
+
+  // Environment detection for frontend
+  ipcMain.handle('environment:check', async () => {
+    try {
+      const env = await detectKaliEnvironment();
+      return env;
+    } catch (error) {
+      console.log('Environment detection error:', error.message);
+      return { type: 'unknown', distro: null };
+    }
   });
 
   ipcMain.handle('kali:install', async (event) => {
     console.log('🚀 [KALI-INSTALL-HANDLER] Starting Kali Linux installation via IPC...');
-    
+
+    // First check if we're already on native Kali Linux
+    try {
+      const { detectKaliEnvironment } = require('./osCheck');
+      const env = await detectKaliEnvironment();
+
+      if (env.type === 'native-kali') {
+        console.log('✅ [KALI-INSTALL-HANDLER] Already running on native Kali Linux - no installation needed');
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('kali:installProgress', 'Already running on Kali Linux!');
+          event.sender.send('kali:installComplete', true);
+        }
+        return true;
+      }
+    } catch (e) {
+      console.log('Environment detection error:', e.message);
+    }
+
     // Update UI to show installation in progress
     if (event.sender && !event.sender.isDestroyed()) {
       event.sender.send('kali:installProgress', 'Starting Kali Linux installation...');
     }
-    
+
     try {
       // Pass event to installKaliLinux so it can send progress updates
       const result = await installKaliLinux(event);
-      
+
       if (result) {
         // Installation successful - update UI
         if (event.sender && !event.sender.isDestroyed()) {
@@ -4173,7 +4256,7 @@ app.whenReady().then(async () => {
         }
         console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation failed');
       }
-      
+
       return result;
     } catch (error) {
       console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation error:', error.message);
@@ -4608,7 +4691,7 @@ app.whenReady().then(async () => {
   }
 
   // Helper: quick preflight to check WSL, Kali, and nmap availability
-  function detectWslAndNmap() {
+  async function detectWslAndNmap() {
     const result = { hasWsl: false, hasKali: false, wslNmap: false, winNmap: false, details: [] };
     try {
       const sp = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' });
@@ -4618,7 +4701,7 @@ app.whenReady().then(async () => {
         result.details.push('WSL is present. Distributions:\n' + distributions);
         
         // Check if Kali is installed
-        result.hasKali = checkKaliInstalled();
+        result.hasKali = await checkKaliInstalled();
         if (result.hasKali) {
           result.details.push('✅ Kali Linux is installed in WSL.');
         } else {
@@ -4678,7 +4761,7 @@ app.whenReady().then(async () => {
       event.sender.send('scan:progress', { stage: 'error', message: 'Scanner not built. Run npm run build:ts' });
       return { error: 'Scanner not built' };
     }
-    const pre = detectWslAndNmap();
+    const pre = await detectWslAndNmap();
     for (const d of pre.details) {
       event.sender.send('scan:progress', { stage: 'preflight', message: d });
     }
@@ -4698,7 +4781,7 @@ app.whenReady().then(async () => {
       if (installKali.response === 0) {
         const kaliInstalled = await installKaliLinux();
         if (kaliInstalled) {
-          pre.hasKali = checkKaliInstalled(); // Re-check to confirm
+          pre.hasKali = await checkKaliInstalled(); // Re-check to confirm
           // Re-check nmap after Kali installation
           const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
           if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
@@ -5017,211 +5100,207 @@ app.whenReady().then(async () => {
 
   // WSL Root Password Management
   ipcMain.handle('wsl:testRootCredentials', async (event, password) => {
-    console.log('🔐 [WSL-ROOT-AUTH] ===== HANDLER CALLED =====');
-    console.log('🔐 [WSL-ROOT-AUTH] IPC Handler wsl:testRootCredentials invoked');
-    console.log('🔐 [WSL-ROOT-AUTH] Event sender:', event.sender);
-    console.log('🔐 [WSL-ROOT-AUTH] Password parameter:', password);
-    
+    console.log('🔐 [PLATFORM-AUTH] ===== HANDLER CALLED =====');
+    console.log('🔐 [PLATFORM-AUTH] IPC Handler wsl:testRootCredentials invoked');
+    console.log('🔐 [PLATFORM-AUTH] Event sender:', event.sender);
+    console.log('🔐 [PLATFORM-AUTH] Password parameter:', password);
+
     const startTime = Date.now();
-    console.log('🔐 [WSL-ROOT-AUTH] Starting root credential verification...');
-    console.log('🔐 [WSL-ROOT-AUTH] Timestamp:', new Date().toISOString());
-    console.log('🔐 [WSL-ROOT-AUTH] Password length:', password ? password.length : 0);
-    
+    console.log('🔐 [PLATFORM-AUTH] Starting root credential verification...');
+    console.log('🔐 [PLATFORM-AUTH] Timestamp:', new Date().toISOString());
+    console.log('🔐 [PLATFORM-AUTH] Password length:', password ? password.length : 0);
+
     try {
+      const { detectKaliEnvironment } = require('./osCheck');
+      const env = await detectKaliEnvironment();
+      console.log('🔐 [PLATFORM-AUTH] Detected environment:', env);
+
       const { exec } = require('child_process');
       const { promisify } = require('util');
       const execAsync = promisify(exec);
-      
-      // Step 1: Execute wsl command
-      console.log('🔐 [WSL-ROOT-AUTH] Step 1: Executing wsl command...');
-      const wslCommand = 'wsl';
-      console.log('🔐 [WSL-ROOT-AUTH] WSL command:', wslCommand);
-      
-      // Step 2: Run sudo su command
-      console.log('🔐 [WSL-ROOT-AUTH] Step 2: Running sudo su command...');
-      const sudoSuCommand = 'sudo su';
-      console.log('🔐 [WSL-ROOT-AUTH] Sudo su command:', sudoSuCommand);
-      
-      // Step 3: Provide user password
-      console.log('🔐 [WSL-ROOT-AUTH] Step 3: Providing user password...');
-      console.log('🔐 [WSL-ROOT-AUTH] Password length:', password.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
-      
-      // Use interactive approach: wsl with expect-like behavior
-      // This approach simulates the manual process: wsl -> sudo su -> password -> whoami
-      const testCommand = `wsl -e bash -c "echo '${password}' | sudo -S whoami"`;
-      console.log('🔐 [WSL-ROOT-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
-      console.log('🔐 [WSL-ROOT-AUTH] Full final command (DEBUG):', testCommand);
-      console.log('🔐 [WSL-ROOT-AUTH] Using: wsl -e bash -c with sudo -S whoami');
-      
-      // First, test if WSL is working at all
-      console.log('🔐 [WSL-ROOT-AUTH] Testing basic WSL connectivity...');
-      try {
-        const basicTest = await execAsync('wsl echo "WSL is working"');
-        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test result:', basicTest.stdout.trim());
-      } catch (basicError) {
-        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test failed:', basicError.message);
-        return { 
-          success: false, 
-          error: 'WSL is not working properly: ' + basicError.message,
-          debug: { basicError: basicError.message }
-        };
-      }
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Executing final command...');
-      console.log('🔐 [WSL-ROOT-AUTH] Command timeout: 10000ms');
-      
-      // Add timeout to prevent hanging
-      const { stdout, stderr } = await Promise.race([
-        execAsync(testCommand),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
-        )
-      ]);
-      const duration = Date.now() - startTime;
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Command execution completed in', duration, 'ms');
-      console.log('🔐 [WSL-ROOT-AUTH] ===== EXECUTION RESULTS =====');
-      console.log('🔐 [WSL-ROOT-AUTH] STDOUT:', JSON.stringify(stdout));
-      console.log('🔐 [WSL-ROOT-AUTH] STDERR:', JSON.stringify(stderr));
-      console.log('🔐 [WSL-ROOT-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
-      console.log('🔐 [WSL-ROOT-AUTH] STDERR (trimmed):', JSON.stringify(stderr.trim()));
-      
-      const output = stdout.trim();
-      const errorOutput = stderr.trim();
-      
-      console.log('🔐 [WSL-ROOT-AUTH] ===== ANALYSIS =====');
-      console.log('🔐 [WSL-ROOT-AUTH] Raw output length:', output.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Raw error length:', errorOutput.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Output contains "root":', output.includes('root'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "Authentication failure":', errorOutput.includes('Authentication failure'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "sudo":', errorOutput.includes('sudo'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "su":', errorOutput.includes('su'));
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Checking if output equals "root"...');
-      console.log('🔐 [WSL-ROOT-AUTH] Output === "root":', output === 'root');
-      
-      if (output === 'root') {
-        console.log('✅ [WSL-ROOT-AUTH] WSL root credentials VALID');
-        console.log('✅ [WSL-ROOT-AUTH] Authentication successful');
-        return { success: true, debug: { duration, stdout, stderr } };
-      } else {
-        console.log('❌ [WSL-ROOT-AUTH] First method failed, trying alternative approach...');
-        
-        // Alternative approach: Try with expect-like behavior using printf
-        console.log('🔐 [WSL-ROOT-AUTH] Alternative: Trying printf approach...');
-        const altCommand = `wsl -e bash -c "printf '${password}\\n' | sudo -S whoami"`;
-        console.log('🔐 [WSL-ROOT-AUTH] Alternative command (DEBUG):', altCommand.replace(password, '***'));
-        console.log('🔐 [WSL-ROOT-AUTH] Full alternative command (DEBUG):', altCommand);
-        
+
+      if (env.type === 'native-kali') {
+        // Native Kali Linux - test sudo access
+        console.log('🔐 [PLATFORM-AUTH] Native Kali Linux detected - testing sudo access');
+        console.log('🔐 [PLATFORM-AUTH] Step 1: Testing sudo whoami...');
+        console.log('🔐 [PLATFORM-AUTH] Password length:', password.length);
+        console.log('🔐 [PLATFORM-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
+
+        const testCommand = `echo '${password}' | sudo -S whoami`;
+        console.log('🔐 [PLATFORM-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
+
         try {
-          console.log('🔐 [WSL-ROOT-AUTH] Executing alternative command with timeout...');
-          const { stdout: altStdout, stderr: altStderr } = await Promise.race([
-            execAsync(altCommand),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Alternative command timeout after 10 seconds')), 10000)
+          console.log('🔐 [PLATFORM-AUTH] Executing sudo test...');
+          const { stdout, stderr } = await Promise.race([
+            execAsync(testCommand),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
             )
           ]);
-          const altOutput = altStdout.trim();
-          
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDOUT:', JSON.stringify(altStdout));
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDERR:', JSON.stringify(altStderr));
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative output (trimmed):', JSON.stringify(altOutput));
-          
-          if (altOutput === 'root') {
-            console.log('✅ [WSL-ROOT-AUTH] Alternative method SUCCESS - WSL root credentials VALID');
-            return { success: true, debug: { duration, stdout: altStdout, stderr: altStderr, method: 'alternative' } };
+
+          const duration = Date.now() - startTime;
+          const output = stdout.trim();
+          const errorOutput = stderr.trim();
+
+          console.log('🔐 [PLATFORM-AUTH] Command execution completed in', duration, 'ms');
+          console.log('🔐 [PLATFORM-AUTH] STDOUT:', JSON.stringify(output));
+          console.log('🔐 [PLATFORM-AUTH] STDERR:', JSON.stringify(errorOutput));
+
+          if (output === 'root') {
+            console.log('✅ [PLATFORM-AUTH] Native Kali sudo credentials VALID');
+            return { success: true, debug: { duration, stdout, stderr, environment: env } };
           } else {
-            console.log('❌ [WSL-ROOT-AUTH] Both methods failed');
-            console.log('❌ [WSL-ROOT-AUTH] Expected output: "root"');
-            console.log('❌ [WSL-ROOT-AUTH] Method 1 output:', JSON.stringify(output));
-            console.log('❌ [WSL-ROOT-AUTH] Method 2 output:', JSON.stringify(altOutput));
-            console.log('❌ [WSL-ROOT-AUTH] Authentication failed');
-            return { 
-              success: false, 
-              error: 'Invalid root password', 
-              debug: { 
-                duration, 
-                method1: { stdout, stderr, output },
-                method2: { stdout: altStdout, stderr: altStderr, output: altOutput },
-                expected: 'root'
-              } 
+            console.log('❌ [PLATFORM-AUTH] Native Kali sudo authentication failed');
+            return {
+              success: false,
+              error: 'Invalid sudo password on native Kali Linux',
+              debug: { duration, stdout, stderr, output, environment: env }
             };
           }
-        } catch (altError) {
-          console.log('❌ [WSL-ROOT-AUTH] Alternative method also failed:', altError.message);
-          console.log('❌ [WSL-ROOT-AUTH] Trying third method: direct sudo su approach...');
-          
-          // Third approach: Try to simulate the exact manual process
+        } catch (error) {
+          console.log('❌ [PLATFORM-AUTH] Native Kali sudo test failed:', error.message);
+          return {
+            success: false,
+            error: 'Sudo access failed on native Kali Linux: ' + error.message,
+            debug: { error: error.message, environment: env }
+          };
+        }
+
+      } else if (env.type === 'wsl-kali') {
+        // Windows WSL Kali - original WSL logic
+        console.log('🔐 [PLATFORM-AUTH] WSL Kali detected - using WSL authentication');
+        console.log('🔐 [PLATFORM-AUTH] Step 1: Executing wsl command...');
+        const wslCommand = 'wsl';
+        console.log('🔐 [PLATFORM-AUTH] WSL command:', wslCommand);
+
+        console.log('🔐 [PLATFORM-AUTH] Step 2: Running sudo su command...');
+        const sudoSuCommand = 'sudo su';
+        console.log('🔐 [PLATFORM-AUTH] Sudo su command:', sudoSuCommand);
+
+        console.log('🔐 [PLATFORM-AUTH] Step 3: Providing user password...');
+        console.log('🔐 [PLATFORM-AUTH] Password length:', password.length);
+        console.log('🔐 [PLATFORM-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
+
+        const testCommand = `wsl -e bash -c "echo '${password}' | sudo -S whoami"`;
+        console.log('🔐 [PLATFORM-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
+        console.log('🔐 [PLATFORM-AUTH] Using: wsl -e bash -c with sudo -S whoami');
+
+        // First, test if WSL is working at all
+        console.log('🔐 [PLATFORM-AUTH] Testing basic WSL connectivity...');
+        try {
+          const basicTest = await execAsync('wsl echo "WSL is working"');
+          console.log('🔐 [PLATFORM-AUTH] Basic WSL test result:', basicTest.stdout.trim());
+        } catch (basicError) {
+          console.log('🔐 [PLATFORM-AUTH] Basic WSL test failed:', basicError.message);
+          return {
+            success: false,
+            error: 'WSL is not working properly: ' + basicError.message,
+            debug: { basicError: basicError.message, environment: env }
+          };
+        }
+      
+        console.log('🔐 [PLATFORM-AUTH] Executing WSL final command...');
+        console.log('🔐 [PLATFORM-AUTH] Command timeout: 10000ms');
+
+        // Add timeout to prevent hanging
+        const { stdout, stderr } = await Promise.race([
+          execAsync(testCommand),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
+          )
+        ]);
+        const duration = Date.now() - startTime;
+
+        console.log('🔐 [PLATFORM-AUTH] Command execution completed in', duration, 'ms');
+        console.log('🔐 [PLATFORM-AUTH] ===== EXECUTION RESULTS =====');
+        console.log('🔐 [PLATFORM-AUTH] STDOUT:', JSON.stringify(stdout));
+        console.log('🔐 [PLATFORM-AUTH] STDERR:', JSON.stringify(stderr));
+        console.log('🔐 [PLATFORM-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
+        console.log('🔐 [PLATFORM-AUTH] STDERR (trimmed):', JSON.stringify(stderr.trim()));
+
+        const output = stdout.trim();
+        const errorOutput = stderr.trim();
+
+        console.log('🔐 [PLATFORM-AUTH] ===== ANALYSIS =====');
+        console.log('🔐 [PLATFORM-AUTH] Raw output length:', output.length);
+        console.log('🔐 [PLATFORM-AUTH] Raw error length:', errorOutput.length);
+        console.log('🔐 [PLATFORM-AUTH] Output contains "root":', output.includes('root'));
+        console.log('🔐 [PLATFORM-AUTH] Error contains "Authentication failure":', errorOutput.includes('Authentication failure'));
+        console.log('🔐 [PLATFORM-AUTH] Error contains "sudo":', errorOutput.includes('sudo'));
+        console.log('🔐 [PLATFORM-AUTH] Error contains "su":', errorOutput.includes('su'));
+
+        console.log('🔐 [PLATFORM-AUTH] Checking if output equals "root"...');
+        console.log('🔐 [PLATFORM-AUTH] Output === "root":', output === 'root');
+
+        if (output === 'root') {
+          console.log('✅ [PLATFORM-AUTH] WSL root credentials VALID');
+          console.log('✅ [PLATFORM-AUTH] Authentication successful');
+          return { success: true, debug: { duration, stdout, stderr, environment: env } };
+        } else {
+          console.log('❌ [PLATFORM-AUTH] First method failed, trying alternative approach...');
+
+          // Alternative approach: Try with expect-like behavior using printf
+          console.log('🔐 [PLATFORM-AUTH] Alternative: Trying printf approach...');
+          const altCommand = `wsl -e bash -c "printf '${password}\\n' | sudo -S whoami"`;
+          console.log('🔐 [PLATFORM-AUTH] Alternative command (DEBUG):', altCommand.replace(password, '***'));
+
           try {
-            const thirdCommand = `wsl -e bash -c "echo '${password}' | sudo -S su -c 'whoami'"`;
-            console.log('🔐 [WSL-ROOT-AUTH] Third command (DEBUG):', thirdCommand.replace(password, '***'));
-            
-            const { stdout: thirdStdout, stderr: thirdStderr } = await Promise.race([
-              execAsync(thirdCommand),
-              new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Third method timeout after 10 seconds')), 10000)
+            console.log('🔐 [PLATFORM-AUTH] Executing alternative command with timeout...');
+            const { stdout: altStdout, stderr: altStderr } = await Promise.race([
+              execAsync(altCommand),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Alternative command timeout after 10 seconds')), 10000)
               )
             ]);
-            
-            const thirdOutput = thirdStdout.trim();
-            console.log('🔐 [WSL-ROOT-AUTH] Third method STDOUT:', JSON.stringify(thirdStdout));
-            console.log('🔐 [WSL-ROOT-AUTH] Third method STDERR:', JSON.stringify(thirdStderr));
-            console.log('🔐 [WSL-ROOT-AUTH] Third method output (trimmed):', JSON.stringify(thirdOutput));
-            
-            if (thirdOutput === 'root') {
-              console.log('✅ [WSL-ROOT-AUTH] Third method SUCCESS - WSL root credentials VALID');
-              return { success: true, debug: { duration, stdout: thirdStdout, stderr: thirdStderr, method: 'third' } };
+            const altOutput = altStdout.trim();
+
+            console.log('🔐 [PLATFORM-AUTH] Alternative STDOUT:', JSON.stringify(altStdout));
+            console.log('🔐 [PLATFORM-AUTH] Alternative STDERR:', JSON.stringify(altStderr));
+            console.log('🔐 [PLATFORM-AUTH] Alternative output (trimmed):', JSON.stringify(altOutput));
+
+            if (altOutput === 'root') {
+              console.log('✅ [PLATFORM-AUTH] Alternative method SUCCESS - WSL root credentials VALID');
+              return { success: true, debug: { duration, stdout: altStdout, stderr: altStderr, method: 'alternative', environment: env } };
             } else {
-              console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
-              return { 
-                success: false, 
-                error: 'Invalid root password - all authentication methods failed', 
-                debug: { 
-                  duration, 
+              console.log('❌ [PLATFORM-AUTH] Both methods failed');
+              return {
+                success: false,
+                error: 'Invalid WSL root password',
+                debug: {
+                  duration,
                   method1: { stdout, stderr, output },
-                  method2: { error: altError.message },
-                  method3: { stdout: thirdStdout, stderr: thirdStderr, output: thirdOutput },
-                  expected: 'root'
-                } 
+                  method2: { stdout: altStdout, stderr: altStderr, output: altOutput },
+                  expected: 'root',
+                  environment: env
+                }
               };
             }
-          } catch (thirdError) {
-            console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
-            return { 
-              success: false, 
-              error: 'Invalid root password - all authentication methods failed', 
-              debug: { 
-                duration, 
-                method1: { stdout, stderr, output },
-                method2: { error: altError.message },
-                method3: { error: thirdError.message },
-                expected: 'root'
-              } 
+          } catch (altError) {
+            console.log('❌ [PLATFORM-AUTH] Alternative method also failed:', altError.message);
+            return {
+              success: false,
+              error: 'WSL authentication failed: ' + altError.message,
+              debug: { error: altError.message, environment: env }
             };
           }
         }
+
+      } else {
+        // Other environments
+        console.log('❌ [PLATFORM-AUTH] Unsupported environment:', env.type);
+        return {
+          success: false,
+          error: `Unsupported environment: ${env.type}. Only WSL Kali and native Kali Linux are supported.`,
+          debug: { environment: env }
+        };
       }
+
     } catch (error) {
-      const duration = Date.now() - startTime;
-      console.log('❌ [WSL-ROOT-AUTH] WSL root credential test FAILED');
-      console.log('❌ [WSL-ROOT-AUTH] Error type:', error.constructor.name);
-      console.log('❌ [WSL-ROOT-AUTH] Error message:', error.message);
-      console.log('❌ [WSL-ROOT-AUTH] Error code:', error.code);
-      console.log('❌ [WSL-ROOT-AUTH] Error signal:', error.signal);
-      console.log('❌ [WSL-ROOT-AUTH] Error stack:', error.stack);
-      console.log('❌ [WSL-ROOT-AUTH] Duration before error:', duration, 'ms');
-      
-      return { 
-        success: false, 
-        error: error.message, 
-        debug: { 
-          duration, 
-          errorType: error.constructor.name,
-          errorCode: error.code,
-          errorSignal: error.signal,
-          errorStack: error.stack
-        } 
+      console.log('❌ [PLATFORM-AUTH] Fatal error:', error.message);
+      return {
+        success: false,
+        error: 'Authentication process failed: ' + error.message,
+        debug: { error: error.message }
       };
     }
   });
@@ -5251,13 +5330,42 @@ app.whenReady().then(async () => {
   // Global storage for WSL credentials (in-memory only)
   let storedWslRootPassword = null;
 
-  // Load stored credentials on startup
-  const loadStoredCredentials = async () => {
+  // Load stored credentials on startup (synchronous for initialization)
+  const loadStoredCredentials = () => {
     try {
-      // This would load from secure storage in a production environment
-      // For now, we'll start with empty credentials
-      console.log('🔐 Loading stored WSL credentials...');
-      storedWslRootPassword = null;
+      const os = require('os');
+      const platform = os.platform();
+
+      if (platform === 'linux') {
+        // Check if we're on Kali Linux by looking for common indicators
+        const fs = require('fs');
+        let isKali = false;
+
+        try {
+          if (fs.existsSync('/etc/os-release')) {
+            const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+            if (osRelease.toLowerCase().includes('kali')) {
+              isKali = true;
+            }
+          }
+        } catch (e) {
+          // Ignore file read errors
+        }
+
+        if (isKali) {
+          console.log('🔐 Loading stored sudo credentials for native Kali...');
+          storedWslRootPassword = null; // Will be set by user when needed
+        } else {
+          console.log('🔐 Loading stored credentials for Linux...');
+          storedWslRootPassword = null;
+        }
+      } else if (platform === 'win32') {
+        console.log('🔐 Loading stored WSL credentials...');
+        storedWslRootPassword = loadStoredPassword();
+      } else {
+        console.log('🔐 Loading stored credentials for', platform, '...');
+        storedWslRootPassword = null;
+      }
     } catch (error) {
       console.error('Failed to load stored credentials:', error);
     }
@@ -5390,22 +5498,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Install missing tools handler
-  ipcMain.handle('tools:installMissing', async (event, missingTools) => {
-    try {
-      console.log('🔧 [TOOL-INSTALL] Installing missing tools:', missingTools);
-      
-      if (!storedWslRootPassword) {
-        return { success: false, error: 'WSL root password not available' };
-      }
-      
-      const result = await checkAndInstallRequiredTools(storedWslRootPassword, event);
-      return result;
-    } catch (error) {
-      console.log('❌ [TOOL-INSTALL] Failed to install tools:', error.message);
-      return { success: false, error: error.message };
-    }
-  });
+  // Install missing tools handler - REMOVED: Duplicate handler, using cursor-installer version instead
 
   // Check and install tgpt
   ipcMain.handle('tools:checkAndInstallTgpt', async (event, password) => {
@@ -7056,23 +7149,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Malware & Defacement orchestrated scan
-  ipcMain.handle('maldef:start', async (event, url) => {
-    try {
-      const { runMaldefScan } = require(path.join(__dirname, '..', 'maldef', 'orchestrator.js'))
-      const outRoot = path.join(process.cwd(), 'temp-scans')
-      const report = await runMaldefScan(url, {
-        outRoot,
-        onProgress: (u) => event.sender.send('maldef:progress', u)
-      })
-      event.sender.send('maldef:done', report)
-      return { ok: true }
-    } catch (e) {
-      event.sender.send('maldef:progress', { stage: 'error', message: e?.message || String(e) })
-      event.sender.send('maldef:done', null)
-      return { error: e?.message || String(e) }
-    }
-  })
+  // Malware & Defacement orchestrated scan - REMOVED: Duplicate handler
 
 
   app.on('activate', async () => {
