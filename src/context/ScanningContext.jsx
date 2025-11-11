@@ -1,0 +1,199 @@
+import { createContext, useContext, useState, useEffect } from 'react'
+
+const ScanningContext = createContext()
+
+export const useScanning = () => {
+  const context = useContext(ScanningContext)
+  if (!context) {
+    throw new Error('useScanning must be used within a ScanningProvider')
+  }
+  return context
+}
+
+
+export const ScanningProvider = ({ children }) => {
+  const [scanStatus, setScanStatus] = useState({
+    isScanning: false,
+    scanType: '',
+    target: '',
+    progress: 0,
+    message: '',
+    startTime: null
+  })
+
+  const [scanProgress, setScanProgress] = useState([])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.cyberGuard) {
+      // Network scan listeners
+      window.cyberGuard.onNetworkScanProgress((update) => {
+        setScanStatus(prev => ({
+          isScanning: true,
+          scanType: 'Network Scan',
+          target: update.target || prev.target,
+          progress: update.progress || prev.progress,
+          message: update.message || 'Scanning in progress...',
+          startTime: prev.startTime || new Date()
+        }))
+        setScanProgress(prev => [...prev, update])
+      })
+      
+      window.cyberGuard.onNetworkScanDone((result) => {
+        try {
+          setScanStatus({
+            isScanning: false,
+            scanType: '',
+            target: '',
+            progress: 0,
+            message: '',
+            startTime: null
+          })
+          setScanProgress([])
+        } catch (error) {
+          console.error('Error in network scan done handler:', error)
+        }
+      })
+
+      // Port scan listeners
+      window.cyberGuard.onPortScanProgress((update) => {
+        setScanStatus(prev => ({
+          isScanning: true,
+          scanType: 'Port Scan',
+          target: update.target || prev.target,
+          progress: update.progress || prev.progress,
+          message: update.message || 'Scanning in progress...',
+          startTime: prev.startTime || new Date()
+        }))
+        setScanProgress(prev => [...prev, update])
+      })
+
+      window.cyberGuard.onPortScanDone((result) => {
+        try {
+          setScanStatus({
+            isScanning: false,
+            scanType: '',
+            target: '',
+            progress: 0,
+            message: '',
+            startTime: null
+          })
+          setScanProgress([])
+        } catch (error) {
+          console.error('Error in port scan done handler:', error)
+        }
+      })
+    }
+  }, [])
+
+  const startNetworkScan = async (target) => {
+    try {
+      if (typeof window !== 'undefined' && window.cyberGuard) {
+        setScanStatus({
+          isScanning: true,
+          scanType: 'Network Scan',
+          target: target,
+          progress: 0,
+          message: 'Initializing network scan...',
+          startTime: new Date()
+        })
+        setScanProgress([])
+        await window.cyberGuard.startNetworkScan(target)
+      }
+    } catch (error) {
+      console.error('Error starting network scan:', error)
+      setScanStatus({
+        isScanning: false,
+        scanType: '',
+        target: '',
+        progress: 0,
+        message: '',
+        startTime: null
+      })
+    }
+  }
+
+  const startPortScan = async (target) => {
+    try {
+      if (typeof window !== 'undefined' && window.cyberGuard) {
+        setScanStatus({
+          isScanning: true,
+          scanType: 'Port Scan',
+          target: target,
+          progress: 0,
+          message: 'Initializing port scan...',
+          startTime: new Date()
+        })
+        setScanProgress([])
+        await window.cyberGuard.startPortScan(target)
+      }
+    } catch (error) {
+      console.error('Error starting port scan:', error)
+      setScanStatus({
+        isScanning: false,
+        scanType: '',
+        target: '',
+        progress: 0,
+        message: '',
+        startTime: null
+      })
+    }
+  }
+
+  const abortScan = async () => {
+    try {
+      if (typeof window !== 'undefined' && window.cyberGuard) {
+        if (scanStatus.scanType === 'Network Scan') {
+          const result = await window.cyberGuard.abortNetworkScan()
+          console.log('Abort result:', result)
+          
+          // Update status immediately
+          setScanStatus({
+            isScanning: false,
+            scanType: '',
+            target: '',
+            progress: 0,
+            message: 'Scan aborted',
+            startTime: null
+          })
+          setScanProgress([])
+        } else {
+          // For other scan types, just update status
+          setScanStatus({
+            isScanning: false,
+            scanType: '',
+            target: '',
+            progress: 0,
+            message: '',
+            startTime: null
+          })
+          setScanProgress([])
+        }
+      }
+    } catch (error) {
+      console.error('Error aborting scan:', error)
+      // Still update status even if abort fails
+      setScanStatus({
+        isScanning: false,
+        scanType: '',
+        target: '',
+        progress: 0,
+        message: 'Abort failed',
+        startTime: null
+      })
+    }
+  }
+
+  const value = {
+    scanStatus,
+    scanProgress,
+    startNetworkScan,
+    startPortScan,
+    abortScan
+  }
+
+  return (
+    <ScanningContext.Provider value={value}>
+      {children}
+    </ScanningContext.Provider>
+  )
+}

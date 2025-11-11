@@ -1,0 +1,92 @@
+{
+  "target": "https://webnox.in",
+  "timestamp": "2025-10-23T10:33:20.686Z",
+  "summary": {
+    "totalTests": 1,
+    "completedTests": 1,
+    "failedTests": 0,
+    "criticalFindings": 0,
+    "highFindings": 0,
+    "mediumFindings": 0
+  },
+  "tests": {
+    "dns-resolution": {
+      "testId": "dns-resolution",
+      "testName": "DNS Resolution & Analysis",
+      "category": "Infrastructure",
+      "severity": "info",
+      "status": "completed",
+      "timestamp": "2025-10-23T10:33:20.685Z",
+      "findings": [
+        {
+          "type": "success",
+          "message": "A records found",
+          "details": "IP addresses: 68.183.92.114, 68.183.92.114"
+        },
+        {
+          "type": "warning",
+          "message": "No NS records found",
+          "details": "DNS delegation not properly configured"
+        },
+        {
+          "type": "warning",
+          "message": "No MX records found",
+          "details": "Email functionality may not be configured"
+        },
+        {
+          "type": "warning",
+          "message": "Missing SPF record",
+          "details": "Email spoofing protection not configured"
+        },
+        {
+          "type": "warning",
+          "message": "Missing DMARC record",
+          "details": "Advanced email authentication not configured"
+        },
+        {
+          "type": "warning",
+          "message": "DNSSEC not configured",
+          "details": "DNS responses are not cryptographically signed"
+        }
+      ],
+      "recommendations": [
+        "Configure NS records for proper DNS delegation",
+        "Configure MX records for email functionality",
+        "Configure SPF record to prevent email spoofing",
+        "Configure DMARC policy for enhanced email security",
+        "Enable DNSSEC to protect against DNS spoofing attacks"
+      ],
+      "report": {
+        "target": "webnox.in",
+        "timestamp": "2025-10-23T10:33:20.685Z",
+        "tools": [
+          "dig",
+          "dnsrecon",
+          "dnsenum"
+        ],
+        "records": {
+          "a": [
+            "68.183.92.114",
+            "68.183.92.114"
+          ],
+          "ns": [],
+          "mx": [],
+          "txt": [],
+          "ptr": null,
+          "subdomains": []
+        },
+        "security": {
+          "spf": null,
+          "dmarc": null,
+          "dkim": null,
+          "dnssec": false,
+          "zoneTransfer": "blocked",
+          "duplicates": {
+            "spf": false,
+            "dmarc": false
+          }
+        }
+      }
+    }
+  }
+}

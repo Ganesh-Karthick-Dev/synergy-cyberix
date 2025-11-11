@@ -1,0 +1,205 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode without a Tailwind config (Tailwind v4) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Global base colors so all screens inherit proper light/dark defaults */
+html, body, #root {
+  min-height: 100%;
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+}
+
+/* Ensure all elements inherit Poppins font unless explicitly set to monospace */
+*, *::before, *::after {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+}
+
+/* Explicitly apply Poppins to all text elements */
+h1, h2, h3, h4, h5, h6,
+p, span, div, a, label, li, td, th,
+button, input, textarea, select, option {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+}
+
+/* Ensure form elements use Poppins */
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="number"],
+input[type="search"],
+input[type="url"],
+input[type="tel"],
+textarea,
+select {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+}
+
+/* Ensure Tailwind font utility classes use Poppins */
+.font-sans,
+[class*="font-sans"] {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif !important;
+}
+
+/* Keep monospace for code elements */
+code, pre, .font-mono, [class*="font-mono"] {
+  font-family: 'Courier New', Courier, monospace !important;
+}
+
+body {
+  background-color: #f9fafb; /* gray-50 */
+  color: #111827; /* gray-900 */
+}
+
+.dark body {
+  background-color: #0f172a; /* slate-900 */
+  color: #e5e7eb; /* gray-200 */
+}
+
+/* Generic container defaults (applies when components don't set classes) */
+.app-surface {
+  background-color: #ffffff; /* white */
+  border: 1px solid #e5e7eb; /* gray-200 */
+}
+
+.dark .app-surface {
+  background-color: #0f172a; /* slate-900 */
+  border-color: #334155; /* slate-700 */
+}
+
+.app-card {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+}
+
+.dark .app-card {
+  background-color: #0f172a;
+  border-color: #334155;
+}
+
+/* Ensure button text color adapts if no explicit Tailwind text-* class is set */
+button:not([class*="text-"]),
+.btn:not([class*="text-"]) {
+  color: #111827; /* gray-900 */
+}
+
+.dark button:not([class*="text-"]),
+.dark .btn:not([class*="text-"]) {
+  color: #e5e7eb; /* gray-200 */
+}
+
+/* Make icons inside buttons inherit the button color */
+button svg,
+.btn svg {
+  color: inherit;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+/* Professional Toast Animations */
+@keyframes enter {
+  0% {
+    transform: translate3d(0, -200%, 0) scale(0.6);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes leave {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, -150%, 0) scale(0.6);
+    opacity: 0;
+  }
+}
+
+@keyframes scale-in {
+  0% {
+    transform: scale(0);
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-2px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes progress {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Tailwind Custom Animation Classes */
+.animate-enter {
+  animation: enter 0.35s ease-out;
+}
+
+.animate-leave {
+  animation: leave 0.4s ease-in forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.5s ease-out;
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+.animate-progress {
+  animation: progress 2s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s ease-in-out infinite;
+}
+
+@keyframes slideUp {
+  0% {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
