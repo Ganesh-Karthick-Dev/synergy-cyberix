@@ -22,3 +22,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+-e "/release/\n/dist/\n/out/\n/build/\n/*.exe\n/*.AppImage\n/*.deb\n/*.rpm" 
