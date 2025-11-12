@@ -13,6 +13,33 @@ class AuthService {
     console.log('🔐 [AuthService] ===== LOGIN ATTEMPT START =====');
     console.log('🔐 [AuthService] Email:', email);
     console.log('🔐 [AuthService] Password length:', password ? password.length : 0);
+
+    // ===== HARDCODED LOGIN (API INTEGRATION COMMENTED OUT) =====
+    // Simple hardcoded authentication for development/testing
+    const hardcodedUsername = 'admin';
+    const hardcodedPassword = 'admin@123';
+
+    if (email.trim() === hardcodedUsername && password === hardcodedPassword) {
+      console.log('✅ [AuthService] Hardcoded login successful for:', email);
+      console.log('🔐 [AuthService] ===== LOGIN ATTEMPT END =====');
+
+      return {
+        success: true,
+        user: {
+          email: hardcodedUsername,
+          username: hardcodedUsername,
+          name: 'Administrator',
+          role: 'admin'
+        },
+        message: 'Login successful'
+      };
+    } else {
+      console.log('❌ [AuthService] Invalid credentials');
+      throw new Error('Invalid credentials');
+    }
+
+    // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
+    /*
     console.log('🔐 [AuthService] Base URL:', this.baseURL);
     console.log('🔐 [AuthService] Full URL:', `${this.baseURL}/api/auth/login`);
 
@@ -117,10 +144,20 @@ class AuthService {
       console.log('🔐 [AuthService] ===== END LOGIN ERROR =====');
       throw error;
     }
+    */
   }
 
   // Logout from backend
   async logout() {
+    // ===== HARDCODED LOGOUT (API INTEGRATION COMMENTED OUT) =====
+    console.log('🔐 [AuthService] Logout (hardcoded mode)');
+    return {
+      success: true,
+      message: 'Logged out successfully'
+    };
+
+    // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
+    /*
     try {
       console.log('🔐 [AuthService] Attempting logout');
 
@@ -152,10 +189,36 @@ class AuthService {
         message: 'Logged out locally (server logout may have failed)'
       };
     }
+    */
   }
 
   // Check if user is authenticated by checking cookies
   async checkAuthStatus() {
+    // ===== HARDCODED AUTH STATUS CHECK (API INTEGRATION COMMENTED OUT) =====
+    // In hardcoded mode, we check localStorage for a simple auth flag
+    try {
+      const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+      
+      if (isAuthenticated) {
+        return {
+          authenticated: true,
+          user: {
+            email: 'admin',
+            username: 'admin',
+            name: 'Administrator',
+            role: 'admin'
+          }
+        };
+      }
+      
+      return { authenticated: false };
+    } catch (error) {
+      console.error('❌ [AuthService] Auth status check error:', error.message);
+      return { authenticated: false };
+    }
+
+    // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
+    /*
     try {
       // Check if isAuthenticated cookie exists
       const cookies = document.cookie.split(';');
@@ -191,6 +254,7 @@ class AuthService {
       console.error('❌ [AuthService] Auth status check error:', error.message);
       return { authenticated: false };
     }
+    */
   }
 
   // Refresh access token

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useScanning } from '../context/ScanningContext'
 import { useGlobalScanState } from '../context/GlobalScanContext'
 import scanLogger from '../utils/scanLogger'
@@ -67,6 +67,24 @@ function ServerScanning() {
   const [scanStartTime, setScanStartTime] = useState(null)
   const [expectedEndTime, setExpectedEndTime] = useState(null)
   const [currentTime, setCurrentTime] = useState(new Date())
+  const mountedRef = useRef(true)
+
+  // Safe state updater that prevents updates after unmount
+  const safeSetState = (setter) => (value) => {
+    if (mountedRef.current) {
+      setter(value)
+    }
+  }
+
+  // Create safe versions of all setters
+  const safeSetIsStarting = safeSetState(setIsStarting)
+  const safeSetTarget = safeSetState(setTarget)
+  const safeSetScanResults = safeSetState(setScanResults)
+  const safeSetKaliStatus = safeSetState(setKaliStatus)
+  const safeSetScanStats = safeSetState(setScanStats)
+  const safeSetScanStartTime = safeSetState(setScanStartTime)
+  const safeSetExpectedEndTime = safeSetState(setExpectedEndTime)
+  const safeSetCurrentTime = safeSetState(setCurrentTime)
 
   const validateURL = (url) => {
     try {
@@ -132,6 +150,7 @@ function ServerScanning() {
       )
       if (!confirmPrivate) {
         return
+      }
     }
 
     try {
@@ -547,9 +566,13 @@ function ServerScanning() {
     
     // Register the listener (global listeners in GlobalScanContext handle scan state)
     window.cyberGuard.onServerScanProgress(progressHandler)
-    
+
     // Note: We don't remove listeners on unmount - they should persist
     // The global listeners in GlobalScanContext handle the scan state
+
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
 
   // Check for active scan on mount (reconnection) - restore UI state
@@ -1632,7 +1655,6 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
             )}
 
           </div>
-
         </div>
       </div>
 
@@ -1850,31 +1872,32 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
               </div>
             </div>
           ) : (
-            <div className="space-y-6 w-full max-w-full overflow-x-hidden box-border">
-              {/* 1. Scan Completion Status */}
-              <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                <div className="flex items-center space-x-2 mb-2">
-                  <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <p className="text-green-800 dark:text-green-200 font-medium">Server scan completed successfully</p>
+            <>
+              <div className="space-y-6 w-full max-w-full overflow-x-hidden box-border">
+                {/* 1. Scan Completion Status */}
+                <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-green-800 dark:text-green-200 font-medium">Server scan completed successfully</p>
+                  </div>
+                  <div className="text-sm text-yellow-700">Medium Risk Ports</div>
                 </div>
-                <div className="text-sm text-yellow-700">Medium Risk Ports</div>
-              </div>
-              <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                <div className="text-2xl font-bold text-green-600">
-                  {(scanResults.findings?.ports || []).filter(p => p.riskLevel === 'Low').length}
+                <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                  <div className="text-2xl font-bold text-green-600">
+                    {(scanResults.findings?.ports || []).filter(p => p.riskLevel === 'Low').length}
+                  </div>
+                  <div className="text-sm text-green-700">Low Risk Ports</div>
                 </div>
-                <div className="text-sm text-green-700">Low Risk Ports</div>
+                <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                  <div className="text-2xl font-bold text-orange-600">{(scanResults.findings?.ports || []).length}</div>
+                  <div className="text-sm text-orange-700">Total Open Ports</div>
+                </div>
               </div>
-              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                <div className="text-2xl font-bold text-orange-600">{(scanResults.findings?.ports || []).length}</div>
-                <div className="text-sm text-orange-700">Total Open Ports</div>
-              </div>
-            </div>
 
-            {/* Detailed Ports Table */}
-            <div className="overflow-x-auto">
+              {/* Detailed Ports Table */}
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50">
@@ -1954,7 +1977,8 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                 </div>
               </div>
             </div>
-          </div>
+            </>
+          )}
 
           {/* Advanced Security Vulnerabilities Analysis */}
           <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-gray-200 dark:border-slate-700 p-6">
@@ -2401,4 +2425,4 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
   )
 }
 
-export default ServerScanning
+export default ServerScanning;

@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useToast } from '../context/ToastContext'
 import { useGlobalScanState } from '../context/GlobalScanContext'
 import FrameworkDetector from '../scanners/framework-detection'
 import ToolInstaller from './ToolInstaller'
 import WslPasswordPrompt from './WslPasswordPrompt'
 import ToolInstallationDialog from './ToolInstallationDialog'
-import { ensureToolsInstalled, checkAllTools } from '../utils/toolChecker'
+// Tool checking functions are available via window.cyberGuard
 import { hasSecurePassword } from '../utils/securePasswordStorage'
 import { getAISuggestions, formatAISuggestions } from '../utils/grokApi'
 import { scanComponents } from './scans'
@@ -42,7 +42,7 @@ const ElapsedTimerDisplay = ({ startTime }) => {
   )
 }
 
-const ComprehensiveSecurityScanner = () => {
+function ComprehensiveSecurityScanner({ onScanStart }) {
   const { showSuccess, showError, showLoading, dismissToast } = useToast()
   const { registerScan, updateScan, completeScan, stopScan } = useGlobalScanState()
   const [targetUrl, setTargetUrl] = useState('')
@@ -92,6 +92,25 @@ const ComprehensiveSecurityScanner = () => {
   const completionTriggeredRef = useRef(false)
   const aiSuggestionRef = useRef(null)
   const detailDialogScrollRef = useRef(null)
+  const mountedRef = useRef(true)
+
+  // Safe state updater that prevents updates after unmount
+  const safeSetState = (setter) => (value) => {
+    if (mountedRef.current) {
+      setter(value)
+    }
+  }
+
+  // Create safe versions of all setters (only the most commonly used ones)
+  const safeSetIsScanning = safeSetState(setIsScanning)
+  const safeSetScanResults = safeSetState(setScanResults)
+  const safeSetLogs = safeSetState(setLogs)
+  const safeSetCurrentTest = safeSetState(setCurrentTest)
+  const safeSetCompletedTests = safeSetState(setCompletedTests)
+  const safeSetTestProgress = safeSetState(setTestProgress)
+  const safeSetScanTiming = safeSetState(setScanTiming)
+  const safeSetToolStatus = safeSetState(setToolStatus)
+  const safeSetShowPasswordPrompt = safeSetState(setShowPasswordPrompt)
 
   // Define security tests - all visible in UI, but only File Upload Vulnerability Check runs
   // Order: Quick Fingerprint first, then DNS Resolution & Analysis second
@@ -1335,6 +1354,10 @@ const ComprehensiveSecurityScanner = () => {
       const initial = new Set(['all-scans'])
       securityTests.forEach(test => initial.add(test.id))
       setSelectedScans(initial)
+    }
+
+    return () => {
+      mountedRef.current = false
     }
   }, []) // Only run once on mount
 
@@ -6035,12 +6058,12 @@ const ComprehensiveSecurityScanner = () => {
       }
       
       console.log('🔐 WSL credentials found, proceeding with installation')
-      const success = await ensureToolsInstalled()
+      const success = await window.cyberGuard?.installAllToolsRootless?.()
       if (success) {
         console.log('✅ Tool installation completed successfully!')
         showSuccess('All tools installed successfully!')
         // Re-check tools after installation
-        const status = await checkAllTools()
+        const status = await window.cyberGuard?.checkAllToolsRootless?.()
         setToolStatus(status)
         return true
       } else {
@@ -8216,7 +8239,7 @@ const ComprehensiveSecurityScanner = () => {
                     >
                       <div className="space-y-2">
                         {logs.map((log, index) => (
-                          <div key={index} className="text-sm">
+                          <div key={`log-${index}-${log.timestamp || Date.now()}`} className="text-sm">
                             {/* Command Display */}
                             {log.command && (
                               <div className="mb-2">
@@ -8861,7 +8884,7 @@ const ComprehensiveSecurityScanner = () => {
                               <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">SPF Records</h4>
                               <div className="space-y-1">
                                 {selectedDnsResult.report.records.SPF.map((spf, idx) => (
-                                  <div key={idx} className="bg-white/60 dark:bg-slate-800/60 rounded p-2 text-sm font-mono text-gray-600 dark:text-gray-400 break-all">
+                                  <div key={`spf-${idx}-${spf}`} className="bg-white/60 dark:bg-slate-800/60 rounded p-2 text-sm font-mono text-gray-600 dark:text-gray-400 break-all">
                                     {spf}
                                   </div>
                                 ))}
@@ -8875,7 +8898,7 @@ const ComprehensiveSecurityScanner = () => {
                               <h4 className="font-semibold text-gray-700 dark:text-gray-300 mb-2">DMARC Records</h4>
                               <div className="space-y-1">
                                 {selectedDnsResult.report.records.DMARC.map((dmarc, idx) => (
-                                  <div key={idx} className="bg-white/60 dark:bg-slate-800/60 rounded p-2 text-sm font-mono text-gray-600 dark:text-gray-400 break-all">
+                                  <div key={`dmarc-${idx}-${dmarc}`} className="bg-white/60 dark:bg-slate-800/60 rounded p-2 text-sm font-mono text-gray-600 dark:text-gray-400 break-all">
                                     {dmarc}
                                   </div>
                                 ))}

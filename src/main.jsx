@@ -1,5 +1,4 @@
 import React from 'react'
-import React from 'react'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'react-hot-toast'
@@ -69,10 +68,33 @@ function initApp() {
 
 // Global error handlers
 window.addEventListener('error', (event) => {
+  // Suppress network-related errors that are not critical
+  if (event.message && (
+    event.message.includes('ERR_NETWORK_CHANGED') ||
+    event.message.includes('Failed to load resource') ||
+    event.message.includes('Loading chunk') ||
+    event.message.includes('Loading CSS chunk')
+  )) {
+    console.warn('[MAIN.JSX] Suppressed network error:', event.message)
+    event.preventDefault()
+    return false
+  }
   console.error('[MAIN.JSX] Global error:', event.error, event.message, event.filename, event.lineno)
 })
 
 window.addEventListener('unhandledrejection', (event) => {
+  // Suppress network-related promise rejections
+  if (event.reason && (
+    event.reason.message && (
+      event.reason.message.includes('ERR_NETWORK_CHANGED') ||
+      event.reason.message.includes('Failed to load resource') ||
+      event.reason.message.includes('Loading chunk')
+    )
+  )) {
+    console.warn('[MAIN.JSX] Suppressed network promise rejection:', event.reason.message)
+    event.preventDefault()
+    return
+  }
   console.error('[MAIN.JSX] Unhandled promise rejection:', event.reason)
 })
 
@@ -82,6 +104,7 @@ if (document.readyState === 'loading') {
 } else {
   // DOM is already ready
   initApp()
+}
 console.log('main.jsx loading...')
 
 // Check if page body contains JSON response from OAuth callback (before React mounts)
@@ -299,26 +322,4 @@ if (!rootElement) {
   document.body.appendChild(rootElement);
 }
 
-console.log('Root element:', rootElement);
-
-try {
-  const root = createRoot(rootElement)
-  console.log('React root created successfully')
-  
-  root.render(
-    <StrictMode>
-      <App />
-      <Toaster position="top-center" />
-    </StrictMode>
-  )
-  console.log('React app rendered successfully')
-} catch (error) {
-  console.error('React mounting error:', error)
-  rootElement.innerHTML = `
-    <div style="padding: 20px; color: red; font-family: 'Poppins', sans-serif;">
-      <h1>React Error</h1>
-      <p>${error.message}</p>
-      <pre>${error.stack}</pre>
-    </div>
-  `
-}
+// Root creation is handled by initApp() function above

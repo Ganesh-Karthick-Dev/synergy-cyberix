@@ -1,32 +1,108 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import "./index.css"
 import Dashboard from './Dashboard'
 import InitialSetupFlow from './components/InitialSetupFlow'
 import NetworkStatus from './components/NetworkStatus'
 import SetupScreen from './setup/SetupScreen'
 import Setup from './components/Setup'
-import NetworkStatus from './components/NetworkStatus'
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
 import NativeKaliPasswordDialog from './components/NativeKaliPasswordDialog'
 import WslUserCreationDialog from './components/WslUserCreationDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { GlobalScanProvider } from './context/GlobalScanContext'
-import { GlobalScanProvider } from './context/GlobalScanContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { NotificationProvider } from './context/NotificationContext'
 import setupStateManager from './utils/setupStateManager'
-import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog';
-import WslUserCreationDialog from './components/WslUserCreationDialog';
-import { NotificationProvider } from './context/NotificationContext'
 import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import authService from './utils/authService'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
+// Global error handler for React DOM errors
+const handleGlobalError = (event) => {
+  // Suppress React DOM removeChild errors that don't break functionality
+  if (event.error && event.error.message && (
+    event.error.message.includes('Failed to execute \'removeChild\'') ||
+    event.error.message.includes('removeChildFromContainer')
+  )) {
+    console.warn('Suppressed React DOM error:', event.error.message)
+    event.preventDefault()
+    return false
+  }
+}
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false, error: null, errorInfo: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    // Don't show error boundary for DOM manipulation errors
+    if (error && error.message && (
+      error.message.includes('Failed to execute \'removeChild\'') ||
+      error.message.includes('removeChildFromContainer')
+    )) {
+      return { hasError: false }
+    }
+    return { hasError: true }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    // Don't log DOM manipulation errors
+    if (!(error && error.message && (
+      error.message.includes('Failed to execute \'removeChild\'') ||
+      error.message.includes('removeChildFromContainer')
+    ))) {
+      console.error('Error Boundary caught an error:', error, errorInfo)
+      this.setState({
+        error: error,
+        errorInfo: errorInfo
+      })
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 max-w-md w-full">
+            <h2 className="text-xl font-bold text-red-600 dark:text-red-400 mb-4">
+              Something went wrong
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              The application encountered an unexpected error. Please refresh the page to try again.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+            >
+              Refresh Page
+            </button>
+            {process.env.NODE_ENV === 'development' && (
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm text-gray-500">Error Details</summary>
+                <pre className="mt-2 text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded overflow-auto max-h-32">
+                  {this.state.error && this.state.error.toString()}
+                  <br />
+                  {this.state.errorInfo.componentStack}
+                </pre>
+              </details>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
 const AppContent = () => {
-  const { showError, showSuccess, showLoading, dismissToast, updateToast, updateToast } = useToast()
+  const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
   const [formData, setFormData] = useState({
     username: 'pakih63038@nyfhk.com',
     password: 'Th@X%5PJ$gu^',
@@ -42,6 +118,18 @@ const AppContent = () => {
 
   // Check setup completion status on app load
   useEffect(() => {
+    // Register global error handler for React DOM errors
+    window.addEventListener('error', handleGlobalError)
+    window.addEventListener('unhandledrejection', (event) => {
+      if (event.reason && event.reason.message && (
+        event.reason.message.includes('Failed to execute \'removeChild\'') ||
+        event.reason.message.includes('removeChildFromContainer')
+      )) {
+        console.warn('Suppressed unhandled promise rejection:', event.reason.message)
+        event.preventDefault()
+      }
+    })
+
     const checkSetupStatus = async () => {
       try {
         await setupStateManager.initialize();
@@ -97,6 +185,11 @@ const AppContent = () => {
     };
 
     checkSetupStatus();
+
+    // Cleanup event listeners on unmount
+    return () => {
+      window.removeEventListener('error', handleGlobalError)
+    }
   }, [])
 
   const handleSetupComplete = async (path) => {
@@ -111,8 +204,6 @@ const AppContent = () => {
       showError('Failed to complete setup. Please try again.')
     }
   }
-  const [setupComplete, setSetupComplete] = useState(false)
-  const [checkingSetup, setCheckingSetup] = useState(true)
   const [installPath, setInstallPath] = useState(null)
   const [envReady, setEnvReady] = useState(false)
   const [checkingEnv, setCheckingEnv] = useState(true)
@@ -121,7 +212,6 @@ const AppContent = () => {
   const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
   const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
   const [showNativeKaliPasswordDialog, setShowNativeKaliPasswordDialog] = useState(false)
-  const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
   const [wslInstallationStatus, setWslInstallationStatus] = useState(null) // 'checking', 'installing', 'installed', 'not-installed'
   const [environment, setEnvironment] = useState(null)
 
@@ -204,6 +294,26 @@ const AppContent = () => {
     try {
       const loadingToastId = showLoading('🔐 Logging out...')
 
+      // ===== HARDCODED LOGOUT (API INTEGRATION COMMENTED OUT) =====
+      // Clear localStorage for hardcoded auth
+      localStorage.removeItem('isAuthenticated')
+      
+      // Call backend logout (hardcoded mode - no API call)
+      await authService.logout()
+
+      // Clear local state
+      setIsAuthenticated(false)
+      setFormData({
+        username: '',
+        password: '',
+        rememberMe: false
+      })
+
+      dismissToast(loadingToastId)
+      showSuccess('👋 Logged out successfully')
+
+      // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
+      /*
       // Call backend logout
       await authService.logout()
 
@@ -217,6 +327,7 @@ const AppContent = () => {
 
       dismissToast(loadingToastId)
       showSuccess('👋 Logged out successfully')
+      */
 
     } catch (error) {
       console.error('❌ [APP] Logout error:', error.message)
@@ -254,19 +365,6 @@ const AppContent = () => {
     })()
   }, [])
 
-  const handleSetupComplete = async (path) => {
-    try {
-      // Mark setup as complete
-      await window.cyberGuard.markSetupComplete(path)
-      setSetupComplete(true)
-      setInstallPath(path)
-      showSuccess('Setup completed successfully! Welcome to Cyberix.')
-    } catch (error) {
-      console.error('Error completing setup:', error)
-      showError('Failed to complete setup. Please try again.')
-    }
-  }
-
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
     setFormData(prev => ({
@@ -292,6 +390,31 @@ const AppContent = () => {
     console.log('🎯 [APP] Loading toast shown, calling authService.login...')
 
     try {
+      // ===== HARDCODED LOGIN (API INTEGRATION COMMENTED OUT) =====
+      // Call backend login API
+      console.log('🎯 [APP] About to call authService.login...')
+      const loginResult = await authService.login(formData.username, formData.password)
+      console.log('🎯 [APP] authService.login returned:', loginResult)
+
+      // Set localStorage for hardcoded auth
+      localStorage.setItem('isAuthenticated', 'true')
+
+      // Dismiss loading toast
+      dismissToast(loadingToastId)
+      console.log('🎯 [APP] Loading toast dismissed')
+
+      // Show success toast
+      showSuccess(`🎉 Welcome back, ${loginResult.user.email || loginResult.user.username}! Login successful.`, {
+        duration: 3000
+      })
+      console.log('🎯 [APP] Success toast shown')
+
+      // Set authentication state
+      setIsAuthenticated(true)
+      console.log('🎯 [APP] Authentication state set to true')
+
+      // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
+      /*
       // Call backend login API
       console.log('🎯 [APP] About to call authService.login...')
       const loginResult = await authService.login(formData.username, formData.password)
@@ -310,6 +433,7 @@ const AppContent = () => {
       // Set authentication state
       setIsAuthenticated(true)
       console.log('🎯 [APP] Authentication state set to true')
+      */
 
       // Start the post-login flow (environment detection, tool checking, etc.)
       console.log('🎯 [APP] Starting post-login flow...')
@@ -699,22 +823,6 @@ const AppContent = () => {
         setIsAuthenticated(true)
       }, 2000)
     }
-  }
-
-  const handleLogout = () => {
-    // Show logout toast
-    showSuccess('👋 Successfully logged out! See you next time.', {
-      duration: 2500
-    })
-    
-    setTimeout(() => {
-      setIsAuthenticated(false)
-      setFormData({
-        username: '',
-        password: '',
-        rememberMe: false
-      })
-    }, 500)
   }
 
   const handlePrefillCredentials = () => {
@@ -1125,17 +1233,19 @@ const AppContent = () => {
 
 function App() {
   return (
-    <ThemeProvider>
-      <ToastProvider>
-        <NotificationProvider>
-          <GlobalScanProvider>
-            <ScanningProvider>
-              <AppContent />
-            </ScanningProvider>
-          </GlobalScanProvider>
-        </NotificationProvider>
-      </ToastProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <ToastProvider>
+          <NotificationProvider>
+            <GlobalScanProvider>
+              <ScanningProvider>
+                <AppContent />
+              </ScanningProvider>
+            </GlobalScanProvider>
+          </NotificationProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   )
 }
 

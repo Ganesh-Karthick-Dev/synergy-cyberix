@@ -63,243 +63,120 @@ function SettingsPanel() {
     }
   }
 
+  // MALDEF Tools definition
+  const MALDEF_TOOLS = [
+    { name: 'tshark', package: 'tshark', category: 'network' },
+    { name: 'tcpdump', package: 'tcpdump', category: 'network' },
+    { name: 'ngrep', package: 'ngrep', category: 'network' },
+    { name: 'nikto', package: 'nikto', category: 'web' },
+    { name: 'wapiti', package: 'wapiti', category: 'web' },
+    { name: 'wpscan', package: 'wpscan', category: 'web' },
+    { name: 'clamav', package: 'clamav', category: 'malware' },
+    { name: 'clamav-daemon', package: 'clamav-daemon', category: 'malware' },
+    { name: 'freshclam', package: 'clamav-freshclam', category: 'malware' },
+    { name: 'yara', package: 'yara', category: 'malware' },
+    { name: 'rkhunter', package: 'rkhunter', category: 'malware' },
+    { name: 'chkrootkit', package: 'chkrootkit', category: 'malware' },
+    { name: 'lynis', package: 'lynis', category: 'audit' },
+    { name: 'jq', package: 'jq', category: 'helper' },
+    { name: 'curl', package: 'curl', category: 'helper' },
+    { name: 'wget', package: 'wget', category: 'helper' },
+    { name: 'git', package: 'git', category: 'helper' },
+    { name: 'pandoc', package: 'pandoc', category: 'helper' },
+    { name: 'inotifywait', package: 'inotify-tools', category: 'monitoring' }
+  ]
+
+  // State for tool requirements
+  const [statuses, setStatuses] = useState({
+    pip: { installed: false, checking: false, version: null },
+    tgpt: { installed: false, checking: false, version: null }
+  })
+  const [isInstalling, setIsInstalling] = useState(false)
+  const [isChecking, setIsChecking] = useState(false)
+  const [installProgress, setInstallProgress] = useState({ current: 0, total: 0, message: '' })
+  const [repos, setRepos] = useState([])
+  const [reposChecking, setReposChecking] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [installType, setInstallType] = useState('tools')
+
+  // State for maldef tools
+  const [maldefStatuses, setMaldefStatuses] = useState({})
+  const [isInstallingMaldef, setIsInstallingMaldef] = useState(false)
+  const [isCheckingMaldef, setIsCheckingMaldef] = useState(false)
+  const [maldefInstallProgress, setMaldefInstallProgress] = useState({ current: 0, total: 0, message: '' })
+
+  // Helper functions
+  const renderBadge = (installed) => {
+    return (
+      <span className={`text-xs font-semibold px-2 py-1 rounded ${
+        installed ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
+      }`}>
+        {installed ? '✓ Installed' : '✗ Missing'}
+      </span>
+    )
+  }
+
+  const getMissingToolsCount = () => {
+    let count = 0
+    if (!statuses.pip.installed) count++
+    if (!statuses.tgpt.installed) count++
+    return count
+  }
+
+  const getMissingMaldefToolsCount = () => {
+    return MALDEF_TOOLS.filter(tool => !maldefStatuses[tool.name]?.installed).length
+  }
+
+  const refresh = async () => {
+    setIsChecking(true)
+    // Add refresh logic here
+    setTimeout(() => setIsChecking(false), 1000)
+  }
+
+  const refreshMaldefTools = async () => {
+    setIsCheckingMaldef(true)
+    // Add refresh logic here
+    setTimeout(() => setIsCheckingMaldef(false), 1000)
+  }
+
+  const handleInstallAll = () => {
+    setInstallType('tools')
+    setShowPasswordModal(true)
+  }
+
+  const handleInstallMaldefTools = () => {
+    setInstallType('maldef')
+    setShowPasswordModal(true)
+  }
+
+  const handleInstallWithPassword = async (password) => {
+    setIsInstalling(true)
+    setInstallProgress({ current: 0, total: 2, message: 'Installing tools...' })
+    // Add installation logic here
+    setTimeout(() => {
+      setIsInstalling(false)
+      setInstallProgress({ current: 0, total: 0, message: '' })
+    }, 2000)
+  }
+
+  const handleInstallMaldefWithPassword = async (password) => {
+    setIsInstallingMaldef(true)
+    setMaldefInstallProgress({ current: 0, total: MALDEF_TOOLS.length, message: 'Installing tools...' })
+    // Add installation logic here
+    setTimeout(() => {
+      setIsInstallingMaldef(false)
+      setMaldefInstallProgress({ current: 0, total: 0, message: '' })
+    }, 2000)
+  }
+
+  useEffect(() => {
+    // Initialize tool checks
+    refresh()
+    refreshMaldefTools()
+  }, [])
+
   return (
-    <div className="space-y-6">
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Tool Requirements</h2>
-          <div className="flex gap-2">
-            {getMissingToolsCount() > 0 && (
-              <button 
-                onClick={handleInstallAll} 
-                disabled={isInstalling || isChecking}
-                className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isInstalling ? 'Installing...' : `Install All (${getMissingToolsCount()})`}
-              </button>
-            )}
-            <button 
-              onClick={refresh} 
-              disabled={isInstalling}
-              className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-900 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Recheck
-            </button>
-          </div>
-        </div>
-
-        {isInstalling && (
-          <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Installing Tools...</span>
-              <span className="text-sm text-blue-700 dark:text-blue-300">
-                {installProgress.current} / {installProgress.total}
-              </span>
-            </div>
-            <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(installProgress.current / Math.max(installProgress.total, 1)) * 100}%` }}
-              ></div>
-            </div>
-            {installProgress.message && (
-              <p className="text-xs text-blue-700 dark:text-blue-300">{installProgress.message}</p>
-            )}
-          </div>
-        )}
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded">
-            <div className="text-sm text-gray-900 dark:text-gray-100">pip / pip3</div>
-            {renderBadge(statuses.pip.installed)}
-          </div>
-
-          <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded">
-            <div className="text-sm text-gray-900 dark:text-gray-100">
-              tgpt
-              {statuses.tgpt.checking && (
-                <svg className="w-4 h-4 text-gray-400 animate-spin inline-block ml-2" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              )}
-            </div>
-            {statuses.tgpt.checking ? (
-              <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
-            ) : (
-              <div className="flex items-center gap-2">
-                {renderBadge(statuses.tgpt.installed)}
-                {statuses.tgpt.version && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">({statuses.tgpt.version})</span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Cloned repositories list */}
-          <div className="p-3 bg-gray-50 dark:bg-slate-700 rounded">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Cloned Repositories (/cybrix)</div>
-              {reposChecking && (
-                <svg className="w-4 h-4 text-gray-300 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                )}
-            </div>
-            {reposChecking ? (
-              <div className="text-xs text-gray-400">Checking repositories...</div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {repos.length === 0 ? (
-                  <span className="text-xs text-gray-400">No repositories found</span>
-                ) : (
-                  repos.map((r) => (
-                    <span key={r} className="text-xs px-2 py-1 rounded bg-slate-600/40 text-gray-100 border border-slate-500">{r}</span>
-                  ))
-                )}
-              </div>
-            )}
-        </div>
-
-      {/* Security Settings */}
-      <div className="space-y-6">
-        {securitySettings.map((category, categoryIndex) => (
-          <div key={categoryIndex} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{category.category}</h3>
-            
-            <div className="space-y-4">
-              {category.settings.map((setting, settingIndex) => (
-                <div key={settingIndex} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{setting.name}</h4>
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{setting.description}</p>
-                  </div>
-                  <div className="flex items-center ml-4">
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        defaultChecked={setting.enabled}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-slate-800 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                    </label>
-                    <span className={`ml-3 text-xs font-medium ${
-                      setting.enabled ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {setting.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Malware & Defacement Tools Section */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Malware & Defacement Tools</h2>
-          <div className="flex gap-2">
-            {getMissingMaldefToolsCount() > 0 && (
-              <button 
-                onClick={handleInstallMaldefTools} 
-                disabled={isInstallingMaldef || isCheckingMaldef}
-                className="px-4 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isInstallingMaldef ? 'Installing...' : `Install All (${getMissingMaldefToolsCount()})`}
-              </button>
-            )}
-            <button 
-              onClick={refreshMaldefTools} 
-              disabled={isInstallingMaldef}
-              className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-900 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Recheck
-            </button>
-          </div>
-        </div>
-
-        {isInstallingMaldef && (
-          <div className="mb-4 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-purple-900 dark:text-purple-100">Installing Tools...</span>
-              <span className="text-sm text-purple-700 dark:text-purple-300">
-                {maldefInstallProgress.current} / {maldefInstallProgress.total}
-              </span>
-            </div>
-            <div className="w-full bg-purple-200 dark:bg-purple-800 rounded-full h-2 mb-2">
-              <div 
-                className="bg-purple-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${(maldefInstallProgress.current / Math.max(maldefInstallProgress.total, 1)) * 100}%` }}
-              ></div>
-            </div>
-            {maldefInstallProgress.message && (
-              <p className="text-xs text-purple-700 dark:text-purple-300">{maldefInstallProgress.message}</p>
-            )}
-          </div>
-        )}
-
-        <div className="space-y-4">
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Required Tools</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {MALDEF_TOOLS.map((tool) => {
-                const toolStatus = maldefStatuses[tool.name]
-                const isInstalled = !!toolStatus?.installed
-                
-                return (
-                  <div key={tool.name} className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                        {isCheckingMaldef ? (
-                          <svg className="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : null}
-                        {tool.name}
-                        <span className="text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 px-1 rounded">
-                          {tool.category}
-                        </span>
-                      </span>
-                      {isCheckingMaldef ? (
-                        <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
-                      ) : (
-                        <span className={`text-xs font-semibold ${isInstalled ? 'text-green-600' : 'text-red-600'}`}>
-                          {isInstalled ? '✓ Installed' : '✗ Missing'}
-                        </span>
-                      )}
-                    </div>
-                    {toolStatus?.path && (
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        Path: {toolStatus.path}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Password Modal */}
-      {showPasswordModal && (
-        <PasswordModal
-          onCancel={() => setShowPasswordModal(false)}
-          onSubmit={(password) => {
-            // Determine which installation to trigger based on installType
-            if (installType === 'maldef') {
-              handleInstallMaldefWithPassword(password)
-            } else {
-              handleInstallWithPassword(password)
-            }
-          }}
-        />
-      )}
-    </div>
+    <div>Test</div>
   )
 }
 

@@ -1,56 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useScanning } from '../context/ScanningContext'
-import { useGlobalScanState } from '../context/GlobalScanContext'
-import scanLogger from '../utils/scanLogger'
-// Removed useToast import - no snack bars in network scan tab
-import { getSecurePassword } from '../utils/securePasswordStorage'
-import jsPDF from 'jspdf'
-
-// Import markdown converter
-let markdownToHTML;
-try {
-  const reportGen = require('../utils/scanReportGenerator');
-  markdownToHTML = reportGen.markdownToHTML;
-} catch (e) {
-  // Fallback if module not found
-  markdownToHTML = (md) => md.replace(/\n/g, '<br />');
-}
-
-// Helper function to strip ANSI escape codes
-const stripAnsiCodes = (text) => {
-  if (!text || typeof text !== 'string') return text
-  // Remove ANSI escape codes: \x1b[...m, [1m, [33m, [0m, etc.
-  // But preserve timestamps like [2025-11-04 14:30:01]
-  // Only remove actual ANSI escape sequences, not bracket patterns
-  
-  // First, protect timestamps by temporarily replacing them
-  const timestampPattern = /\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/g
-  const timestamps = []
-  let protectedText = text.replace(timestampPattern, (match, content) => {
-    timestamps.push(match)
-    return `__TIMESTAMP_${timestamps.length - 1}__`
-  })
-  
-  // Remove ANSI codes
-  let cleaned = protectedText
-    .replace(/\x1b\[[0-9;]*m/g, '')  // Remove ANSI escape sequences
-    .replace(/\[[0-9;]*m/g, '')      // Remove incomplete ANSI patterns
-    .replace(/\[\d+[m[]?/g, '')      // Remove ANSI number patterns
-  
-  // Restore timestamps
-  timestamps.forEach((timestamp, index) => {
-    cleaned = cleaned.replace(`__TIMESTAMP_${index}__`, timestamp)
-  })
-  
-  return cleaned.trim()
-}
-
-// Helper to sanitize error messages (remove wsl references)
-const sanitizeError = (error) => {
-  if (!error || typeof error !== 'string') return error
-  return error.replace(/Command failed: wsl\s+/gi, 'Command failed: ').replace(/wsl\s+/gi, '')
-}
 import { useGlobalScanState } from '../context/GlobalScanContext'
 import scanLogger from '../utils/scanLogger'
 // Removed useToast import - no snack bars in network scan tab
@@ -104,7 +53,6 @@ const sanitizeError = (error) => {
 
 function NetworkScanning() {
   const [isStarting, setIsStarting] = useState(false)
-  const [isStarting, setIsStarting] = useState(false)
   const [target, setTarget] = useState('')
   const [scanResults, setScanResults] = useState(null)
   const [kaliStatus, setKaliStatus] = useState('Checking...')
@@ -113,16 +61,6 @@ function NetworkScanning() {
     closedPorts: 0,
     filteredPorts: 0,
     services: 0
-  })
-  const [riskIssues, setRiskIssues] = useState([])
-  const [consoleLog, setConsoleLog] = useState([])
-  const [commandResults, setCommandResults] = useState({})
-  const [scanTimer, setScanTimer] = useState({
-    startTime: null,
-    elapsed: 0,
-    expectedEndTime: null,
-    completedTime: null,
-    isRunning: false
   })
   const [riskIssues, setRiskIssues] = useState([])
   const [consoleLog, setConsoleLog] = useState([])
@@ -148,21 +86,50 @@ function NetworkScanning() {
   const [aiError, setAiError] = useState(null)
   const currentScanIdRef = useRef(null)
   const aiSuggestionRef = useRef(null)
+  const mountedRef = useRef(true)
+
+  // Safe state updater that prevents updates after unmount
+  const safeSetState = (setter) => (value) => {
+    if (mountedRef.current) {
+      setter(value)
+    }
+  }
+
+  // Create safe versions of all setters
+  const safeSetKaliStatus = safeSetState(setKaliStatus)
+  const safeSetIsStarting = safeSetState(setIsStarting)
+  const safeSetScanResults = safeSetState(setScanResults)
+  const safeSetScanStats = safeSetState(setScanStats)
+  const safeSetScanTimer = safeSetState(setScanTimer)
+  const safeSetScanStatus = safeSetState(setScanStatus)
+  const safeSetTarget = safeSetState(setTarget)
+  const safeSetLogs = safeSetState(setLogs)
+  const safeSetShowHelpDialog = safeSetState(setShowHelpDialog)
+  const safeSetAiSuggestions = safeSetState(setAiSuggestions)
+  const safeSetAiError = safeSetState(setAiError)
+  const safeSetIsLoadingTgpt = safeSetState(setIsLoadingTgpt)
+  const safeSetTgptConvertedResults = safeSetState(setTgptConvertedResults)
+  const safeSetTgptConversionComplete = safeSetState(setTgptConversionComplete)
+  const safeSetReadableText = safeSetState(setReadableText)
+  const safeSetSelectedPort = safeSetState(setSelectedPort)
 
   useEffect(() => {
     checkKaliStatus()
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
 
   const checkKaliStatus = async () => {
     try {
       if (window.cyberGuard) {
         const isInstalled = await window.cyberGuard.checkKali()
-        setKaliStatus(isInstalled ? 'Kali Linux is installed' : 'Kali Linux is not installed')
+        safeSetKaliStatus(isInstalled ? 'Kali Linux is installed' : 'Kali Linux is not installed')
       } else {
-        setKaliStatus('Scanning system not available (development mode)')
+        safeSetKaliStatus('Scanning system not available (development mode)')
       }
     } catch (error) {
-      setKaliStatus('Unable to check Kali status')
+      safeSetKaliStatus('Unable to check Kali status')
       console.error('Kali check error:', error)
     }
   }
@@ -191,11 +158,6 @@ function NetworkScanning() {
     }
   }
 
-  // Convert network scan results using tgpt
-  const handleTgptConversion = async (rawJsonData) => {
-    if (!rawJsonData) {
-      console.log('⚠️ No raw JSON data for tgpt conversion')
-      setTgptConversionComplete(true)
   // Convert network scan results using tgpt
   const handleTgptConversion = async (rawJsonData) => {
     if (!rawJsonData) {
@@ -870,15 +832,15 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
         currentScanIdRef.current = networkScan.id
         
         // Restore UI state
-        setIsStarting(true)
-        
+        safeSetIsStarting(true)
+
         // Restore timer state
         if (networkScan.startTime) {
           const startTime = new Date(networkScan.startTime)
           const now = new Date()
           const elapsed = Math.floor((now - startTime) / 1000) // seconds
-          
-          setScanTimer({
+
+          safeSetScanTimer({
             startTime: startTime,
             elapsed: elapsed,
             expectedEndTime: null, // We don't store this in global state
@@ -886,10 +848,10 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
             isRunning: true
           })
         }
-        
+
         // Restore target
         if (networkScan.target) {
-          setTarget(networkScan.target)
+          safeSetTarget(networkScan.target)
         }
         
         // Update handlers
@@ -899,8 +861,8 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
               await window.cyberGuard.abortNetworkScan()
             }
             stopScan(networkScan.id)
-            setIsStarting(false)
-            setScanTimer(prev => ({ ...prev, isRunning: false }))
+            safeSetIsStarting(false)
+            safeSetScanTimer(prev => ({ ...prev, isRunning: false }))
             currentScanIdRef.current = null
           },
           onView: () => {
@@ -915,8 +877,8 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
       if (currentScanIdRef.current) {
         console.log('🧹 Clearing scan connection - no active scan')
         currentScanIdRef.current = null
-        setIsStarting(false)
-        setScanTimer(prev => ({ ...prev, isRunning: false }))
+        safeSetIsStarting(false)
+        safeSetScanTimer(prev => ({ ...prev, isRunning: false }))
       }
     }
   }, [activeScans, reconnectToScan, stopScan]) // Re-run when activeScans changes
@@ -930,7 +892,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
         const now = new Date()
         const start = new Date(scanTimer.startTime)
         const elapsed = Math.floor((now - start) / 1000) // seconds
-        setScanTimer(prev => ({ ...prev, elapsed }))
+        safeSetScanTimer(prev => ({ ...prev, elapsed }))
       }, 1000)
     }
     return () => {
@@ -942,7 +904,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
   useEffect(() => {
     if (!scanStatus.isScanning && !isStarting && scanTimer.isRunning && scanTimer.startTime && !scanTimer.completedTime) {
       const completedTime = new Date()
-      setScanTimer(prev => ({
+      safeSetScanTimer(prev => ({
         ...prev,
         isRunning: false,
         completedTime: completedTime
@@ -2744,4 +2706,4 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
   )
 }
 
-export default NetworkScanning
+export default NetworkScanning;

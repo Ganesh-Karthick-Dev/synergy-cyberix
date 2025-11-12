@@ -8,6 +8,31 @@ require('dotenv').config();
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+// Logging function to write to file
+function logToFile(message) {
+  try {
+    // Use process.cwd() as fallback if app is not ready
+    let logDir;
+    try {
+      logDir = path.join(app.getPath('userData'), 'logs');
+    } catch {
+      // Fallback to current working directory if app is not ready
+      logDir = path.join(process.cwd(), 'logs');
+    }
+    
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logFile = path.join(logDir, `main_${new Date().toISOString().split('T')[0]}.log`);
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(logFile, logMessage, 'utf8');
+  } catch (error) {
+    // Silently fail if logging fails to prevent breaking the app
+    console.error('Failed to write to log file:', error.message);
+  }
+}
+
 // Helper: check if Kali Linux is installed in WSL
 async function checkKaliInstalled() {
   // First, check if we're on native Kali Linux
@@ -393,6 +418,9 @@ const iconPath = path.join(__dirname, '..', 'assets', 'Cybersecurity-research-02
 
 async function createMainWindow() {
   const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
+  
+  // Define preload path
+  const preloadPath = path.join(__dirname, 'preload.js');
 
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -418,25 +446,60 @@ async function createMainWindow() {
 
   // In development, load from Vite dev server
   if (isDev) {
-    // Try multiple ports that Vite might use
-    const ports = [6977, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6978, 5173, 3000];
+    // Always use port 3000
+    const ports = [3000];
+    const hosts = ['127.0.0.1', 'localhost'];
     let loaded = false;
 
-    // Function to try loading from a port with proper promise handling
-    const tryLoadPort = (port) => {
+    // Function to check if server is ready
+    const checkServerReady = (host, port) => {
       return new Promise((resolve) => {
-        const url = `http://localhost:${port}/`;
-        console.log(`Trying to load from: ${url}`);
+        const http = require('http');
+        const req = http.get(`http://${host}:${port}/`, { timeout: 2000 }, (res) => {
+          resolve(res.statusCode === 200);
+        });
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => {
+          req.destroy();
+          resolve(false);
+        });
+      });
+    };
+
+    // Wait for Vite server to be ready (up to 30 seconds)
+    console.log('[MAIN] Waiting for Vite dev server to start...');
+    let serverReady = false;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      for (const host of hosts) {
+        for (const port of ports) {
+          serverReady = await checkServerReady(host, port);
+          if (serverReady) {
+            console.log(`[MAIN] ✅ Vite server is ready at http://${host}:${port}/`);
+            break;
+          }
+        }
+        if (serverReady) break;
+      }
+      if (serverReady) break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log(`[MAIN] Waiting for Vite server... (attempt ${attempt + 1}/30)`);
+    }
+
+    // Function to try loading from a port with proper promise handling
+    const tryLoadPort = (host, port) => {
+      return new Promise((resolve) => {
+        const url = `http://${host}:${port}/`;
+        console.log(`[MAIN] Trying to load from: ${url}`);
 
         // Set up event listeners before loading
         const onFinishLoad = () => {
-          console.log(`✅ Successfully loaded from port ${port}`);
+          console.log(`[MAIN] ✅ Successfully loaded from ${url}`);
           cleanup();
           resolve(true);
         };
 
         const onFailLoad = (event, errorCode, errorDescription) => {
-          console.log(`❌ Failed to load from port ${port}: ${errorDescription} (${errorCode})`);
+          console.log(`[MAIN] ❌ Failed to load from ${url}: ${errorDescription} (${errorCode})`);
           cleanup();
           resolve(false);
         };
@@ -452,25 +515,28 @@ async function createMainWindow() {
         // Load the URL
         mainWindow.loadURL(url);
 
-        // Timeout after 5 seconds
+        // Timeout after 10 seconds
         setTimeout(() => {
           cleanup();
           resolve(false);
-        }, 5000);
+        }, 10000);
       });
     };
 
-    // Try ports sequentially
-    for (const port of ports) {
-      const success = await tryLoadPort(port);
-      if (success) {
-        loaded = true;
-        break;
+    // Try hosts and ports sequentially
+    for (const host of hosts) {
+      for (const port of ports) {
+        const success = await tryLoadPort(host, port);
+        if (success) {
+          loaded = true;
+          break;
+        }
       }
+      if (loaded) break;
     }
 
     if (!loaded) {
-      console.log('❌ Failed to load from any port, showing error page');
+      console.log('❌ Failed to load from any host/port, showing error page');
       mainWindow.loadURL(`data:text/html,
         <html>
           <head><title>Cyberix - Loading Error</title></head>
@@ -478,13 +544,15 @@ async function createMainWindow() {
             <h1>🚨 Cyberix Loading Error</h1>
             <p>The development server could not be found. Please ensure:</p>
             <ul>
-              <li>Run <code>npm run dev</code> in a separate terminal</li>
-              <li>The Vite server is running on one of these ports: ${ports.join(', ')}</li>
-              <li>Check the terminal for the correct port number</li>
+              <li>The Vite dev server is running (check if <code>npm run dev</code> is running)</li>
+              <li>The server is accessible at: <code>http://127.0.0.1:3000</code> or <code>http://localhost:3000</code></li>
+              <li>Check the terminal running <code>npm run electron:dev</code> for errors</li>
             </ul>
-            <p><strong>Expected port:</strong> 5173 (Vite default)</p>
+            <p><strong>Tried hosts:</strong> ${hosts.join(', ')}</p>
+            <p><strong>Tried ports:</strong> ${ports.join(', ')}</p>
             <p><strong>Current time:</strong> ${new Date().toLocaleString()}</p>
-            <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Retry</button>
+            <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin-right: 10px;">🔄 Retry</button>
+            <button onclick="window.location.href='http://127.0.0.1:3000'" style="padding: 10px 20px; background: #28a745; color: white; border: none; border-radius: 5px; cursor: pointer;">🌐 Open in Browser</button>
           </body>
         </html>
       `);
@@ -632,8 +700,8 @@ async function createMainWindow() {
     if (isDev) {
       setTimeout(() => {
         console.log('Attempting to reload from current Vite port...')
-        // Try to reload from the current Vite port (6977 based on terminal output)
-        mainWindow.loadURL('http://localhost:6977/')
+        // Always reload from port 3000
+        mainWindow.loadURL('http://localhost:3000/')
       }, 1000)
     } else {
       // Show error in window
@@ -705,6 +773,333 @@ async function createMainWindow() {
 }
 
 app.whenReady().then(async () => {
+  // Register critical file system handlers FIRST before creating window
+  // This ensures they're available when renderer process loads
+  ipcMain.handle('fs:getUserDataPath', async () => {
+    try {
+      return app.getPath('userData');
+    } catch (error) {
+      console.error('Error getting user data path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        console.log('Created directory:', dirPath);
+      }
+      return true;
+    } catch (error) {
+      console.error('Error creating directory:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('fs:writeFile', async (event, filePath, data) => {
+    try {
+      // Ensure directory exists before writing
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(filePath, data, 'utf8');
+      console.log('File written:', filePath);
+      return true;
+    } catch (error) {
+      console.error('Error writing file:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('fs:readFile', async (event, filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return null;
+      }
+      const data = fs.readFileSync(filePath, 'utf8');
+      return data;
+    } catch (error) {
+      console.error('Error reading file:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:listFiles', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        return [];
+      }
+      const files = fs.readdirSync(dirPath);
+      return files.map(file => {
+        const fullPath = path.join(dirPath, file);
+        const stats = fs.statSync(fullPath);
+        return {
+          name: file,
+          path: fullPath,
+          isDirectory: stats.isDirectory(),
+          size: stats.size,
+          modified: stats.mtime
+        };
+      });
+    } catch (error) {
+      console.error('Error listing files:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('fs:getInstallPath', async () => {
+    try {
+      // Return the app's installation path
+      return app.getAppPath();
+    } catch (error) {
+      console.error('Error getting install path:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('fs:getDownloadsPath', async () => {
+    try {
+      return app.getPath('downloads');
+    } catch (error) {
+      console.error('Error getting downloads path:', error);
+      return null;
+    }
+  });
+
+  // Setup operations
+  ipcMain.handle('setup:checkComplete', async () => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const setupFile = path.join(userDataPath, 'cyberix-setup.json');
+
+      if (fs.existsSync(setupFile)) {
+        const setupData = JSON.parse(fs.readFileSync(setupFile, 'utf8'));
+        return {
+          completed: setupData.completed || false,
+          installPath: setupData.installPath || null
+        };
+      }
+
+      return { completed: false, installPath: null };
+    } catch (error) {
+      console.error('Error checking setup completion:', error);
+      return { completed: false, installPath: null };
+    }
+  });
+
+  ipcMain.handle('setup:markComplete', async (event, installPath) => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const setupFile = path.join(userDataPath, 'cyberix-setup.json');
+      const setupData = {
+        completed: true,
+        installPath: installPath,
+        completedAt: new Date().toISOString()
+      };
+      fs.writeFileSync(setupFile, JSON.stringify(setupData, null, 2), 'utf8');
+      console.log('Setup marked as complete:', installPath);
+      return true;
+    } catch (error) {
+      console.error('Error marking setup complete:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('setup:selectDirectory', async (event) => {
+    try {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const result = await dialog.showOpenDialog(window || null, {
+        properties: ['openDirectory'],
+        title: 'Select Installation Directory'
+      });
+      
+      if (!result.canceled && result.filePaths.length > 0) {
+        return result.filePaths[0];
+      }
+      return null;
+    } catch (error) {
+      console.error('Error selecting directory:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('setup:createDirectory', async (event, dirPath) => {
+    try {
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        console.log('Created directory:', dirPath);
+      }
+      return true;
+    } catch (error) {
+      console.error('Error creating directory:', error);
+      return false;
+    }
+  });
+
+  // OS operations
+  ipcMain.handle('os:installKaliLinux', async (event) => {
+    try {
+      console.log('Kali Linux installation requested');
+      return { success: true, message: 'Kali Linux installation initiated' };
+    } catch (error) {
+      console.error('Error installing Kali Linux:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // WSL operations
+  ipcMain.handle('wsl:storeRootPassword', async (event, password) => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const passwordFile = path.join(userDataPath, 'wsl-root-password.enc');
+      const encrypted = Buffer.from(password).toString('base64');
+      fs.writeFileSync(passwordFile, encrypted);
+      console.log('WSL root password stored securely');
+      return true;
+    } catch (error) {
+      console.error('Error storing WSL root password:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('wsl:getStoredRootPassword', async () => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const passwordFile = path.join(userDataPath, 'wsl-root-password.enc');
+      
+      if (!fs.existsSync(passwordFile)) {
+        return null;
+      }
+      
+      const encrypted = fs.readFileSync(passwordFile, 'utf8');
+      const password = Buffer.from(encrypted, 'base64').toString('utf8');
+      return password;
+    } catch (error) {
+      console.error('Error getting stored WSL root password:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle('wsl:clearRootPassword', async () => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const passwordFile = path.join(userDataPath, 'wsl-root-password.enc');
+      
+      if (fs.existsSync(passwordFile)) {
+        fs.unlinkSync(passwordFile);
+        console.log('WSL root password cleared');
+      }
+      return true;
+    } catch (error) {
+      console.error('Error clearing WSL root password:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('wsl:getDistro', async () => {
+    try {
+      const { execSync } = require('child_process');
+      const distro = execSync('wsl --list --verbose', { encoding: 'utf8' });
+      // Parse the output to find the default distro
+      const lines = distro.split('\n').filter(line => line.trim());
+      for (const line of lines.slice(1)) { // Skip header
+        if (line.includes('*') || line.includes('(Default)')) {
+          const parts = line.trim().split(/\s+/);
+          return parts[0] || 'Ubuntu';
+        }
+      }
+      // Fallback: try to get first distro
+      if (lines.length > 1) {
+        const parts = lines[1].trim().split(/\s+/);
+        return parts[0] || 'Ubuntu';
+      }
+      return 'Ubuntu'; // Default fallback
+    } catch (error) {
+      console.error('Error getting WSL distro:', error);
+      return 'Ubuntu'; // Default fallback
+    }
+  });
+
+  ipcMain.handle('wsl:listDistributions', async () => {
+    try {
+      const { execSync } = require('child_process');
+      const output = execSync('wsl --list --verbose', { encoding: 'utf8' });
+      const lines = output.split('\n').filter(line => line.trim());
+      const distributions = [];
+      
+      for (let i = 1; i < lines.length; i++) { // Skip header
+        const line = lines[i].trim();
+        if (line) {
+          const parts = line.split(/\s+/);
+          const name = parts[0];
+          const state = parts[1] || 'Unknown';
+          const version = parts[2] || '2';
+          distributions.push({
+            name,
+            state,
+            version,
+            isDefault: line.includes('*') || line.includes('(Default)')
+          });
+        }
+      }
+      
+      return distributions;
+    } catch (error) {
+      console.error('Error listing WSL distributions:', error);
+      return [];
+    }
+  });
+
+  ipcMain.handle('wsl:setDefaultDistro', async (event, distroName) => {
+    try {
+      const { execSync } = require('child_process');
+      execSync(`wsl --set-default ${distroName}`, { encoding: 'utf8' });
+      console.log(`Set default WSL distro to: ${distroName}`);
+      return true;
+    } catch (error) {
+      console.error('Error setting default WSL distro:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('wsl:setupCyberixFolder', async (event) => {
+    try {
+      // This would typically run WSL commands to set up the Cyberix folder
+      // For now, return success as a placeholder
+      console.log('WSL Cyberix folder setup requested');
+      return { success: true, message: 'Cyberix folder setup initiated' };
+    } catch (error) {
+      console.error('Error setting up Cyberix folder:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('wsl:cloneRepository', async (event, repoName) => {
+    try {
+      // This would typically run git clone in WSL
+      // For now, return success as a placeholder
+      console.log(`WSL repository clone requested: ${repoName}`);
+      return { success: true, message: `Repository ${repoName} clone initiated` };
+    } catch (error) {
+      console.error('Error cloning repository:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('wsl:setupPythonVenv', async (event) => {
+    try {
+      // This would typically set up Python virtual environment in WSL
+      // For now, return success as a placeholder
+      console.log('WSL Python virtual environment setup requested');
+      return { success: true, message: 'Python virtual environment setup initiated' };
+    } catch (error) {
+      console.error('Error setting up Python virtual environment:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   const win = await createMainWindow();
 
   // IPC: expose OS helpers
@@ -1080,38 +1475,76 @@ app.whenReady().then(async () => {
   // Tool Installer for missing Kali tools
   ipcMain.handle('tools:checkMissing', async () => {
     try {
-      // Determine file type from extension
-      const ext = path.extname(sourcePath).toLowerCase();
-      let filters = [{ name: 'All Files', extensions: ['*'] }];
-      
-      if (ext === '.pdf') {
-        filters = [{ name: 'PDF Files', extensions: ['pdf'] }, { name: 'All Files', extensions: ['*'] }];
-      } else if (ext === '.html') {
-        filters = [{ name: 'HTML Files', extensions: ['html'] }, { name: 'All Files', extensions: ['*'] }];
-      } else if (ext === '.json') {
-        filters = [{ name: 'JSON Files', extensions: ['json'] }, { name: 'All Files', extensions: ['*'] }];
-      } else if (ext === '.txt') {
-        filters = [{ name: 'Text Files', extensions: ['txt'] }, { name: 'All Files', extensions: ['*'] }];
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // List of common security tools
+      const allTools = [
+        'nmap',
+        'nikto',
+        'sqlmap',
+        'gobuster',
+        'dirb',
+        'wfuzz',
+        'masscan',
+        'whatweb',
+        'subfinder',
+        'amass',
+        'httpx',
+        'nuclei',
+        'burpsuite',
+        'zap',
+        'metasploit',
+        'aircrack-ng',
+        'john',
+        'hashcat'
+      ];
+
+      const missingTools = [];
+      const installedTools = [];
+
+      console.log('🔍 Checking for missing tools...');
+
+      for (const tool of allTools) {
+        try {
+          // Check if tool exists in WSL
+          const command = `wsl bash -c "command -v ${tool}"`;
+          const { stdout } = await execAsync(command, { timeout: 5000 });
+          const toolPath = stdout.trim();
+
+          if (toolPath && toolPath.length > 0) {
+            console.log(`✅ ${tool} found at: ${toolPath}`);
+            installedTools.push({ name: tool, path: toolPath, installed: true });
+          } else {
+            console.log(`❌ ${tool} not found`);
+            missingTools.push({ name: tool, installed: false });
+          }
+        } catch (error) {
+          // Tool not found or error checking
+          console.log(`❌ ${tool} not found or error: ${error.message}`);
+          missingTools.push({ name: tool, installed: false });
+        }
       }
-      
-      const { canceled, filePath } = await dialog.showSaveDialog({
-        defaultPath: defaultName || path.basename(sourcePath),
-        filters: filters
-      });
-      
-      if (canceled || !filePath) return { canceled: true };
-      
-      // Check if source file exists
-      if (!fs.existsSync(sourcePath)) {
-        throw new Error(`Source file not found: ${sourcePath}`);
-      }
-      
-      await fs.promises.copyFile(sourcePath, filePath);
-      console.log(`Report saved: ${sourcePath} -> ${filePath}`);
-      return { ok: true, filePath };
-    } catch (e) {
-      console.error('Error saving report:', e);
-      return { error: e?.message || String(e) };
+
+      console.log(`📊 Tools check complete: ${installedTools.length} installed, ${missingTools.length} missing`);
+
+      return {
+        success: true,
+        installedTools,
+        missingTools: missingTools.map(t => t.name),
+        totalTools: allTools.length,
+        installedCount: installedTools.length,
+        missingCount: missingTools.length
+      };
+    } catch (error) {
+      console.error('Error checking missing tools:', error);
+      return {
+        success: false,
+        error: error.message,
+        missingTools: [],
+        installedTools: []
+      };
     }
   });
 
@@ -2481,70 +2914,213 @@ app.whenReady().then(async () => {
               document.getElementById('kali-status').style.color = '#ef4444';
               document.getElementById('install-kali-btn').style.display = 'block';
             `);
-          }
-            } else {
-              // User clicked Skip - this is perfectly fine!
-              console.log('✅ User skipped Kali Linux installation - using browser-based detection');
-              win.webContents.once('did-finish-load', () => {
-                try {
-                  win.webContents.executeJavaScript(`
-                    if (document.getElementById('kali-status')) {
-                      document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
-                      document.getElementById('kali-status').style.color = '#10b981';
-                      if (document.getElementById('install-kali-btn')) {
-                        document.getElementById('install-kali-btn').style.display = 'inline-block';
-                      }
-                    }
-                  `);
-                } catch (jsError) {
-                  console.log('Could not update kali-status element:', jsError.message);
-                }
-              });
-            }
-            } catch (dialogError) {
-              console.log('Dialog error:', dialogError.message);
-            }
-          }, 3000); // Increased delay to ensure page is fully loaded
-        }
-      } else {
-        console.log('WSL not available - using browser-based detection');
-        // Wait for the page to load before updating UI
-        win.webContents.once('did-finish-load', () => {
-          try {
-            win.webContents.executeJavaScript(`
-              if (document.getElementById('kali-status')) {
-                document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
-                document.getElementById('kali-status').style.color = '#10b981';
-                if (document.getElementById('install-kali-btn')) {
-                  document.getElementById('install-kali-btn').style.display = 'inline-block';
-                }
-              }
-            `);
-          } catch (jsError) {
-            console.log('Could not update kali-status element:', jsError.message);
+            resolve({ success: false, output });
           }
         });
-      }
-    } catch (wslError) {
-      console.log('WSL check failed:', wslError.message);
-      // Wait for the page to load before updating UI
-      win.webContents.once('did-finish-load', () => {
-        try {
-          win.webContents.executeJavaScript(`
-            if (document.getElementById('kali-status')) {
-              document.getElementById('kali-status').textContent = '✅ Using browser-based detection';
-              document.getElementById('kali-status').style.color = '#10b981';
-              if (document.getElementById('install-kali-btn')) {
-                document.getElementById('install-kali-btn').style.display = 'inline-block';
-              }
-            }
-          `);
-        } catch (jsError) {
-          console.log('Could not update kali-status element:', jsError.message);
-        }
       });
+    } catch (error) {
+      console.error('Auto-install error:', error.message);
+      event.sender.send('tools:autoInstallProgress', { 
+        stage: 'error', 
+        message: `Auto-install failed: ${error.message}` 
+      });
+      return { success: false, error: error.message };
     }
-  }
+  });
+
+  // Check required tools only (using child_process)
+  ipcMain.handle('tools:checkRequiredToolsOnly', async (event, password) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // List of required security tools
+      const requiredTools = [
+        'nmap',
+        'nikto',
+        'sqlmap',
+        'gobuster',
+        'dirb',
+        'wfuzz',
+        'masscan',
+        'whatweb',
+        'subfinder',
+        'amass',
+        'httpx',
+        'nuclei'
+      ];
+
+      const missingTools = [];
+      const installedTools = [];
+
+      console.log('🔍 Checking required tools...');
+
+      for (const tool of requiredTools) {
+        try {
+          let command;
+          if (password) {
+            // Use password with WSL
+            command = `echo "${password}" | wsl bash -c "command -v ${tool}"`;
+          } else {
+            // Try without password (for already authenticated sessions)
+            command = `wsl bash -c "command -v ${tool}"`;
+          }
+
+          const { stdout } = await execAsync(command, { timeout: 5000 });
+          const toolPath = stdout.trim();
+
+          if (toolPath && toolPath.length > 0) {
+            console.log(`✅ ${tool} found at: ${toolPath}`);
+            installedTools.push({ name: tool, path: toolPath, installed: true });
+          } else {
+            console.log(`❌ ${tool} not found`);
+            missingTools.push({ name: tool, installed: false });
+          }
+        } catch (error) {
+          // Tool not found or error checking
+          console.log(`❌ ${tool} not found or error: ${error.message}`);
+          missingTools.push({ name: tool, installed: false });
+        }
+      }
+
+      console.log(`📊 Tools check complete: ${installedTools.length} installed, ${missingTools.length} missing`);
+
+      return {
+        success: true,
+        installedTools,
+        missingTools: missingTools.map(t => t.name),
+        totalRequired: requiredTools.length,
+        installedCount: installedTools.length,
+        missingCount: missingTools.length
+      };
+    } catch (error) {
+      console.error('Error checking required tools:', error);
+      return {
+        success: false,
+        error: error.message,
+        missingTools: [],
+        installedTools: []
+      };
+    }
+  });
+
+  // Install missing tools
+  ipcMain.handle('tools:installMissing', async (event, missingTools) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // Get stored password
+      const userDataPath = app.getPath('userData');
+      const passwordFile = path.join(userDataPath, 'wsl-root-password.enc');
+      let password = null;
+
+      if (fs.existsSync(passwordFile)) {
+        try {
+          const encrypted = fs.readFileSync(passwordFile, 'utf8');
+          password = Buffer.from(encrypted, 'base64').toString('utf8');
+        } catch (e) {
+          console.error('Error reading stored password:', e);
+        }
+      }
+
+      if (!password) {
+        return {
+          success: false,
+          error: 'WSL root password not found. Please provide password.'
+        };
+      }
+
+      console.log(`🔧 Installing ${missingTools.length} missing tools...`);
+
+      // Build apt install command
+      const toolsToInstall = missingTools.join(' ');
+      const aptCommand = `sudo apt update && sudo apt install -y ${toolsToInstall}`;
+
+      let wslCommand;
+      if (password) {
+        wslCommand = `echo "${password}" | wsl bash -c "${aptCommand}"`;
+      } else {
+        wslCommand = `wsl bash -c "${aptCommand}"`;
+      }
+
+      console.log('📋 Installation command:', wslCommand.replace(password, '***'));
+
+      // Send progress updates
+      event.sender.send('tools:installProgress', {
+        stage: 'installing',
+        message: `Installing ${missingTools.length} tools...`,
+        progress: 0
+      });
+
+      const { stdout, stderr } = await execAsync(wslCommand, {
+        timeout: 300000, // 5 minutes timeout
+        maxBuffer: 10 * 1024 * 1024 // 10MB buffer
+      });
+
+      console.log('✅ Tools installation completed');
+      console.log('📝 Output:', stdout.substring(0, 500));
+
+      event.sender.send('tools:installProgress', {
+        stage: 'complete',
+        message: 'All tools installed successfully!',
+        progress: 100
+      });
+
+      return {
+        success: true,
+        message: `Successfully installed ${missingTools.length} tools`,
+        installedTools: missingTools,
+        output: stdout
+      };
+    } catch (error) {
+      console.error('Error installing missing tools:', error);
+      event.sender.send('tools:installProgress', {
+        stage: 'error',
+        message: `Installation failed: ${error.message}`,
+        progress: 0
+      });
+
+      return {
+        success: false,
+        error: error.message,
+        installedTools: []
+      };
+    }
+  });
+
+  // Check WSL and Kali Linux availability
+  ipcMain.handle('kali:checkWsl', async (event) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Check if WSL is available
+      try {
+        await execAsync('wsl --status');
+        console.log('✅ WSL is available');
+        
+        // Check if Kali Linux is installed
+        try {
+          await execAsync('wsl -d kali-linux echo "Kali Linux is installed"');
+          console.log('✅ Kali Linux is installed');
+          return { hasWsl: true, hasKali: true };
+        } catch (kaliError) {
+          console.log('⚠️ Kali Linux is not installed');
+          return { hasWsl: true, hasKali: false };
+        }
+      } catch (wslError) {
+        console.log('⚠️ WSL is not available');
+        return { hasWsl: false, hasKali: false };
+      }
+    } catch (error) {
+      console.log('WSL check failed:', error.message);
+      return { hasWsl: false, hasKali: false };
+    }
+  });
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

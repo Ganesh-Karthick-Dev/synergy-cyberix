@@ -31,7 +31,6 @@ import {
   Cpu
 } from 'lucide-react'
 import ComprehensiveSecurityScanner from './ComprehensiveSecurityScanner'
-import ComprehensiveSecurityScanner from './ComprehensiveSecurityScanner'
 
 function DashboardOverview() {
   const [isLoading, setIsLoading] = useState(true)

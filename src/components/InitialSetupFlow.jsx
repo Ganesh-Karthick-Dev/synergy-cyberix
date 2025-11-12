@@ -744,14 +744,14 @@ const InitialSetupFlow = ({ onComplete }) => {
 
           {/* Logs Panel */}
           <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 h-full flex flex-col min-h-0">
+              <div className="flex items-center gap-2 mb-4 flex-shrink-0">
                 <Terminal className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Setup Logs
                 </h2>
               </div>
-              <div className="flex-1 bg-gray-900 dark:bg-black rounded-lg p-4 overflow-y-auto font-mono text-sm">
+              <div className="flex-1 bg-gray-900 dark:bg-black rounded-lg p-4 overflow-y-auto font-mono text-sm min-h-0" style={{ maxHeight: '600px', scrollBehavior: 'smooth' }}>
                 {logs.length === 0 ? (
                   <div className="text-gray-500">No logs yet...</div>
                 ) : (

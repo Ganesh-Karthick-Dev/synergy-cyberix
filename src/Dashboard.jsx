@@ -1,4 +1,4 @@
-import { useState, useEffect, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import Navbar from './components/Navbar'
 import DashboardOverview from './components/DashboardOverview.jsx'
@@ -37,23 +37,14 @@ import {
 import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
 import FloatingProgressCard from './components/FloatingProgressCard'
-import FloatingProgressCard from './components/FloatingProgressCard'
 import WordPressCloudShield from './components/WordPressCloudShield'
 import ShopifyCloudShield from './components/ShopifyCloudShield'
 import ChatBot from './components/ChatBot'
-
-
 import PhishingDetection from './components/PhishingDetection'
 import APIScanner from './components/APIScanner'
 import WebsiteSecurityAudit from './components/WebsiteSecurityAudit'
 import MalwareDefacementMonitor from './components/MalwareDefacementMonitor'
-import ChatBot from './components/ChatBot'
-
-
-import PhishingDetection from './components/PhishingDetection'
-import APIScanner from './components/APIScanner'
 import SecurityAnalyzer from './components/SecurityAnalyzer'
-import MalwareDefacementMonitor from './components/MalwareDefacementMonitor'
 
 function Dashboard({ onLogout }) {
   const [activeView, setActiveView] = useState('overview')
@@ -101,8 +92,6 @@ function Dashboard({ onLogout }) {
 
     initializeDashboard()
   }, [])
-  const [isInitializing, setIsInitializing] = useState(true)
-  const [initializationStatus, setInitializationStatus] = useState('Loading...')
 
   // Listen for notification clicks to navigate to scan view
   useEffect(() => {
@@ -162,20 +151,12 @@ function Dashboard({ onLogout }) {
       id: 'overview', 
       name: 'Overview', 
       icon: <LayoutDashboard className="w-5 h-5" />
-      name: 'Overview', 
-      icon: <LayoutDashboard className="w-5 h-5" />
     },
     { 
       id: 'scan', 
       name: 'Scan', 
       icon: <ScanSearch className="w-5 h-5" />,
-      icon: <ScanSearch className="w-5 h-5" />,
       subItems: [
-        {
-          id: 'port-scan',
-          name: 'Port Scanning',
-          icon: <Activity className="w-4 h-4" />
-        },
         {
           id: 'port-scan',
           name: 'Port Scanning',
@@ -185,13 +166,10 @@ function Dashboard({ onLogout }) {
           id: 'network-scan',
           name: 'Network Scanning',
           icon: <Network className="w-4 h-4" />
-          icon: <Network className="w-4 h-4" />
         },
         {
           id: 'server-scan',
           name: 'Server-level Scanning',
-          icon: <Server className="w-4 h-4" />
-        },
           icon: <Server className="w-4 h-4" />
         },
       ]
@@ -225,20 +203,10 @@ function Dashboard({ onLogout }) {
       id: 'malware-defacement', 
       name: 'Malware & Defacement Monitor', 
       icon: <Bug className="w-5 h-5" />
-      id: 'malware-defacement', 
-      name: 'Malware & Defacement Monitor', 
-      icon: <Bug className="w-5 h-5" />
     },
     { 
       id: 'logs', 
       name: 'System Logs', 
-      icon: <List className="w-5 h-5" />
-    },
-    {
-      id: 'settings',
-      name: 'Settings',
-      icon: <Sliders className="w-5 h-5" />
-    }
       icon: <List className="w-5 h-5" />
     },
     {
@@ -264,9 +232,6 @@ function Dashboard({ onLogout }) {
         return <APIScanner />
       // case 'security':
       //   return <SecurityCenter />
-      case 'malware-defacement':
-        return <MalwareDefacementMonitor />
-      // Threat Monitor removed
       case 'malware-defacement':
         return <MalwareDefacementMonitor />
       // Threat Monitor removed

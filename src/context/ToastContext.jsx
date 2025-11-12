@@ -84,9 +84,9 @@ export const ToastProvider = ({ children }) => {
     <ToastContext.Provider value={value}>
       {children}
       
-      {/* Toast Container - Fixed at bottom with full width */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-4 pointer-events-none">
-        <div className="max-w-full space-y-2 pointer-events-auto">
+      {/* Toast Container - Fixed at bottom right corner as floating window */}
+      <div className="fixed bottom-4 right-4 z-50 pointer-events-none">
+        <div className="flex flex-col items-end space-y-2 pointer-events-auto max-w-md">
           {toasts.map((toast) => (
             <Toast
               key={toast.id}
