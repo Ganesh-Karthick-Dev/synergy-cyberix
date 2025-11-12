@@ -389,25 +389,22 @@ class ScanLogger {
     }
 
     try {
-      let installPath = null
       console.log('[SystemLogs] Resolving logs directory...')
       
-      if (window.cyberGuard.getInstallPath) {
-        installPath = await window.cyberGuard.getInstallPath()
-        console.log('[SystemLogs] Install path from getInstallPath:', installPath)
-      } else if (window.cyberGuard.checkSetupComplete) {
-        const status = await window.cyberGuard.checkSetupComplete()
-        installPath = status && status.installPath ? status.installPath : null
-        console.log('[SystemLogs] Install path from checkSetupComplete:', installPath)
+      // Always use userData path for logs (writable location)
+      let userDataPath = null
+      if (window.cyberGuard?.getUserDataPath) {
+        userDataPath = await window.cyberGuard.getUserDataPath()
+        console.log('[SystemLogs] UserData path:', userDataPath)
       }
 
-      if (installPath) {
-        const base = installPath.replace(/[\\/]+$/, '')
-        this.logsDir = `${base}/cyberix_scan_logs`
-        console.log('[SystemLogs] Using install path for logs:', this.logsDir)
+      if (userDataPath) {
+        // Use userData/cyberix_scan_logs instead of install path
+        this.logsDir = `${userDataPath}/cyberix_scan_logs`.replace(/\\/g, '/')
+        console.log('[SystemLogs] Using userData path for logs:', this.logsDir)
       } else {
         // Fallback to Downloads for first-time use
-        if (window.cyberGuard.getDownloadsPath) {
+        if (window.cyberGuard?.getDownloadsPath) {
           const downloads = await window.cyberGuard.getDownloadsPath()
           const base = (downloads || '').replace(/[\\/]+$/, '')
           this.logsDir = base ? `${base}/cyberix_scan_logs` : 'cyberix_scan_logs'

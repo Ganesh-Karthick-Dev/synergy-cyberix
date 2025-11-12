@@ -1,19 +1,16 @@
 import { useState, useEffect } from 'react'
 import "./index.css"
 import Dashboard from './Dashboard'
-import SetupScreen from './setup/SetupScreen'
-import Setup from './components/Setup'
+import InitialSetupFlow from './components/InitialSetupFlow'
 import NetworkStatus from './components/NetworkStatus'
-import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
-import WslUserCreationDialog from './components/WslUserCreationDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
 import { GlobalScanProvider } from './context/GlobalScanContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { NotificationProvider } from './context/NotificationContext'
-import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
-import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
-import { ensureReposInstalled } from './utils/kaliRepoInstaller'
+import setupStateManager from './utils/setupStateManager'
+import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog';
+import WslUserCreationDialog from './components/WslUserCreationDialog';
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
@@ -28,62 +25,66 @@ const AppContent = () => {
   const [currentToastId, setCurrentToastId] = useState(null)
   const [setupComplete, setSetupComplete] = useState(false)
   const [checkingSetup, setCheckingSetup] = useState(true)
-  const [installPath, setInstallPath] = useState(null)
-  const [envReady, setEnvReady] = useState(false)
-  const [checkingEnv, setCheckingEnv] = useState(true)
-  
-  // New states for WSL credential flow
-  const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
-  const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
+  const [showSetupFlow, setShowSetupFlow] = useState(false)
   const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
-  const [wslInstallationStatus, setWslInstallationStatus] = useState(null) // 'checking', 'installing', 'installed', 'not-installed'
 
   // Check setup completion status on app load
   useEffect(() => {
     const checkSetupStatus = async () => {
       try {
-        if (window.cyberGuard) {
-          const setupStatus = await window.cyberGuard.checkSetupComplete()
-          setSetupComplete(setupStatus.completed)
-          setInstallPath(setupStatus.installPath)
+        await setupStateManager.initialize();
+        const state = setupStateManager.getState();
+        
+        console.log('[App] Setup state check:', {
+          setupComplete: state.setupComplete,
+          agreementAccepted: state.agreementAccepted,
+          adminPermissionGranted: state.adminPermissionGranted,
+          wslInstalled: state.wslInstalled,
+          wslPasswordStored: state.wslPasswordStored,
+          toolsInstalled: state.toolsInstalled,
+          cyberixFolderSetup: state.cyberixFolderSetup,
+          systemPathSelected: state.systemPathSelected,
+          currentStepNumber: setupStateManager.getCurrentStepNumber()
+        });
+        
+        // Check if setup is complete - must have setupComplete flag AND all steps done
+        const allStepsComplete = state.setupComplete && 
+            state.agreementAccepted && 
+            state.adminPermissionGranted && 
+            state.wslInstalled && 
+            state.wslPasswordStored && 
+            state.toolsInstalled && 
+            state.cyberixFolderSetup && 
+            state.systemPathSelected;
+        
+        if (allStepsComplete) {
+          console.log('[App] Setup is complete. Skipping setup flow.');
+          setSetupComplete(true);
+          setShowSetupFlow(false);
+        } else {
+          console.log('[App] Setup is incomplete. Showing setup flow.');
+          console.log('[App] Missing steps:', {
+            agreement: !state.agreementAccepted,
+            admin: !state.adminPermissionGranted,
+            wsl: !state.wslInstalled,
+            password: !state.wslPasswordStored,
+            tools: !state.toolsInstalled,
+            folder: !state.cyberixFolderSetup,
+            path: !state.systemPathSelected
+          });
+          setSetupComplete(false);
+          setShowSetupFlow(true);
         }
       } catch (error) {
-        console.error('Error checking setup status:', error)
-        setSetupComplete(false)
+        console.error('[App] Error checking setup status:', error);
+        setSetupComplete(false);
+        setShowSetupFlow(true);
       } finally {
-        setCheckingSetup(false)
+        setCheckingSetup(false);
       }
-    }
+    };
 
-    checkSetupStatus()
-  }, [])
-
-  // Hard gate: verify WSL + tools before allowing dashboard/login
-  useEffect(() => {
-    (async () => {
-      try {
-        const markReady = () => { setEnvReady(true); setCheckingEnv(false); };
-        // If a previous installation flagged ready, trust it but verify quickly
-        const flag = localStorage.getItem('cybrix.toolsReady') === 'true'
-        const wsl = await window.cyberGuard?.checkWsl?.()
-        if (!wsl) { setEnvReady(false); setCheckingEnv(false); return }
-        // Quick verify required tools (non-sudo)
-        const result = await window.cyberGuard?.checkRequiredToolsOnly?.(null)
-        if (result && Array.isArray(result.missingTools) && result.missingTools.length > 0) {
-          setEnvReady(false)
-        } else if (flag) {
-          markReady()
-          return
-        } else {
-          markReady()
-          return
-        }
-      } catch (e) {
-        setEnvReady(false)
-      } finally {
-        setCheckingEnv(false)
-      }
-    })()
+    checkSetupStatus();
   }, [])
 
   const handleSetupComplete = async (path) => {
@@ -691,30 +692,37 @@ const AppContent = () => {
     )
   }
 
-  // Block entire app with SetupScreen until env is ready
-  if (checkingEnv) {
+  // Show setup flow if not complete
+  if (checkingSetup) {
     return (
       <NetworkStatus>
         <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-blue-500 rounded-lg flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Preparing environment…</h2>
-            <p className="text-gray-600 dark:text-gray-300">Checking WSL and tools</p>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Initializing...</h2>
+            <p className="text-gray-600 dark:text-gray-300">Checking setup status</p>
           </div>
         </div>
       </NetworkStatus>
     )
   }
 
-  if (!envReady) {
+  if (showSetupFlow) {
     return (
       <NetworkStatus>
-        <SetupScreen onReady={() => setEnvReady(true)} />
+        <InitialSetupFlow 
+          onComplete={async () => {
+            console.log('[App] Setup flow completed');
+            await setupStateManager.setSetupComplete(true);
+            setSetupComplete(true);
+            setShowSetupFlow(false);
+          }} 
+        />
       </NetworkStatus>
     )
   }

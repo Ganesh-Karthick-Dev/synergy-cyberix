@@ -3,6 +3,13 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('cyberGuard', {
   getPlatform: () => ipcRenderer.invoke('os:getPlatform'),
   checkWsl: () => ipcRenderer.invoke('os:checkWsl'),
+  installUbuntu: () => ipcRenderer.invoke('os:installUbuntu'),
+  verifyUbuntu: () => ipcRenderer.invoke('os:verifyUbuntu'),
+  onUbuntuInstallLog: (listener) => ipcRenderer.on('os:ubuntuInstallLog', (_e, line) => listener(line)),
+  onUbuntuInstallDone: (listener) => ipcRenderer.on('os:ubuntuInstallDone', (_e, ok) => listener(ok)),
+  installKaliLinux: () => ipcRenderer.invoke('os:installKaliLinux'),
+  onKaliInstallLog: (listener) => ipcRenderer.on('os:kaliInstallLog', (_e, line) => listener(line)),
+  onKaliInstallDone: (listener) => ipcRenderer.on('os:kaliInstallDone', (_e, ok) => listener(ok)),
   installWsl: () => ipcRenderer.invoke('os:installWsl'),
   onWslInstallLog: (listener) => ipcRenderer.on('os:wslInstallLog', (_e, data) => listener(data)),
   onWslInstallDone: (listener) => ipcRenderer.once('os:wslInstallDone', (_e, ok) => listener(ok)),
@@ -103,6 +110,7 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   checkSetupComplete: () => ipcRenderer.invoke('setup:checkComplete'),
   markSetupComplete: (installPath) => ipcRenderer.invoke('setup:markComplete', installPath),
   // File system operations for logging
+  getUserDataPath: () => ipcRenderer.invoke('fs:getUserDataPath'),
   getInstallPath: () => ipcRenderer.invoke('fs:getInstallPath'),
   getDownloadsPath: () => ipcRenderer.invoke('fs:getDownloadsPath'),
   ensureDirectoryExists: (path) => ipcRenderer.invoke('fs:ensureDirectoryExists', path),
@@ -112,6 +120,14 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   // WSL Root Execution API - SECURITY CRITICAL
   runAsRoot: ({ distro, command, requireConfirm = true, useStoredPassword = true }) => 
     ipcRenderer.invoke('wsl-run-as-root', { distro, command, requireConfirm, useStoredPassword }),
+      // WSL Cyberix setup
+      setupCyberixFolder: () => ipcRenderer.invoke('wsl:setupCyberixFolder'),
+      cloneRepository: (repoName) => ipcRenderer.invoke('wsl:cloneRepository', repoName),
+      setupPythonVenv: () => ipcRenderer.invoke('wsl:setupPythonVenv'),
+      // WSL distribution management
+      getWSLDistro: () => ipcRenderer.invoke('wsl:getDistro'),
+      listWSLDistributions: () => ipcRenderer.invoke('wsl:listDistributions'),
+      setDefaultWSLDistro: (distroName) => ipcRenderer.invoke('wsl:setDefaultDistro', distroName),
   // Get stored root password for main process
   getStoredRootPassword: () => ipcRenderer.invoke('wsl:getStoredRootPassword'),
   storeRootPassword: (password) => ipcRenderer.invoke('wsl:storeRootPassword', password),

@@ -3,7 +3,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron');
 const { spawn } = require('child_process');
-const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
+const { detectPlatform, checkWslInstalled, installWsl, installUbuntu, verifyUbuntuInstalled } = require('./osCheck');
 require('dotenv').config();
 const wslHelper = require(path.join(__dirname, '..', 'utils', 'wslHelper'));
 
@@ -28,7 +28,33 @@ try {
   }
 }
 
-const isDev = process.env.NODE_ENV !== 'production';
+// Properly detect production mode - use app.isPackaged for Electron apps
+// app.isPackaged is true when the app is packaged/distributed
+const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
+
+// File-based logging for debugging (works even when console isn't visible)
+const logFile = path.join(app.getPath('userData'), 'cyberix-debug.log');
+function logToFile(message) {
+  try {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+    fs.appendFileSync(logFile, logMessage, 'utf8');
+  } catch (err) {
+    // Silently fail if logging fails
+  }
+}
+
+// Log startup info
+logToFile(`=== Cyberix Startup ===`);
+logToFile(`isDev: ${isDev}`);
+logToFile(`app.isPackaged: ${app.isPackaged}`);
+logToFile(`NODE_ENV: ${process.env.NODE_ENV || 'undefined'}`);
+logToFile(`__dirname: ${__dirname}`);
+logToFile(`app.getAppPath(): ${app.getAppPath()}`);
+logToFile(`process.resourcesPath: ${process.resourcesPath || 'undefined'}`);
+
+console.log('[MAIN] Debug log file:', logFile);
+console.log('[MAIN] isDev:', isDev, 'app.isPackaged:', app.isPackaged);
 
 // Secure password storage functions
 function getPasswordFilePath() {
@@ -517,6 +543,27 @@ async function installKaliLinux(event = null) {
 const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
 
 async function createMainWindow() {
+  // Resolve preload script path - handle both dev and production
+  let preloadPath = path.join(__dirname, 'preload.js');
+  if (!fs.existsSync(preloadPath)) {
+    // Try alternative paths for packaged app
+    const altPreloadPaths = [
+      path.join(app.getAppPath(), 'src', 'main', 'preload.js'),
+      path.join(__dirname, '..', 'main', 'preload.js'),
+      path.join(process.resourcesPath, 'app', 'src', 'main', 'preload.js')
+    ];
+    for (const altPath of altPreloadPaths) {
+      if (fs.existsSync(altPath)) {
+        preloadPath = altPath;
+        console.log('[MAIN] Using preload path:', preloadPath);
+        break;
+      }
+    }
+  }
+  
+  if (!fs.existsSync(preloadPath)) {
+    console.warn('[MAIN] ⚠️ Preload script not found, continuing without it');
+  }
 
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -528,10 +575,11 @@ async function createMainWindow() {
     title: 'Cyberix',
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: fs.existsSync(preloadPath) ? preloadPath : undefined,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false
+      webSecurity: false,
+      enableRemoteModule: false
     }
   });
 
@@ -540,14 +588,22 @@ async function createMainWindow() {
     mainWindow.show()
   })
 
-  // Suppress harmless DevTools console warnings (Autofill API errors)
+  // Log all console messages for debugging
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
     // Filter out harmless DevTools Autofill warnings
     if (message.includes('Autofill.enable') || message.includes('Autofill.setAddresses')) {
       return; // Suppress these warnings
     }
-    // Allow other console messages to pass through
+    // Log important messages
+    if (level >= 2) { // Error or warning
+      console.log(`[RENDERER ${level === 3 ? 'ERROR' : 'WARN'}]`, message);
+    }
   });
+  
+  // Open DevTools automatically in production for debugging (remove in final release)
+  if (!isDev) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 
   // In development, load from Vite dev server
   if (isDev) {
@@ -601,80 +657,203 @@ async function createMainWindow() {
     const indexFile = path.join(appPath, 'dist', 'index.html');
     
     console.log('[MAIN] Production mode - Loading index.html');
+    logToFile('[MAIN] Production mode - Loading index.html');
     console.log('[MAIN] App path:', appPath);
+    logToFile(`[MAIN] App path: ${appPath}`);
+    console.log('[MAIN] __dirname:', __dirname);
+    logToFile(`[MAIN] __dirname: ${__dirname}`);
     console.log('[MAIN] Index file path:', indexFile);
+    logToFile(`[MAIN] Index file path: ${indexFile}`);
     console.log('[MAIN] Index file exists:', fs.existsSync(indexFile));
+    logToFile(`[MAIN] Index file exists: ${fs.existsSync(indexFile)}`);
     
-    if (!fs.existsSync(indexFile)) {
-      console.error('[MAIN] ❌ index.html not found at:', indexFile);
-      // Try alternative paths
-      const altPaths = [
-        path.join(__dirname, '..', '..', 'dist', 'index.html'),
-        path.join(appPath, 'index.html'),
-        path.join(__dirname, '..', 'dist', 'index.html')
-      ];
-      
-      for (const altPath of altPaths) {
-        console.log('[MAIN] Trying alternative path:', altPath);
-        if (fs.existsSync(altPath)) {
-          console.log('[MAIN] ✅ Found index.html at:', altPath);
-          mainWindow.loadFile(altPath);
-          return mainWindow;
+    // Try multiple paths in order of likelihood
+    const possiblePaths = [
+      path.join(appPath, 'dist', 'index.html'), // Standard packaged location
+      path.join(__dirname, '..', '..', 'dist', 'index.html'), // If __dirname is src/main
+      path.join(__dirname, '..', 'dist', 'index.html'), // Alternative
+      path.join(appPath, 'index.html'), // Root level
+    ];
+    
+    let loaded = false;
+    for (const filePath of possiblePaths) {
+      console.log('[MAIN] Checking path:', filePath);
+      logToFile(`[MAIN] Checking path: ${filePath}`);
+      if (fs.existsSync(filePath)) {
+        console.log('[MAIN] ✅ Found index.html at:', filePath);
+        logToFile(`[MAIN] ✅ Found index.html at: ${filePath}`);
+        try {
+          // Use loadFile which handles path resolution correctly
+          mainWindow.loadFile(filePath);
+          loaded = true;
+          console.log('[MAIN] ✅ Successfully loaded index.html');
+          logToFile('[MAIN] ✅ Successfully loaded index.html');
+          break;
+        } catch (error) {
+          console.error('[MAIN] Failed to load file:', error);
+          logToFile(`[MAIN] Failed to load file: ${error.message} ${error.stack}`);
+          // Try loadURL as fallback
+          try {
+            // Convert Windows path to file:// URL format
+            let fileUrl = filePath.replace(/\\/g, '/');
+            // Ensure proper file:// URL format (file:/// for absolute paths)
+            if (!fileUrl.startsWith('file://')) {
+              if (process.platform === 'win32') {
+                fileUrl = `file:///${fileUrl}`;
+              } else {
+                fileUrl = `file://${fileUrl}`;
+              }
+            }
+            console.log('[MAIN] Trying loadURL with:', fileUrl);
+            logToFile(`[MAIN] Trying loadURL with: ${fileUrl}`);
+            await mainWindow.loadURL(fileUrl);
+            loaded = true;
+            logToFile('[MAIN] ✅ Successfully loaded via loadURL');
+            break;
+          } catch (error2) {
+            console.error('[MAIN] loadURL also failed:', error2);
+            logToFile(`[MAIN] loadURL also failed: ${error2.message} ${error2.stack}`);
+            continue;
+          }
         }
+      } else {
+        logToFile(`[MAIN] Path does not exist: ${filePath}`);
+      }
+    }
+    
+    if (!loaded) {
+      console.error('[MAIN] ❌ index.html not found in any expected location');
+      logToFile('[MAIN] ❌ index.html not found in any expected location');
+      logToFile(`[MAIN] Tried paths: ${possiblePaths.join(', ')}`);
+      
+      // List files in app path for debugging
+      try {
+        const appPathFiles = fs.readdirSync(appPath);
+        logToFile(`[MAIN] Files in app path: ${appPathFiles.join(', ')}`);
+        console.log('[MAIN] Files in app path:', appPathFiles);
+        
+        // Check if dist folder exists
+        const distPath = path.join(appPath, 'dist');
+        if (fs.existsSync(distPath)) {
+          const distFiles = fs.readdirSync(distPath);
+          logToFile(`[MAIN] Files in dist folder: ${distFiles.join(', ')}`);
+          console.log('[MAIN] Files in dist folder:', distFiles);
+        } else {
+          logToFile('[MAIN] dist folder does not exist in app path');
+          console.log('[MAIN] dist folder does not exist');
+        }
+      } catch (err) {
+        logToFile(`[MAIN] Error listing files: ${err.message}`);
       }
       
-      // If still not found, show error page
-      mainWindow.loadURL(`data:text/html,
+      // Show detailed error page with log file location
+      const errorHtml = `
         <html>
-          <head><title>Cyberix - Build Error</title></head>
+          <head><title>Cyberix - Loading Error</title></head>
           <body style="font-family: 'Poppins', sans-serif; padding: 20px; background: #1a1a1a; color: white;">
-            <h1>🚨 Cyberix Build Error</h1>
+            <h1>🚨 Cyberix Loading Error</h1>
             <p>The application files could not be found. This indicates a build configuration issue.</p>
-            <p><strong>Expected path:</strong> ${indexFile}</p>
             <p><strong>App path:</strong> ${appPath}</p>
             <p><strong>__dirname:</strong> ${__dirname}</p>
+            <p><strong>Tried paths:</strong></p>
+            <ul>
+              ${possiblePaths.map(p => `<li>${p}</li>`).join('')}
+            </ul>
             <p>Please rebuild the application using <code>npm run build:exe</code></p>
+            <p><strong>Debug log file:</strong> <code>${logFile}</code></p>
+            <p>Check this file for detailed error information.</p>
           </body>
         </html>
-      `);
-    } else {
-      mainWindow.loadFile(indexFile);
+      `;
+      mainWindow.loadURL(`data:text/html,${encodeURIComponent(errorHtml)}`);
     }
   }
 
-  // For debugging
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.error('[MAIN] Failed to load:', errorDescription)
+  // Comprehensive error handling
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.error('[MAIN] ❌ Failed to load:', errorDescription)
+    logToFile(`[MAIN] ❌ Failed to load: ${errorDescription}`);
     console.error('[MAIN] Error code:', errorCode)
+    logToFile(`[MAIN] Error code: ${errorCode}`);
     console.error('[MAIN] URL:', validatedURL)
+    logToFile(`[MAIN] URL: ${validatedURL}`);
+    console.error('[MAIN] Is main frame:', isMainFrame)
+    logToFile(`[MAIN] Is main frame: ${isMainFrame}`);
+    
+    if (!isMainFrame) {
+      return; // Ignore sub-frame failures
+    }
     
     if (isDev) {
       setTimeout(() => {
         console.log('Attempting to reload from current Vite port...')
-        // Try to reload from the default Vite port (3000)
         mainWindow.loadURL('http://localhost:3000/')
       }, 1000)
     } else {
-      // In production, try to reload with alternative path
-      console.error('[MAIN] Production load failed, trying alternative paths...')
-      const appPath = app.getAppPath();
-      const altPaths = [
-        path.join(appPath, 'dist', 'index.html'),
-        path.join(__dirname, '..', '..', 'dist', 'index.html'),
-        path.join(__dirname, '..', 'dist', 'index.html')
-      ];
-      
-      for (const altPath of altPaths) {
-        if (fs.existsSync(altPath)) {
-          console.log('[MAIN] Retrying with path:', altPath);
-          mainWindow.loadFile(altPath);
-          return;
-        }
-      }
-      
-      console.error('[MAIN] All load attempts failed');
+      // Show error in window
+      mainWindow.loadURL(`data:text/html,
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Cyberix - Load Error</title>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #1a1a1a; color: #fff; }
+              h1 { color: #ff4444; }
+              .error-box { background: #2a2a2a; padding: 20px; border-radius: 8px; margin: 20px 0; }
+              code { background: #1a1a1a; padding: 2px 6px; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <h1>🚨 Failed to Load Application</h1>
+            <div class="error-box">
+              <p><strong>Error:</strong> ${errorDescription}</p>
+              <p><strong>Error Code:</strong> ${errorCode}</p>
+              <p><strong>URL:</strong> <code>${validatedURL}</code></p>
+            </div>
+            <p>Check the console (DevTools) for more details.</p>
+            <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;">🔄 Retry</button>
+          </body>
+        </html>
+      `);
     }
-  })
+  });
+  
+  // Handle page load completion
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[MAIN] ✅ Page finished loading');
+    logToFile('[MAIN] ✅ Page finished loading');
+    // Inject error handler to catch React errors
+    mainWindow.webContents.executeJavaScript(`
+      (function() {
+        window.addEventListener('error', function(e) {
+          console.error('[RENDERER] Global error:', e.error, e.message, e.filename, e.lineno);
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+          console.error('[RENDERER] Unhandled promise rejection:', e.reason);
+        });
+        console.log('[RENDERER] Error handlers installed');
+      })();
+    `).catch(err => console.error('[MAIN] Failed to inject error handlers:', err));
+  });
+  
+  // Handle renderer process crashes
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[MAIN] ❌ Renderer process crashed:', details);
+    logToFile(`[MAIN] ❌ Renderer process crashed: ${JSON.stringify(details)}`);
+    mainWindow.loadURL(`data:text/html,
+      <!DOCTYPE html>
+      <html>
+        <head><title>Cyberix - Crash</title></head>
+        <body style="font-family: sans-serif; padding: 40px; background: #1a1a1a; color: #fff;">
+          <h1>🚨 Application Crashed</h1>
+          <p>Reason: ${details.reason}</p>
+          <p>Exit Code: ${details.exitCode}</p>
+          <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Reload</button>
+        </body>
+      </html>
+    `);
+  });
 
   return mainWindow;
 }
@@ -4117,6 +4296,15 @@ ipcMain.handle('notification:getCount', async () => {
   });
 
   // File system handlers (register early, before app.whenReady)
+  ipcMain.handle('fs:getUserDataPath', async () => {
+    try {
+      return app.getPath('userData');
+    } catch (error) {
+      console.error('Error getting userData path:', error);
+      return null;
+    }
+  });
+
   ipcMain.handle('fs:getInstallPath', async () => {
     try {
       // Check setup config for install path
@@ -4147,14 +4335,46 @@ ipcMain.handle('notification:getCount', async () => {
 
   ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
     try {
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-        return { success: true, created: true };
+      // Ensure dirPath is a string
+      if (!dirPath || typeof dirPath !== 'string') {
+        const errorMsg = `Invalid dirPath: ${typeof dirPath} - ${JSON.stringify(dirPath)}`;
+        logToFile(`[MAIN] ${errorMsg}`);
+        console.error('[MAIN]', errorMsg);
+        // If dirPath is invalid, use userData as fallback
+        const userDataPath = app.getPath('userData');
+        if (!fs.existsSync(userDataPath)) {
+          fs.mkdirSync(userDataPath, { recursive: true });
+        }
+        return { success: true, created: false, path: userDataPath, warning: 'Invalid path provided, using userData' };
       }
-      return { success: true, created: false };
+
+      // Check if path is inside app.asar (read-only) and redirect to userData
+      let safePath = dirPath;
+      const appPath = app.getAppPath();
+      const userDataPath = app.getPath('userData');
+      
+      // If path contains app.asar or is inside the app directory, redirect to userData
+      if (dirPath.includes('app.asar') || (typeof dirPath === 'string' && dirPath.startsWith(appPath))) {
+        // Extract the relative path and use it in userData
+        const relativePath = dirPath.replace(/.*[\\/](?:app\.asar[\\/])?/, '');
+        safePath = path.join(userDataPath, relativePath);
+        logToFile(`[MAIN] Redirected path from ${dirPath} to ${safePath}`);
+      }
+      
+      // Normalize path separators
+      safePath = path.normalize(safePath);
+      
+      if (!fs.existsSync(safePath)) {
+        fs.mkdirSync(safePath, { recursive: true });
+        logToFile(`[MAIN] Created directory: ${safePath}`);
+        return { success: true, created: true, path: safePath };
+      }
+      return { success: true, created: false, path: safePath };
     } catch (error) {
       console.error('Error ensuring directory exists:', error);
-      throw error;
+      logToFile(`[MAIN] Error ensuring directory: ${error.message}`);
+      // Return error instead of throwing to prevent crashes
+      return { success: false, error: error.message, path: null };
     }
   });
 
@@ -4589,8 +4809,10 @@ ipcMain.handle('notification:getCount', async () => {
 
 app.whenReady().then(async () => {
     console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+    logToFile('📱 [MAIN] app.whenReady() - Starting application...');
   const win = await createMainWindow();
   mainWindowInstance = win;
+  logToFile('📱 [MAIN] Main window created successfully');
 
   // Auto-check and install Kali Linux if missing on Windows
   if (process.platform === 'win32') {
@@ -4673,8 +4895,9 @@ app.whenReady().then(async () => {
       console.log('Dialog result:', result);
       
       if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-        console.log('Selected directory:', result.filePaths[0]);
-        return result.filePaths;
+        const selectedPath = result.filePaths[0];
+        console.log('Selected directory:', selectedPath);
+        return selectedPath; // Return the first path as a string, not the array
       }
       
       console.log('No directory selected or dialog cancelled');
@@ -4788,10 +5011,156 @@ app.whenReady().then(async () => {
     }
   });
 
+  // WSL Cyberix folder setup handlers
+  ipcMain.handle('wsl:setupCyberixFolder', async (event) => {
+    try {
+      logToFile('[WSL] Setting up Cyberix folder in /root/cyberix');
+      
+      // Create /root/cyberix folder - use wslHelper (no wsl prefix needed)
+      const result = await wslHelper.runWSLAsRoot('mkdir -p /root/cyberix');
+      
+      if (result.success) {
+        logToFile('[WSL] Cyberix folder created successfully');
+        return { success: true, message: 'Cyberix folder created' };
+      } else {
+        logToFile(`[WSL] Folder creation failed: ${result.error || 'Unknown error'}`);
+        // Return success anyway so setup can continue (folder might already exist)
+        return { success: true, message: 'Folder creation attempted (may already exist)', warning: result.error };
+      }
+    } catch (error) {
+      logToFile(`[WSL] Error setting up Cyberix folder: ${error.message}`);
+      console.error('Error setting up Cyberix folder:', error);
+      // Return success with warning instead of throwing
+      return { success: true, message: 'Folder setup attempted', warning: error.message };
+    }
+  });
+
+  ipcMain.handle('wsl:cloneRepository', async (event, repoName) => {
+    try {
+      logToFile(`[WSL] Cloning repository: ${repoName}`);
+      
+      // Repository URLs
+      const repos = {
+        fluxploider: 'https://github.com/almandin/fuxploider.git', // Note: repo name is fuxploider but we call it fluxploider
+        testssl: 'https://github.com/drwetter/testssl.sh.git'
+      };
+
+      const repoUrl = repos[repoName];
+      if (!repoUrl) {
+        return { success: false, message: `Unknown repository: ${repoName}`, warning: true };
+      }
+
+      // For fluxploider, the actual repo folder is 'fuxploider' but we want to clone it as 'fluxploider'
+      const targetDir = `/root/cyberix/${repoName}`;
+      const actualRepoName = repoName === 'fluxploider' ? 'fuxploider' : repoName;
+      
+      // Check if already cloned (check both possible names) - use wslHelper (no wsl prefix)
+      const checkResult = await wslHelper.runWSLAsRoot(`(test -d ${targetDir} || test -d /root/cyberix/${actualRepoName}) && echo exists || echo notexists`);
+      
+      if (checkResult.success && checkResult.stdout.trim() === 'exists') {
+        logToFile(`[WSL] Repository ${repoName} already exists, skipping clone`);
+        return { success: true, message: `${repoName} already cloned`, skipped: true };
+      }
+
+      // Clone repository - use wslHelper (no wsl prefix)
+      const cloneResult = await wslHelper.runWSLAsRoot(`cd /root/cyberix && git clone ${repoUrl} ${repoName}`);
+      
+      if (cloneResult.success) {
+        logToFile(`[WSL] Repository ${repoName} cloned successfully`);
+        return { success: true, message: `${repoName} cloned successfully` };
+      } else {
+        logToFile(`[WSL] Clone failed: ${cloneResult.error || 'Unknown error'}`);
+        // Return success with warning so setup can continue
+        return { success: true, message: `${repoName} clone attempted`, warning: cloneResult.error || 'Clone failed' };
+      }
+    } catch (error) {
+      logToFile(`[WSL] Error cloning repository ${repoName}: ${error.message}`);
+      console.error(`Error cloning repository ${repoName}:`, error);
+      // Return success with warning instead of throwing
+      return { success: true, message: `${repoName} clone attempted`, warning: error.message };
+    }
+  });
+
+  ipcMain.handle('wsl:setupPythonVenv', async (event) => {
+    try {
+      logToFile('[WSL] Setting up Python virtual environment');
+      
+      const venvPath = '/root/cyberix/.venv';
+      
+      // Check if venv already exists - use wslHelper (no wsl prefix)
+      const checkResult = await wslHelper.runWSLAsRoot(`test -d ${venvPath} && echo exists || echo notexists`);
+      
+      if (checkResult.success && checkResult.stdout.trim() === 'exists') {
+        logToFile('[WSL] Python venv already exists, skipping creation');
+        return { success: true, message: 'Python venv already exists', skipped: true };
+      }
+
+      // Create virtual environment - use wslHelper (no wsl prefix)
+      const venvResult = await wslHelper.runWSLAsRoot('cd /root/cyberix && python3 -m venv .venv');
+      
+      if (!venvResult.success) {
+        logToFile(`[WSL] Venv creation failed: ${venvResult.error || 'Unknown error'}`);
+        // Continue anyway - venv might already exist or can be created later
+        return { success: true, message: 'Python venv setup attempted', warning: venvResult.error || 'Venv creation failed' };
+      }
+
+      // Upgrade pip in venv - use wslHelper (no wsl prefix)
+      const pipResult = await wslHelper.runWSLAsRoot('cd /root/cyberix && source .venv/bin/activate && pip3 install --upgrade pip');
+      
+      if (!pipResult.success) {
+        logToFile(`[WSL] Pip upgrade failed (non-critical): ${pipResult.error || 'Unknown error'}`);
+        // This is non-critical, continue anyway
+      }
+      
+      logToFile('[WSL] Python virtual environment setup complete');
+      return { success: true, message: 'Python venv setup complete' };
+    } catch (error) {
+      logToFile(`[WSL] Error setting up Python venv: ${error.message}`);
+      console.error('Error setting up Python venv:', error);
+      // Return success with warning instead of throwing
+      return { success: true, message: 'Python venv setup attempted', warning: error.message };
+    }
+  });
+
   // IPC: expose OS helpers
   ipcMain.handle('os:getPlatform', async () => detectPlatform());
   ipcMain.handle('os:checkWsl', async () => {
     try { return await checkWslInstalled(); } catch { return false; }
+  });
+  
+  // WSL distribution management
+  ipcMain.handle('wsl:getDistro', async () => {
+    try {
+      return await wslHelper.getWSLDistro();
+    } catch (error) {
+      logToFile(`[WSL] Error getting distro: ${error.message}`);
+      return 'kali-linux'; // Fallback
+    }
+  });
+  
+  ipcMain.handle('wsl:listDistributions', async () => {
+    try {
+      return await wslHelper.listDistributions();
+    } catch (error) {
+      logToFile(`[WSL] Error listing distributions: ${error.message}`);
+      return { success: false, distributions: [] };
+    }
+  });
+  
+  ipcMain.handle('wsl:setDefaultDistro', async (event, distroName) => {
+    try {
+      logToFile(`[WSL] Setting default distribution to: ${distroName}`);
+      const result = await wslHelper.setDefaultDistro(distroName);
+      if (result.success) {
+        logToFile(`[WSL] Default distribution set successfully`);
+      } else {
+        logToFile(`[WSL] Failed to set default distribution: ${result.error}`);
+      }
+      return result;
+    } catch (error) {
+      logToFile(`[WSL] Error setting default distro: ${error.message}`);
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('os:installWsl', async (event) => {
@@ -4804,6 +5173,59 @@ app.whenReady().then(async () => {
         }
       );
     });
+  });
+
+  ipcMain.handle('os:installUbuntu', async (event) => {
+    logToFile('[WSL] Starting Ubuntu installation...');
+    return await new Promise((resolve) => {
+      installUbuntu(
+        (line) => {
+          logToFile(`[WSL] Ubuntu install log: ${line}`);
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('os:ubuntuInstallLog', line);
+          }
+        },
+        (ok) => {
+          logToFile(`[WSL] Ubuntu installation completed with result: ${ok}`);
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('os:ubuntuInstallDone', ok);
+          }
+          resolve(ok);
+        }
+      );
+    });
+  });
+
+  ipcMain.handle('os:verifyUbuntu', async () => {
+    try {
+      logToFile('[WSL] Starting Ubuntu verification...');
+      const result = await verifyUbuntuInstalled();
+      logToFile(`[WSL] Ubuntu verification result: ${result}`);
+      return result;
+    } catch (error) {
+      logToFile(`[WSL] Error verifying Ubuntu: ${error.message}`);
+      console.error('[WSL] Verification error:', error);
+      return false;
+    }
+  });
+
+  ipcMain.handle('os:installKaliLinux', async (event) => {
+    logToFile('[WSL] Starting Kali Linux installation...');
+    try {
+      // The local installKaliLinux function handles progress updates via event.sender
+      const result = await installKaliLinux(event);
+      logToFile(`[WSL] Kali Linux installation completed with result: ${result}`);
+      if (event?.sender && !event.sender.isDestroyed()) {
+        event.sender.send('os:kaliInstallDone', result);
+      }
+      return result;
+    } catch (error) {
+      logToFile(`[WSL] Kali Linux installation error: ${error.message}`);
+      if (event?.sender && !event.sender.isDestroyed()) {
+        event.sender.send('os:kaliInstallDone', false);
+      }
+      return false;
+    }
   });
 
   // Note: WSL handlers (wsl:install, wsl:createUser, wsl:validateCredentials) 
