@@ -22,6 +22,12 @@ export { default as githubApi } from './githubApi.js'
 export { default as githubHelpers } from './githubHelpers.js'
 export { default as githubScanIntegration } from './githubScanIntegration.js'
 
+// Dashboard API
+export { default as dashboardApi } from './dashboardApi.js'
+
+// Security Tools API
+export { default as securityToolsApi } from './securityToolsApi.js'
+
 // Re-export everything for convenience
 export * from './authApi.js'
 export * from './scansApi.js'
@@ -29,3 +35,5 @@ export * from './aiApi.js'
 export * from './githubApi.js'
 export * from './githubHelpers.js'
 export * from './githubScanIntegration.js'
+export * from './dashboardApi.js'
+export * from './securityToolsApi.js'
