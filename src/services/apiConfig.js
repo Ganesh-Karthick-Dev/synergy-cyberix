@@ -5,7 +5,7 @@
 // Environment-based configuration
 export const API_ENV = {
   // Base URLs
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/api',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:4005/api',
   GROK_API_URL: import.meta.env.VITE_GROK_API_URL || 'https://api.x.ai/v1/chat/completions',
 
   // API Keys (securely stored)
@@ -48,6 +48,27 @@ export const API_ENDPOINTS = {
     API_DISCOVERY: '/scans/api-discovery',
     API_MISMATCH: '/scans/api-mismatch',
     API_EXPOSED: '/scans/api-exposed'
+  },
+
+  // Projects
+  PROJECTS: {
+    LIST: '/projects',
+    GET: (id) => `/projects/${id}`,
+    CREATE: '/projects',
+    UPDATE: (id) => `/projects/${id}`,
+    DELETE: (id) => `/projects/${id}`,
+    STATS: (id) => `/projects/${id}/stats`,
+    PLAN_INFO: '/projects/plan/info'
+  },
+
+  // Security Reports
+  SECURITY_REPORTS: {
+    LIST: '/security-reports',
+    GET: (id) => `/security-reports/${id}`,
+    CREATE: '/security-reports',
+    UPDATE_STATUS: (id) => `/security-reports/${id}/status`,
+    DELETE: (id) => `/security-reports/${id}`,
+    BY_PROJECT: (projectId) => `/security-reports/project/${projectId}`
   },
 
   // Reports and Results

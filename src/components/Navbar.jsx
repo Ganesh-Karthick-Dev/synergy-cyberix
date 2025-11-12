@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useNotifications } from '../context/NotificationContext'
+import SubscriptionInfo from './SubscriptionInfo'
 
 function Navbar({ onLogout, currentView }) {
   const { isDark, toggleTheme } = useTheme()
@@ -200,6 +201,9 @@ function Navbar({ onLogout, currentView }) {
 
           {/* Center Section - System Status */}
           <div className="flex items-center space-x-4">
+            {/* Subscription Info */}
+            <SubscriptionInfo />
+
             {/* Dark Theme Toggle */}
             <button
               onClick={toggleTheme}

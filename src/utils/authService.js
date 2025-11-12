@@ -95,11 +95,33 @@ class AuthService {
 
       console.log('✅ [AuthService] Login successful for:', email);
       console.log('✅ [AuthService] User data:', data.data.user);
+      
+      // Store token in localStorage if provided in response (for Electron/desktop apps)
+      if (data.data.token) {
+        try {
+          localStorage.setItem('auth_token', data.data.token);
+          console.log('✅ [AuthService] Token stored in localStorage');
+        } catch (e) {
+          console.warn('⚠️ [AuthService] Could not store token in localStorage:', e);
+        }
+      }
+      
+      // Also store refresh token if provided
+      if (data.data.refreshToken) {
+        try {
+          localStorage.setItem('refresh_token', data.data.refreshToken);
+          console.log('✅ [AuthService] Refresh token stored in localStorage');
+        } catch (e) {
+          console.warn('⚠️ [AuthService] Could not store refresh token in localStorage:', e);
+        }
+      }
+      
       console.log('🔐 [AuthService] ===== LOGIN ATTEMPT END =====');
 
       return {
         success: true,
         user: data.data.user,
+        token: data.data.token, // Include token in return value
         message: data.message
       };
 
