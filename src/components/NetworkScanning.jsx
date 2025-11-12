@@ -1,5 +1,56 @@
 import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useScanning } from '../context/ScanningContext'
+import { useGlobalScanState } from '../context/GlobalScanContext'
+import scanLogger from '../utils/scanLogger'
+// Removed useToast import - no snack bars in network scan tab
+import { getSecurePassword } from '../utils/securePasswordStorage'
+import jsPDF from 'jspdf'
+
+// Import markdown converter
+let markdownToHTML;
+try {
+  const reportGen = require('../utils/scanReportGenerator');
+  markdownToHTML = reportGen.markdownToHTML;
+} catch (e) {
+  // Fallback if module not found
+  markdownToHTML = (md) => md.replace(/\n/g, '<br />');
+}
+
+// Helper function to strip ANSI escape codes
+const stripAnsiCodes = (text) => {
+  if (!text || typeof text !== 'string') return text
+  // Remove ANSI escape codes: \x1b[...m, [1m, [33m, [0m, etc.
+  // But preserve timestamps like [2025-11-04 14:30:01]
+  // Only remove actual ANSI escape sequences, not bracket patterns
+  
+  // First, protect timestamps by temporarily replacing them
+  const timestampPattern = /\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]/g
+  const timestamps = []
+  let protectedText = text.replace(timestampPattern, (match, content) => {
+    timestamps.push(match)
+    return `__TIMESTAMP_${timestamps.length - 1}__`
+  })
+  
+  // Remove ANSI codes
+  let cleaned = protectedText
+    .replace(/\x1b\[[0-9;]*m/g, '')  // Remove ANSI escape sequences
+    .replace(/\[[0-9;]*m/g, '')      // Remove incomplete ANSI patterns
+    .replace(/\[\d+[m[]?/g, '')      // Remove ANSI number patterns
+  
+  // Restore timestamps
+  timestamps.forEach((timestamp, index) => {
+    cleaned = cleaned.replace(`__TIMESTAMP_${index}__`, timestamp)
+  })
+  
+  return cleaned.trim()
+}
+
+// Helper to sanitize error messages (remove wsl references)
+const sanitizeError = (error) => {
+  if (!error || typeof error !== 'string') return error
+  return error.replace(/Command failed: wsl\s+/gi, 'Command failed: ').replace(/wsl\s+/gi, '')
+}
 import { useGlobalScanState } from '../context/GlobalScanContext'
 import scanLogger from '../utils/scanLogger'
 // Removed useToast import - no snack bars in network scan tab
@@ -53,6 +104,7 @@ const sanitizeError = (error) => {
 
 function NetworkScanning() {
   const [isStarting, setIsStarting] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
   const [target, setTarget] = useState('')
   const [scanResults, setScanResults] = useState(null)
   const [kaliStatus, setKaliStatus] = useState('Checking...')
@@ -61,6 +113,16 @@ function NetworkScanning() {
     closedPorts: 0,
     filteredPorts: 0,
     services: 0
+  })
+  const [riskIssues, setRiskIssues] = useState([])
+  const [consoleLog, setConsoleLog] = useState([])
+  const [commandResults, setCommandResults] = useState({})
+  const [scanTimer, setScanTimer] = useState({
+    startTime: null,
+    elapsed: 0,
+    expectedEndTime: null,
+    completedTime: null,
+    isRunning: false
   })
   const [riskIssues, setRiskIssues] = useState([])
   const [consoleLog, setConsoleLog] = useState([])
@@ -129,6 +191,11 @@ function NetworkScanning() {
     }
   }
 
+  // Convert network scan results using tgpt
+  const handleTgptConversion = async (rawJsonData) => {
+    if (!rawJsonData) {
+      console.log('⚠️ No raw JSON data for tgpt conversion')
+      setTgptConversionComplete(true)
   // Convert network scan results using tgpt
   const handleTgptConversion = async (rawJsonData) => {
     if (!rawJsonData) {

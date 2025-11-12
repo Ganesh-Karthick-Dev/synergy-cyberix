@@ -31,6 +31,7 @@ import {
   Cpu
 } from 'lucide-react'
 import ComprehensiveSecurityScanner from './ComprehensiveSecurityScanner'
+import ComprehensiveSecurityScanner from './ComprehensiveSecurityScanner'
 
 function DashboardOverview() {
   const [isLoading, setIsLoading] = useState(true)
@@ -90,7 +91,7 @@ function DashboardOverview() {
   }
 
   return (
-    <div className="space-y-6 w-full max-w-full overflow-x-hidden" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+    <div className="space-y-6">
       {/* Comprehensive Security Scanner Section - Moved to Top */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}

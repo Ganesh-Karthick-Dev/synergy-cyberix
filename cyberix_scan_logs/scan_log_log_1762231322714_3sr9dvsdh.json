@@ -1,0 +1,12 @@
+{
+  "id": "log_1762231322714_3sr9dvsdh",
+  "timestamp": "2025-11-04T04:42:02.714Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "webnox.",
+  "status": "completed",
+  "startTime": "2025-11-04T04:40:02.714Z",
+  "endTime": "2025-11-04T04:42:02.714Z",
+  "duration": 120000,
+  "result": "Scan completed - 0 open ports found"
+}

@@ -5,14 +5,14 @@
 // Environment-based configuration
 export const API_ENV = {
   // Base URLs
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api',
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/api',
   GROK_API_URL: import.meta.env.VITE_GROK_API_URL || 'https://api.x.ai/v1/chat/completions',
 
   // API Keys (securely stored)
   GROK_API_KEY: import.meta.env.VITE_GROK_API_KEY || import.meta.env.GROK_API_KEY,
   GITHUB_CLIENT_ID: import.meta.env.VITE_GITHUB_CLIENT_ID || import.meta.env.GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET: import.meta.env.VITE_GITHUB_CLIENT_SECRET || import.meta.env.GITHUB_CLIENT_SECRET,
-  GITHUB_CALLBACK_URL: import.meta.env.VITE_GITHUB_CALLBACK_URL || import.meta.env.GITHUB_CALLBACK_URL || 'http://localhost:4005/api/github/callback',
+  GITHUB_CALLBACK_URL: import.meta.env.VITE_GITHUB_CALLBACK_URL || import.meta.env.GITHUB_CALLBACK_URL || 'http://localhost:9000/api/auth/github/callback',
 
   // Environment flags
   IS_DEVELOPMENT: import.meta.env.DEV,
@@ -86,6 +86,10 @@ export const API_ENDPOINTS = {
 
   // GitHub OAuth and Repository Services
   GITHUB: {
+    // OAuth Login endpoints (for user authentication)
+    AUTH_LOGIN: '/auth/github',
+    AUTH_CALLBACK: '/auth/github/callback',
+    // GitHub API endpoints (for repository access after login)
     AUTH: '/github/auth',
     CALLBACK: '/github/callback',
     USER: '/github/user',
@@ -191,8 +195,8 @@ export const validateEnvironment = () => {
     issues.push('VITE_GITHUB_CLIENT_ID is not set - GitHub OAuth will not work')
   }
 
-  if (!API_ENV.BASE_URL || API_ENV.BASE_URL === 'http://localhost:3001/api') {
-    issues.push('VITE_API_BASE_URL is not set - using default localhost API')
+  if (!API_ENV.BASE_URL || API_ENV.BASE_URL === 'http://localhost:9000/api') {
+    issues.push('VITE_API_BASE_URL is not set - using default localhost:9000 API')
   }
 
   if (issues.length > 0) {

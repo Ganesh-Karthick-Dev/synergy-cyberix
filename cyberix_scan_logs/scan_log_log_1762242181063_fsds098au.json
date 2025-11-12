@@ -1,0 +1,12 @@
+{
+  "id": "log_1762242181063_fsds098au",
+  "timestamp": "2025-11-04T07:43:01.063Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "webnox.in",
+  "status": "started",
+  "startTime": "2025-11-04T07:43:01.063Z",
+  "endTime": null,
+  "duration": null,
+  "result": "Scan initiated"
+}

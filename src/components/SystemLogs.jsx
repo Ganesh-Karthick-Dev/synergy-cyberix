@@ -296,6 +296,17 @@ function SystemLogs() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-12 h-12 border-4 border-orange-200 dark:border-orange-800 border-t-orange-500 dark:border-t-orange-400 rounded-full animate-spin"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading scan logs...</p>
+        </div>
+      </div>
+    )
+  }
+
   const formatScanType = (scanType) => {
     switch (scanType) {
       case 'wordpress': return 'WordPress Audit'
@@ -312,11 +323,9 @@ function SystemLogs() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="w-12 h-12 border-4 border-orange-200 dark:border-orange-800 border-t-orange-500 dark:border-t-orange-400 rounded-full animate-spin"></div>
-          <p className="text-gray-600 dark:text-gray-400">Loading scan logs...</p>
-        </div>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div>
+        <span className="ml-3 text-gray-600">Loading scan logs...</span>
       </div>
     )
   }

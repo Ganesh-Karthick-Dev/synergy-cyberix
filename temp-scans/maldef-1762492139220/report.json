@@ -1,0 +1,99 @@
+{
+  "target": "https://webnoxsprintlyadmin.netlify.app/#/dashboard",
+  "crawledPages": [
+    {
+      "url": "https://webnoxsprintlyadmin.netlify.app/#/dashboard",
+      "depth": 0,
+      "htmlHash": "5aebb12193a07ea71c1c6a26596bf91f74b1bd6eff19bdaea6e1ccaac00617be",
+      "desktopHash": "731baeba219162448f9674bdc8b77571fb64d46c8400ee2ebeb1ab8ae9186ab6",
+      "mobileHash": "b5afc41fc00271a23ed8fde8a58c01b4f1e3ef8bdead6f473a2717a8e92ca98c"
+    }
+  ],
+  "networkLogs": [
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/",
+      "method": "GET",
+      "ts": 1762492141461
+    },
+    {
+      "type": "response",
+      "url": "https://webnoxsprintlyadmin.netlify.app/",
+      "status": 200,
+      "ts": 1762492142201
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/flutter_bootstrap.js",
+      "method": "GET",
+      "ts": 1762492142222
+    },
+    {
+      "type": "response",
+      "url": "https://webnoxsprintlyadmin.netlify.app/flutter_bootstrap.js",
+      "status": 200,
+      "ts": 1762492142570
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/manifest.json",
+      "method": "GET",
+      "ts": 1762492142573
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/favicon.png",
+      "method": "GET",
+      "ts": 1762492142574
+    },
+    {
+      "type": "response",
+      "url": "https://webnoxsprintlyadmin.netlify.app/favicon.png",
+      "status": 200,
+      "ts": 1762492142920
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/",
+      "method": "GET",
+      "ts": 1762492143080
+    },
+    {
+      "type": "response",
+      "url": "https://webnoxsprintlyadmin.netlify.app/",
+      "status": 304,
+      "ts": 1762492143180
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/flutter_bootstrap.js",
+      "method": "GET",
+      "ts": 1762492143213
+    },
+    {
+      "type": "response",
+      "url": "https://webnoxsprintlyadmin.netlify.app/flutter_bootstrap.js",
+      "status": 304,
+      "ts": 1762492143318
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/manifest.json",
+      "method": "GET",
+      "ts": 1762492143322
+    },
+    {
+      "type": "response",
+      "url": "https://webnoxsprintlyadmin.netlify.app/manifest.json",
+      "status": 200,
+      "ts": 1762492143881
+    },
+    {
+      "type": "request",
+      "url": "https://webnoxsprintlyadmin.netlify.app/icons/Icon-192.png",
+      "method": "GET",
+      "ts": 1762492143883
+    }
+  ],
+  "createdAt": "2025-11-07T05:09:04.184Z"
+}

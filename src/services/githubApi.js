@@ -11,7 +11,34 @@ import { API_ENDPOINTS, API_ENV } from './apiConfig.js'
  */
 export const githubApi = {
   /**
-   * Initiate GitHub OAuth flow
+   * Initiate GitHub OAuth flow for login (web-based)
+   * This redirects to the backend OAuth endpoint which handles the full flow
+   * @param {Object} options - OAuth options
+   * @param {string} options.redirect - Redirect URL after authentication
+   * @returns {Promise<string>} OAuth authorization URL
+   */
+  async initiateLoginOAuth(options = {}) {
+    try {
+      // For web-based login, redirect to backend OAuth endpoint
+      // Keep the /api in the base URL since AUTH_LOGIN is relative to /api
+      const baseUrl = API_ENV.BASE_URL // Keep /api in base URL
+      const authUrl = `${baseUrl}${API_ENDPOINTS.GITHUB.AUTH_LOGIN}${options.redirect ? `?redirect=${encodeURIComponent(options.redirect)}` : ''}`
+
+      // Redirect to the OAuth endpoint
+      if (typeof window !== 'undefined') {
+        window.location.href = authUrl
+      }
+
+      return authUrl
+    } catch (error) {
+      console.error('Failed to initiate GitHub OAuth login:', error)
+      throw error
+    }
+  },
+
+  /**
+   * Initiate GitHub OAuth flow for API access (Electron apps)
+   * Uses the primary GitHub OAuth endpoint: /api/github/auth
    * @param {Object} options - OAuth options
    * @param {string} options.redirect - Redirect URL after authentication (for Electron app)
    * @returns {Promise<string>} OAuth authorization URL
@@ -23,8 +50,10 @@ export const githubApi = {
         params.redirect = options.redirect
       }
 
-      // For Electron apps, we need to construct the full URL
-      const baseUrl = API_ENV.BASE_URL.replace('/api', '')
+      // Use the primary GitHub OAuth endpoint (/api/github/auth)
+      // Keep the /api in the base URL since AUTH is relative to /api
+      const baseUrl = API_ENV.BASE_URL // Keep /api in base URL
+      // Use AUTH endpoint for primary OAuth flow (/github/auth)
       const authUrl = `${baseUrl}${API_ENDPOINTS.GITHUB.AUTH}${options.redirect ? `?redirect=${encodeURIComponent(options.redirect)}` : ''}`
 
       return authUrl
@@ -37,12 +66,14 @@ export const githubApi = {
   /**
    * Handle GitHub OAuth callback
    * This is typically called after the OAuth flow completes
+   * Uses the primary GitHub OAuth callback endpoint: /api/github/callback
    * @param {string} code - OAuth authorization code
    * @param {string} state - OAuth state parameter
    * @returns {Promise<Object>} OAuth response with access token and user info
    */
   async handleCallback(code, state) {
     try {
+      // Use the primary GitHub OAuth callback endpoint (/api/github/callback)
       const response = await api.get(API_ENDPOINTS.GITHUB.CALLBACK, {
         params: {
           code,
@@ -51,8 +82,14 @@ export const githubApi = {
       })
 
       // Store GitHub access token if provided
-      if (response.data?.data?.accessToken) {
-        this.setGitHubToken(response.data.data.accessToken)
+      // Handle different response structures
+      const accessToken = response.data?.data?.accessToken || 
+                         response.data?.accessToken || 
+                         response.data?.data?.token ||
+                         response.data?.token
+
+      if (accessToken) {
+        this.setGitHubToken(accessToken, true)
       }
 
       return response.data

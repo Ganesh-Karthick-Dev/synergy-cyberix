@@ -135,11 +135,11 @@ const TOOLS = [
   },
 
   { 
-    name: 'geoiplookup', 
-    check: 'geoiplookup --version', 
-    install: isWindows ? 'wsl sudo apt install -y geoip-bin' : 'sudo apt install -y geoip-bin', 
+    name: 'zaproxy', 
+    check: 'zap.sh -v', 
+    install: isWindows ? 'wsl sudo apt install -y zaproxy' : 'sudo apt install -y zaproxy', 
     type: isWindows ? 'wsl' : 'apt',
-    wslInstall: 'sudo apt install -y geoip-bin'
+    wslInstall: 'sudo apt install -y zaproxy'
   },
   { 
     name: 'mitmproxy', 
@@ -275,9 +275,9 @@ async function existsCmd(bin) {
           } else if (bin === 'metasploit-framework') {
             checkCmd = 'msfconsole';
             checkArgs = ['--version'];
-          } else if (bin === 'geoiplookup') {
-            checkCmd = 'geoiplookup';
-            checkArgs = ['--version'];
+          } else if (bin === 'zaproxy') {
+            checkCmd = 'zap.sh';
+            checkArgs = ['-v'];
           } else if (bin === 'mitmproxy') {
             checkCmd = bin;
             checkArgs = ['--version'];

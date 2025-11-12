@@ -50,6 +50,7 @@ export const githubHelpers = {
   /**
    * Handle GitHub OAuth callback from Electron
    * Parses the callback URL and extracts token and user info
+   * Supports both direct token callbacks and code-based OAuth flows
    * @param {string} callbackUrl - Callback URL from OAuth redirect
    * @returns {Promise<Object>} OAuth response with token and user info
    */
@@ -57,37 +58,90 @@ export const githubHelpers = {
     try {
       const url = new URL(callbackUrl)
       const token = url.searchParams.get('token')
+      const code = url.searchParams.get('code')
+      const error = url.searchParams.get('error')
       const userParam = url.searchParams.get('user')
 
-      if (!token) {
-        throw new Error('No access token found in callback URL')
+      // Check for OAuth errors
+      if (error) {
+        const errorDescription = url.searchParams.get('error_description') || error
+        throw new Error(`OAuth error: ${errorDescription}`)
       }
 
-      // Parse user info if provided
-      let user = null
-      if (userParam) {
-        try {
-          user = JSON.parse(decodeURIComponent(userParam))
-        } catch (e) {
-          console.warn('Failed to parse user info from callback:', e)
+      // If we have a token directly, use it
+      if (token) {
+        // Parse user info if provided
+        let user = null
+        if (userParam) {
+          try {
+            user = JSON.parse(decodeURIComponent(userParam))
+          } catch (e) {
+            console.warn('Failed to parse user info from callback:', e)
+          }
+        }
+
+        // Store GitHub token
+        githubApi.setGitHubToken(token, true)
+
+        // Get user info if not provided in callback
+        if (!user) {
+          try {
+            const userInfo = await githubApi.getUserInfo(token)
+            user = userInfo.data || userInfo
+          } catch (e) {
+            console.warn('Failed to get user info:', e)
+            throw new Error('Failed to retrieve user information')
+          }
+        }
+
+        return {
+          success: true,
+          token,
+          user,
+          message: 'GitHub authentication successful'
         }
       }
 
-      // Store GitHub token
-      githubApi.setGitHubToken(token, true)
+      // If we have an authorization code, exchange it for a token
+      if (code) {
+        try {
+          // Exchange code for token using the backend callback endpoint
+          const callbackResult = await githubApi.handleCallback(code, null)
+          
+          // Extract token from response
+          const accessToken = callbackResult?.data?.accessToken || 
+                              callbackResult?.accessToken || 
+                              callbackResult?.data?.token ||
+                              callbackResult?.token
 
-      // Get user info if not provided in callback
-      if (!user) {
-        const userInfo = await githubApi.getUserInfo(token)
-        user = userInfo.data || userInfo
+          if (!accessToken) {
+            throw new Error('No access token received from OAuth callback')
+          }
+
+          // Store GitHub token
+          githubApi.setGitHubToken(accessToken, true)
+
+          // Get user info
+          let user = callbackResult?.data?.user || callbackResult?.user
+          if (!user) {
+            const userInfo = await githubApi.getUserInfo(accessToken)
+            user = userInfo.data || userInfo
+          }
+
+          return {
+            success: true,
+            token: accessToken,
+            user,
+            message: 'GitHub authentication successful'
+          }
+        } catch (e) {
+          console.error('Failed to exchange code for token:', e)
+          throw new Error(`Failed to exchange authorization code: ${e.message}`)
+        }
       }
 
-      return {
-        success: true,
-        token,
-        user,
-        message: 'GitHub authentication successful'
-      }
+      // No token or code found
+      throw new Error('No access token or authorization code found in callback URL')
     } catch (error) {
       console.error('Failed to handle Electron callback:', error)
       throw error
@@ -141,34 +195,54 @@ export const githubHelpers = {
    * @returns {Promise<Object>} OAuth response with token and user info
    */
   async completeOAuthFlow(options = {}) {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       try {
         const redirectUrl = options.redirect || 'myapp://github-callback'
         const timeout = options.timeout || 300000 // 5 minutes
+        let timeoutId = null
+        let isResolved = false
+
+        // Wrapper to clear timeout and resolve
+        const resolveWithTimeout = (value) => {
+          if (!isResolved) {
+            isResolved = true
+            if (timeoutId) {
+              clearTimeout(timeoutId)
+            }
+            resolve(value)
+          }
+        }
+
+        // Wrapper to clear timeout and reject
+        const rejectWithTimeout = (error) => {
+          if (!isResolved) {
+            isResolved = true
+            if (timeoutId) {
+              clearTimeout(timeoutId)
+            }
+            reject(error)
+          }
+        }
 
         // Setup protocol handler
         this.setupElectronProtocolHandler('myapp', (error, result) => {
           if (error) {
-            reject(error)
+            rejectWithTimeout(error)
           } else {
-            resolve(result)
+            resolveWithTimeout(result)
           }
         })
 
         // Initiate OAuth
-        await this.initiateOAuthInElectron({ redirect: redirectUrl })
+        this.initiateOAuthInElectron({ redirect: redirectUrl })
+          .catch((error) => {
+            rejectWithTimeout(error)
+          })
 
         // Set timeout
-        const timeoutId = setTimeout(() => {
-          reject(new Error('OAuth flow timed out. Please try again.'))
+        timeoutId = setTimeout(() => {
+          rejectWithTimeout(new Error('OAuth flow timed out. Please try again.'))
         }, timeout)
-
-        // Clear timeout when resolved
-        const originalResolve = resolve
-        resolve = (value) => {
-          clearTimeout(timeoutId)
-          originalResolve(value)
-        }
 
       } catch (error) {
         reject(error)

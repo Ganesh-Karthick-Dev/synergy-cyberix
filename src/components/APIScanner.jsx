@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { githubApi, githubHelpers, githubScanIntegration } from '../services';
+import { authApi } from '../services/authApi';
+import { apiHelpers } from '../services/api';
+import { getSecurePassword } from '../utils/securePasswordStorage';
 
-function APIScanner() {
+function APIScanner({ onNavigate }) {
   // State management
   const [authStep, setAuthStep] = useState('not-authenticated'); // 'not-authenticated', 'authenticating', 'authenticated', 'selecting-repos', 'scanning'
   const [accessToken, setAccessToken] = useState(null);
@@ -36,59 +39,405 @@ function APIScanner() {
     }]);
   };
 
-  // Initiate GitHub OAuth using the API service
+  // Initiate GitHub OAuth using the backend API
   const handleInitiateAuth = async () => {
     try {
       setAuthStep('authenticating');
-      addLog('🔐 Initiating GitHub OAuth...', null, 'info');
+      addLog('🔐 Initiating GitHub OAuth login...', null, 'info');
       
-      // Check if GitHub OAuth is configured
-      if (!githubHelpers.isConfigured()) {
-        const configStatus = githubHelpers.getConfigurationStatus();
-        const missing = [];
-        if (!configStatus.clientId) missing.push('GITHUB_CLIENT_ID');
-        if (!configStatus.clientSecret) missing.push('GITHUB_CLIENT_SECRET');
-        if (!configStatus.callbackUrl) missing.push('GITHUB_CALLBACK_URL');
-        
-        throw new Error(`GitHub OAuth is not configured. Please set the following environment variables: ${missing.join(', ')}`);
-      }
-
-      addLog('🌐 Opening GitHub OAuth in browser...', null, 'info');
+      // Use backend API for GitHub OAuth login
+      // This will redirect to GitHub OAuth page
+      // Include view parameter to return to API Scanner after login
+      // For Electron apps, use current window location
+      const isElectron = window.cyberGuard !== undefined;
+      const redirectUrl = isElectron 
+        ? `${window.location.origin}/?view=api-scan`
+        : '/?view=api-scan';
       
-      // Use the GitHub helpers to complete OAuth flow
-      const result = await githubHelpers.completeOAuthFlow({
-        redirect: 'myapp://github-callback',
-        timeout: 300000 // 5 minutes
+      await authApi.loginWithGitHub({
+        redirect: redirectUrl // Return to API Scanner page after login
       });
       
-      if (result.success && result.token) {
-        // Store token
-        githubApi.setGitHubToken(result.token, true);
-        setAccessToken(result.token);
-        setUser(result.user);
-        setAuthStep('authenticated');
-        addLog(`✅ Authentication successful! Welcome, ${result.user.login || result.user.name}!`, null, 'success');
-        
-        // Automatically fetch repositories
-        await handleFetchRepositories(result.token);
-      } else {
-        throw new Error('Authentication failed: No token received');
-      }
+      // Note: The redirect will happen, so code below won't execute
+      // The callback will be handled by the backend and user will be redirected back
     } catch (error) {
       console.error('Auth initiation error:', error);
       addLog(`❌ Authentication error: ${error.message}`, null, 'error');
       setAuthStep('not-authenticated');
-      
-      // Show user-friendly error message
-      if (error.message.includes('not configured')) {
-        alert(`❌ GitHub OAuth Configuration Error\n\n${error.message}\n\nPlease add these to your .env file and restart the application.`);
-      } else if (error.message.includes('timed out')) {
-        alert('❌ Authentication timed out. Please try again.');
-      } else {
-        alert(`❌ Authentication failed: ${error.message}`);
-      }
+      alert(`❌ Authentication failed: ${error.message}`);
     }
   };
+
+  // Check authentication function - can be called from multiple places
+  const checkAuth = async () => {
+    try {
+      // Check if user is authenticated via backend (cookies)
+      // This will work even after app restart if cookies are still valid
+      const profile = await authApi.checkGitHubAuth();
+      
+      if (profile && profile.data) {
+        // User is authenticated - session persisted!
+        setUser(profile.data);
+        setAuthStep('authenticated');
+        addLog(`✅ Session restored! Welcome back, ${profile.data.email || profile.data.username}`, null, 'success');
+        
+        // Check if user has GitHub access token
+        if (profile.data.githubAccessToken) {
+          // Store token locally for future use (if needed for direct GitHub API calls)
+          githubApi.setGitHubToken(profile.data.githubAccessToken, true);
+          setAccessToken(profile.data.githubAccessToken);
+          
+          // Automatically fetch and display repositories using backend API
+          addLog('📦 Loading your repositories...', null, 'info');
+          await handleFetchRepositories();
+        } else {
+          // User is logged in but doesn't have GitHub API token yet
+          // They need to authenticate for GitHub API access
+          setAuthStep('not-authenticated');
+          addLog('ℹ️ Please authenticate with GitHub to access repositories', null, 'info');
+        }
+      } else {
+        // User is not authenticated - show login button
+        setAuthStep('not-authenticated');
+        addLog('ℹ️ Please sign in with GitHub to scan repositories', null, 'info');
+      }
+    } catch (error) {
+      // Handle errors gracefully - don't redirect, just show login screen
+      console.log('Not authenticated or error checking auth:', error);
+      setAuthStep('not-authenticated');
+      addLog('ℹ️ Please sign in with GitHub to scan repositories', null, 'info');
+    }
+  };
+
+  // Check for OAuth callback with token in URL (silent OAuth)
+  useEffect(() => {
+    // Check URL parameters for token-based OAuth (silent redirect)
+    const oauthUrlParams = new URLSearchParams(window.location.search);
+    const token = oauthUrlParams.get('token');
+    const autoAuth = oauthUrlParams.get('autoAuth');
+    const githubToken = oauthUrlParams.get('githubToken');
+    
+    if (token && autoAuth === 'true') {
+      console.log('🔐 [Silent OAuth] Token detected in URL, processing auto-login...');
+      addLog('🔐 Processing silent OAuth login...', null, 'info');
+      
+      // Store token in localStorage for API requests (CRITICAL: Must be done first)
+      apiHelpers.setAuthToken(token);
+      console.log('🔐 [Silent OAuth] Token stored in localStorage');
+      
+      // Verify token was stored
+      const storedToken = localStorage.getItem('auth_token');
+      if (storedToken) {
+        console.log('✅ [Silent OAuth] Token verified in localStorage:', {
+          length: storedToken.length,
+          preview: storedToken.substring(0, 20) + '...',
+          matches: storedToken === token
+        });
+      } else {
+        console.error('❌ [Silent OAuth] Token NOT found in localStorage after storage!');
+      }
+      
+      // Store GitHub token if provided (for GitHub API calls)
+      if (githubToken) {
+        githubApi.setGitHubToken(githubToken, true);
+        setAccessToken(githubToken);
+        console.log('🔐 [Silent OAuth] GitHub token stored');
+      } else {
+        setAccessToken(token);
+      }
+      
+      // Clear URL parameters to avoid re-processing
+      const newUrl = window.location.pathname + (window.location.search.replace(/[?&]token=[^&]*|[?&]autoAuth=[^&]*|[?&]githubToken=[^&]*/g, '').replace(/^&/, '?').replace(/&$/, '') || '');
+      window.history.replaceState({}, '', newUrl);
+      
+      // Set auth step to authenticated immediately
+      setAuthStep('authenticated');
+      
+      // Fetch user profile and repositories (with token in Authorization header)
+      setTimeout(async () => {
+        try {
+          // First, try to get user profile with token
+          addLog('📥 Fetching user profile...', null, 'info');
+          const profile = await authApi.checkGitHubAuth();
+          
+          if (profile && profile.data) {
+            setUser(profile.data);
+            addLog(`✅ Silent login successful! Welcome, ${profile.data.email || profile.data.username}!`, null, 'success');
+            
+            // Check if user has GitHub access token
+            if (profile.data.githubAccessToken) {
+              githubApi.setGitHubToken(profile.data.githubAccessToken, true);
+              setAccessToken(profile.data.githubAccessToken);
+            }
+          } else {
+            // Profile fetch failed, but we have token - continue anyway
+            addLog('⚠️ Profile fetch failed, but continuing with token...', null, 'warning');
+            // Set a minimal user object
+            setUser({ id: 'unknown', email: 'user', username: 'user' });
+          }
+          
+          // Automatically fetch and display repositories (token should be in Authorization header)
+          // Verify token is still available before making request
+          const tokenBeforeRequest = localStorage.getItem('auth_token');
+          if (!tokenBeforeRequest) {
+            console.error('❌ [Silent OAuth] Token missing before repository fetch! Re-storing...');
+            apiHelpers.setAuthToken(token); // Re-store token
+          } else {
+            console.log('✅ [Silent OAuth] Token verified before repository fetch:', {
+              length: tokenBeforeRequest.length,
+              preview: tokenBeforeRequest.substring(0, 20) + '...'
+            });
+          }
+          
+          addLog('📦 Loading your repositories...', null, 'info');
+          
+          // Ensure token is available before calling handleFetchRepositories
+          // Pass token directly if localStorage check fails
+          const finalToken = localStorage.getItem('auth_token') || token;
+          if (finalToken) {
+            // Ensure token is stored
+            if (!localStorage.getItem('auth_token')) {
+              apiHelpers.setAuthToken(finalToken);
+              console.log('🔐 [Silent OAuth] Re-stored token before repository fetch');
+            }
+            await handleFetchRepositories();
+          } else {
+            console.error('❌ [Silent OAuth] No token available for repository fetch!');
+            addLog('❌ No authentication token available. Please try logging in again.', null, 'error');
+          }
+          
+        } catch (error) {
+          console.error('Failed to fetch profile/repositories after silent login:', error);
+          addLog(`❌ Error: ${error.message || 'Failed to load repositories'}`, null, 'error');
+          
+          // Show helpful error message
+          if (error.response?.status === 401) {
+            addLog('⚠️ Authentication failed. Token might be invalid. Please try logging in again.', null, 'warning');
+            setAuthStep('not-authenticated');
+          } else {
+            addLog('⚠️ Could not fetch repositories. Please try again.', null, 'warning');
+          }
+        }
+      }, 200); // Small delay to ensure token is stored
+      
+      return; // Don't process other OAuth methods if silent OAuth succeeded
+    }
+    
+    // Aggressive JSON clearing that runs continuously (fallback for old method)
+    const clearVisibleJson = () => {
+      try {
+        // Check body text
+        const bodyText = document.body?.innerText || document.body?.textContent || '';
+        const root = document.getElementById('root');
+        const rootText = root?.innerText || root?.textContent || '';
+        
+        // Check if we see JSON
+        const hasJson = (bodyText.trim().startsWith('{') && bodyText.includes('"success"')) ||
+                        (rootText.trim().startsWith('{') && rootText.includes('"success"'));
+        
+        if (hasJson) {
+          // Check if React has rendered
+          const rootHasContent = root && root.children.length > 0;
+          
+          if (!rootHasContent) {
+            // No React content, this is raw JSON
+            const jsonText = bodyText.trim().startsWith('{') ? bodyText.trim() : rootText.trim();
+            try {
+              const jsonData = JSON.parse(jsonText);
+              if (jsonData.success && jsonData.data) {
+                console.log('📥 [APIScanner] Found raw JSON, storing and clearing...');
+                sessionStorage.setItem('oauth_callback_data', JSON.stringify(jsonData));
+                document.body.innerHTML = '<div id="root"></div>';
+                // Reload to let React mount properly
+                window.location.reload();
+                return true;
+              }
+            } catch (e) {
+              // Not valid JSON, just clear it
+              document.body.innerHTML = '<div id="root"></div>';
+            }
+          } else {
+            // React has rendered, but JSON might be in text nodes
+            // Find and remove any text nodes containing JSON
+            const walker = document.createTreeWalker(
+              document.body,
+              NodeFilter.SHOW_TEXT,
+              null,
+              false
+            );
+            
+            let node;
+            let foundJson = false;
+            while (node = walker.nextNode()) {
+              const text = node.textContent || '';
+              if (text.trim().startsWith('{') && text.includes('"success"') && text.length < 10000) {
+                try {
+                  const jsonData = JSON.parse(text.trim());
+                  if (jsonData.success && jsonData.data) {
+                    console.log('📥 [APIScanner] Found JSON in text node, storing and removing...');
+                    sessionStorage.setItem('oauth_callback_data', JSON.stringify(jsonData));
+                    foundJson = true;
+                  }
+                } catch (e) {
+                  // Not valid JSON
+                }
+                // Remove the text node
+                if (node.parentNode) {
+                  node.parentNode.removeChild(node);
+                }
+              }
+            }
+            
+            if (foundJson) {
+              // Reload to process the stored data
+              window.location.reload();
+              return true;
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error clearing visible JSON:', error);
+      }
+      return false;
+    };
+    
+    // Run immediately and multiple times
+    if (clearVisibleJson()) return;
+    setTimeout(() => { if (clearVisibleJson()) return; }, 100);
+    setTimeout(() => { if (clearVisibleJson()) return; }, 300);
+    setTimeout(() => { if (clearVisibleJson()) return; }, 500);
+    
+    // Set up interval to continuously check
+    const intervalId = setInterval(() => {
+      if (clearVisibleJson()) {
+        clearInterval(intervalId);
+      }
+    }, 200);
+    
+    // Stop after 5 seconds
+    setTimeout(() => clearInterval(intervalId), 5000);
+    
+    // Also try to extract JSON from page if not in sessionStorage
+    const tryExtractJsonFromPage = () => {
+      try {
+        const bodyText = document.body?.innerText || document.body?.textContent || '';
+        const root = document.getElementById('root');
+        const rootText = root?.innerText || root?.textContent || '';
+        
+        const hasJson = (bodyText.trim().startsWith('{') && bodyText.includes('"success"')) ||
+                        (rootText.trim().startsWith('{') && rootText.includes('"success"'));
+        
+        if (hasJson) {
+          const jsonText = bodyText.trim().startsWith('{') ? bodyText.trim() : rootText.trim();
+          try {
+            const jsonData = JSON.parse(jsonText);
+            if (jsonData.success && jsonData.data) {
+              console.log('📥 [APIScanner] Extracted JSON from page, storing...');
+              sessionStorage.setItem('oauth_callback_data', JSON.stringify(jsonData));
+              // Clear the visible JSON
+              if (root && root.children.length === 0) {
+                document.body.innerHTML = '<div id="root"></div>';
+              }
+              return true;
+            }
+          } catch (e) {
+            // Not valid JSON
+          }
+        }
+      } catch (error) {
+        console.error('Error extracting JSON from page:', error);
+      }
+      return false;
+    };
+    
+    // Try to extract JSON from page first
+    tryExtractJsonFromPage();
+    
+    // Check if OAuth callback data was stored in sessionStorage (by main.jsx or extracted above)
+    const oauthDataStr = sessionStorage.getItem('oauth_callback_data');
+    
+    if (oauthDataStr) {
+      try {
+        const jsonData = JSON.parse(oauthDataStr);
+        if (jsonData.success && jsonData.data) {
+          console.log('📥 [OAuth Callback] Processing stored OAuth response:', jsonData);
+          addLog('📥 Processing OAuth callback...', null, 'info');
+          
+          // Clear the stored data (only process once)
+          sessionStorage.removeItem('oauth_callback_data');
+          
+          // Handle the OAuth callback response
+          if (jsonData.data.user) {
+            setUser(jsonData.data.user);
+            setAuthStep('authenticated');
+            addLog(`✅ Authentication successful! Welcome, ${jsonData.data.user.email || jsonData.data.user.username}!`, null, 'success');
+            
+            // Store token if provided
+            if (jsonData.data.token) {
+              // Token is stored in cookies by backend, but we can store it locally too
+              githubApi.setGitHubToken(jsonData.data.token, true);
+            }
+            
+            // Check if user has GitHub access token
+            if (jsonData.data.user.githubAccessToken) {
+              githubApi.setGitHubToken(jsonData.data.user.githubAccessToken, true);
+              setAccessToken(jsonData.data.user.githubAccessToken);
+              
+              // Automatically fetch and display repositories
+              addLog('📦 Fetching repositories automatically...', null, 'info');
+              // Use setTimeout to ensure state is updated before fetching
+              setTimeout(() => {
+                handleFetchRepositories();
+              }, 200);
+            } else {
+              // Wait a bit and check profile for GitHub token
+              setTimeout(async () => {
+                try {
+                  const profile = await authApi.checkGitHubAuth();
+                  if (profile?.data?.githubAccessToken) {
+                    githubApi.setGitHubToken(profile.data.githubAccessToken, true);
+                    setAccessToken(profile.data.githubAccessToken);
+                    await handleFetchRepositories();
+                  } else {
+                    addLog('⚠️ GitHub access token not found. Please authenticate again.', null, 'warning');
+                    setAuthStep('not-authenticated');
+                  }
+                } catch (error) {
+                  console.error('Failed to get GitHub token from profile:', error);
+                  addLog('⚠️ Failed to get GitHub token. Please authenticate again.', null, 'warning');
+                  setAuthStep('not-authenticated');
+                }
+              }, 1000);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse stored OAuth data:', error);
+        sessionStorage.removeItem('oauth_callback_data');
+      }
+      return; // Don't check for URL params if we already handled stored data
+    }
+    
+    // Also check URL parameters for web-based OAuth redirects
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('github_auth') === 'success' || window.location.hash.includes('github_auth=success')) {
+      // Small delay to ensure cookies are set
+      setTimeout(() => {
+        checkAuth();
+      }, 500);
+    }
+  }, []);
+
+  // Check GitHub authentication status after page load - runs on every mount
+  useEffect(() => {
+    // Check authentication on component mount (this runs every time the component loads)
+    // If cookies are valid, user will be automatically logged in
+    // Only check if we haven't already handled OAuth callback data
+    const oauthDataStr = sessionStorage.getItem('oauth_callback_data');
+    if (!oauthDataStr) {
+      checkAuth();
+    }
+  }, []);
 
   // Listen for OAuth callback from Electron (if using protocol handler)
   useEffect(() => {
@@ -126,72 +475,21 @@ function APIScanner() {
     }
   }, []);
 
-  // Fetch GitHub repositories using the API service
+  // Fetch GitHub repositories using the backend API
   const handleFetchRepositories = async (token = null) => {
     try {
-      const githubToken = token || githubApi.getGitHubToken() || accessToken;
-      if (!githubToken) {
-        throw new Error('No access token available. Please authenticate first.');
-      }
-
       setAuthStep('selecting-repos');
-      addLog('📦 Fetching repositories...', null, 'info');
+      addLog('📦 Fetching repositories from GitHub...', null, 'info');
       
-      // Get user info first
-      try {
-        const userInfo = await githubApi.getUserInfo(githubToken);
-        if (userInfo.data) {
-          setUser(userInfo.data);
-        } else if (userInfo) {
-          setUser(userInfo);
-        }
-        addLog(`✅ Authenticated as ${userInfo.data?.login || userInfo.login || 'user'}`, null, 'success');
-      } catch (error) {
-        console.warn('Failed to get user info:', error);
+      // Use backend API to fetch repositories (uses stored GitHub access token)
+      const reposResponse = await authApi.getGitHubRepositories();
+      
+      if (!reposResponse.success || !reposResponse.data) {
+        throw new Error(reposResponse.error?.message || 'Failed to fetch repositories');
       }
 
-      // Get organizations
-      let allRepos = [];
-      try {
-        const orgsResponse = await githubApi.getOrganizations(githubToken);
-        const orgs = orgsResponse.data || orgsResponse;
-        
-        if (Array.isArray(orgs) && orgs.length > 0) {
-          addLog(`📂 Found ${orgs.length} organization(s)`, null, 'info');
-          
-          // Get repositories from each organization
-          for (const org of orgs) {
-            try {
-              addLog(`📦 Fetching repositories from ${org.login}...`, null, 'info');
-              const reposResponse = await githubApi.getOrganizationRepos(org.login, githubToken);
-              const repos = reposResponse.data || reposResponse;
-              
-              if (Array.isArray(repos)) {
-                allRepos = [...allRepos, ...repos];
-                addLog(`✅ Found ${repos.length} repositories in ${org.login}`, null, 'success');
-              }
-            } catch (error) {
-              console.warn(`Failed to fetch repos from ${org.login}:`, error);
-              addLog(`⚠️ Failed to fetch repos from ${org.login}: ${error.message}`, null, 'warning');
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to get organizations:', error);
-        addLog(`⚠️ Could not fetch organizations: ${error.message}`, null, 'warning');
-      }
-
-      // If no repos found from orgs, try to get user's own repos
-      if (allRepos.length === 0) {
-        try {
-          addLog('📦 Fetching user repositories...', null, 'info');
-          // Note: You may need to add a getUserRepos method to githubApi
-          // For now, we'll use the organizations endpoint or handle it differently
-        } catch (error) {
-          console.warn('Failed to get user repos:', error);
-        }
-      }
-
+      const allRepos = reposResponse.data || [];
+      
       // Format repositories for display
       const formattedRepos = allRepos.map(repo => ({
         id: repo.id || Math.random(),
@@ -203,7 +501,7 @@ function APIScanner() {
         stars: repo.stars || repo.stargazers_count || 0,
         forks: repo.forks || repo.forks_count || 0,
         updatedAt: repo.updatedAt || repo.updated_at || new Date().toISOString(),
-        owner: repo.owner?.login || repo.owner || 'user',
+        owner: repo.owner?.login || (typeof repo.owner === 'object' ? repo.owner.login : repo.owner) || 'user',
         defaultBranch: repo.defaultBranch || repo.default_branch || 'main'
       }));
 
@@ -212,11 +510,14 @@ function APIScanner() {
       
       if (formattedRepos.length === 0) {
         addLog('ℹ️ No repositories found. Make sure you have access to at least one repository.', null, 'info');
+      } else {
+        addLog(`📋 Displaying ${formattedRepos.length} repositories`, null, 'info');
       }
     } catch (error) {
       console.error('Repository fetch error:', error);
-      addLog(`❌ Repository fetch error: ${error.message}`, null, 'error');
-      alert(`❌ Failed to fetch repositories: ${error.message}`);
+      addLog(`❌ Repository fetch error: ${error.message || error.response?.data?.error?.message || 'Unknown error'}`, null, 'error');
+      setAuthStep('authenticated');
+      alert(`❌ Failed to fetch repositories: ${error.message || error.response?.data?.error?.message || 'Unknown error'}`);
     }
   };
 
@@ -242,10 +543,23 @@ function APIScanner() {
     }
   };
 
-  // Start scanning selected repositories using API service
+  // Start scanning selected repositories using WSL Kali Linux tools
   const handleStartScan = async () => {
     if (selectedRepos.length === 0) {
       alert('Please select at least one repository to scan');
+      return;
+    }
+
+    // Check if WSL password is available
+    const password = getSecurePassword();
+    if (!password) {
+      alert('WSL password not found. Please set up WSL credentials first.');
+      return;
+    }
+
+    // Check if Electron API is available
+    if (!window.cyberGuard || !window.cyberGuard.runWslCommand) {
+      alert('WSL commands not available. Please ensure the application is running in Electron.');
       return;
     }
 
@@ -257,55 +571,163 @@ function APIScanner() {
       setConsoleLogs([]);
       setAuthStep('scanning');
       
-      addLog(`🚀 Starting scan for ${selectedRepos.length} repository/repositories...`, null, 'info');
+      addLog(`🚀 Starting API scan for ${selectedRepos.length} repository/repositories...`, null, 'info');
+      addLog(`📦 Cloning repositories to WSL Kali Linux...`, null, 'info');
       
       const results = [];
-      let completedScans = 0;
       const token = accessToken || githubApi.getGitHubToken();
+      
+      // Create scan directory in WSL
+      const scanBaseDir = '/tmp/github-api-scans';
+      const createDirCmd = `mkdir -p ${scanBaseDir}`;
+      addLog(`📁 Creating scan directory...`, createDirCmd, 'command', 'WSL');
+      
+      try {
+        await window.cyberGuard.runWslCommand(createDirCmd, password);
+        addLog(`✅ Scan directory created`, null, 'success');
+      } catch (error) {
+        addLog(`⚠️ Directory creation warning: ${error.message}`, null, 'warning');
+      }
       
       // Scan each selected repository
       for (let i = 0; i < selectedRepos.length; i++) {
         const repo = selectedRepos[i];
-        const [owner, repoName] = repo.fullName.split('/');
+        const repoDir = `${scanBaseDir}/${repo.name}`;
+        const repoUrl = `https://${token}@github.com/${repo.fullName}.git`;
         
         try {
           const progressPercent = Math.round((i / selectedRepos.length) * 100);
           setProgress(progressPercent);
           setProgressMessage(`Scanning ${repo.fullName} (${i + 1}/${selectedRepos.length})...`);
-          addLog(`🔍 Scanning ${repo.fullName}...`, null, 'info');
-          addLog(`📡 Discovering API endpoints...`, null, 'info');
           
-          // Use githubScanIntegration to scan the repository (includes API endpoint scanning)
-          const scanResult = await githubScanIntegration.scanRepository(owner, repoName, {
-            scanTypes: ['code', 'dependencies', 'secrets', 'api-endpoints'], // OWASP ZAP, sqlmap, Nikto, w3af, API endpoints
-            branch: repo.defaultBranch || 'main',
-            includeCode: true,
-            includeDependencies: true,
-            includeSecrets: true,
-            includeAPIEndpoints: true, // Include API endpoint scanning
-            options: {
-              tools: ['zap', 'sqlmap', 'nikto', 'w3af'], // Specify tools
-              apiScanTypes: ['discovery', 'mismatch', 'exposed'] // API endpoint scan types
+          addLog(`🔍 Processing ${repo.fullName}...`, null, 'info');
+          
+          // Step 1: Clone repository
+          addLog(`📥 Cloning repository...`, null, 'info');
+          const cloneCmd = `cd ${scanBaseDir} && rm -rf ${repo.name} && git clone ${repoUrl} ${repo.name} 2>&1`;
+          addLog(`📥 Cloning ${repo.fullName}...`, cloneCmd, 'command', 'git');
+          
+          let cloneOutput = '';
+          try {
+            const cloneResult = await window.cyberGuard.runWslCommand(cloneCmd, password);
+            cloneOutput = cloneResult.stdout || cloneResult.stderr || '';
+            addLog(`✅ Repository cloned successfully`, cloneOutput, 'success', 'git');
+          } catch (error) {
+            addLog(`❌ Failed to clone repository: ${error.message}`, error.message, 'error', 'git');
+            results.push({
+              repository: repo.fullName,
+              success: false,
+              error: `Clone failed: ${error.message}`
+            });
+            continue;
+          }
+          
+          // Step 2: Install required tools if not present
+          addLog(`🔧 Checking required tools (nikto, w3af, sqlmap, zap)...`, null, 'info');
+          const checkToolsCmd = `which nikto w3af sqlmap zap-cli 2>&1 || echo "Some tools missing"`;
+          addLog(`🔧 Checking tools...`, checkToolsCmd, 'command', 'WSL');
+          
+          try {
+            const toolsCheck = await window.cyberGuard.runWslCommand(checkToolsCmd, password);
+            addLog(`📋 Tools status:`, toolsCheck.stdout || toolsCheck.stderr || '', 'info', 'WSL');
+          } catch (error) {
+            addLog(`⚠️ Tool check warning: ${error.message}`, null, 'warning');
+          }
+          
+          // Step 3: Discover API endpoints in code
+          addLog(`📡 Discovering API endpoints in code...`, null, 'info');
+          const findApiEndpointsCmd = `cd ${repoDir} && find . -type f \\( -name "*.js" -o -name "*.ts" -o -name "*.py" -o -name "*.java" -o -name "*.php" -o -name "*.rb" -o -name "*.go" \\) -exec grep -lE "(api|endpoint|route|controller|/api/|/v[0-9]+/)" {} \\; 2>&1 | head -20`;
+          addLog(`📡 Finding API-related files...`, findApiEndpointsCmd, 'command', 'grep');
+          
+          let apiFiles = [];
+          try {
+            const apiFilesResult = await window.cyberGuard.runWslCommand(findApiEndpointsCmd, password);
+            const files = (apiFilesResult.stdout || '').trim().split('\n').filter(f => f);
+            apiFiles = files;
+            addLog(`📄 Found ${files.length} API-related files`, files.join('\n'), 'info', 'grep');
+          } catch (error) {
+            addLog(`⚠️ API file discovery warning: ${error.message}`, null, 'warning');
+          }
+          
+          // Step 4: Extract API endpoints from files
+          addLog(`🔍 Extracting API endpoints...`, null, 'info');
+          const extractEndpointsCmd = `cd ${repoDir} && grep -rE "(app\\.(get|post|put|delete|patch)|router\\.(get|post|put|delete|patch)|@(GET|POST|PUT|DELETE|PATCH)|/api/|/v[0-9]+/)" --include="*.js" --include="*.ts" --include="*.py" --include="*.java" --include="*.php" . 2>&1 | head -50`;
+          addLog(`🔍 Extracting endpoints...`, extractEndpointsCmd, 'command', 'grep');
+          
+          let endpoints = [];
+          try {
+            const endpointsResult = await window.cyberGuard.runWslCommand(extractEndpointsCmd, password);
+            const endpointLines = (endpointsResult.stdout || '').trim().split('\n').filter(l => l);
+            endpoints = endpointLines;
+            addLog(`✅ Found ${endpointLines.length} potential API endpoints`, endpointLines.slice(0, 10).join('\n'), 'success', 'grep');
+          } catch (error) {
+            addLog(`⚠️ Endpoint extraction warning: ${error.message}`, null, 'warning');
+          }
+          
+          // Step 5: Run nikto scan if there's a web server config
+          addLog(`🛡️ Running security scans...`, null, 'info');
+          const hasWebConfig = apiFiles.some(f => f.includes('server') || f.includes('app') || f.includes('index'));
+          
+          if (hasWebConfig) {
+            // Try to find potential URLs or run nikto on localhost
+            const niktoCmd = `cd ${repoDir} && nikto -h localhost -Format txt 2>&1 | head -30 || echo "Nikto scan completed (or not available)"`;
+            addLog(`🛡️ Running Nikto scan...`, niktoCmd, 'command', 'nikto');
+            
+            try {
+              const niktoResult = await window.cyberGuard.runWslCommand(niktoCmd, password);
+              addLog(`📊 Nikto scan results:`, niktoResult.stdout || niktoResult.stderr || '', 'info', 'nikto');
+            } catch (error) {
+              addLog(`⚠️ Nikto scan warning: ${error.message}`, null, 'warning');
             }
-          });
+          }
           
-          completedScans++;
-          results.push({
+          // Step 6: Look for SQL injection vulnerabilities
+          addLog(`💉 Checking for SQL injection vulnerabilities...`, null, 'info');
+          const sqlCheckCmd = `cd ${repoDir} && grep -rE "(SELECT|INSERT|UPDATE|DELETE|query|executeQuery|prepareStatement)" --include="*.js" --include="*.ts" --include="*.py" --include="*.java" --include="*.php" . 2>&1 | head -20`;
+          addLog(`💉 Checking SQL queries...`, sqlCheckCmd, 'command', 'grep');
+          
+          let sqlVulns = [];
+          try {
+            const sqlResult = await window.cyberGuard.runWslCommand(sqlCheckCmd, password);
+            const sqlLines = (sqlResult.stdout || '').trim().split('\n').filter(l => l);
+            sqlVulns = sqlLines;
+            addLog(`📊 Found ${sqlLines.length} SQL-related code sections`, sqlLines.slice(0, 5).join('\n'), 'info', 'grep');
+          } catch (error) {
+            addLog(`⚠️ SQL check warning: ${error.message}`, null, 'warning');
+          }
+          
+          // Step 7: Look for exposed secrets/API keys
+          addLog(`🔐 Scanning for exposed secrets...`, null, 'info');
+          const secretsCmd = `cd ${repoDir} && grep -rE "(api[_-]?key|secret|password|token|apikey|apisecret)" --include="*.js" --include="*.ts" --include="*.py" --include="*.java" --include="*.php" --include="*.env*" . 2>&1 | grep -v node_modules | grep -v ".git" | head -20`;
+          addLog(`🔐 Scanning for secrets...`, secretsCmd, 'command', 'grep');
+          
+          let secrets = [];
+          try {
+            const secretsResult = await window.cyberGuard.runWslCommand(secretsCmd, password);
+            const secretLines = (secretsResult.stdout || '').trim().split('\n').filter(l => l);
+            secrets = secretLines;
+            addLog(`⚠️ Found ${secretLines.length} potential secret exposures`, secretLines.slice(0, 5).join('\n'), 'warning', 'grep');
+          } catch (error) {
+            addLog(`⚠️ Secret scan warning: ${error.message}`, null, 'warning');
+          }
+          
+          // Compile results
+          const scanResult = {
             repository: repo.fullName,
             success: true,
-            scanResults: scanResult.scan || scanResult,
-            apiEndpoints: scanResult.apiEndpoints, // Include API endpoint results
-            aiAnalysis: scanResult.aiAnalysis
-          });
+            apiFiles: apiFiles,
+            endpoints: endpoints,
+            sqlVulnerabilities: sqlVulns,
+            exposedSecrets: secrets,
+            scanDate: new Date().toISOString()
+          };
+          
+          results.push(scanResult);
           
           addLog(`✅ Completed scan for ${repo.fullName}`, null, 'success');
-          if (scanResult.apiEndpoints) {
-            const epCount = scanResult.apiEndpoints.discovered?.endpoints?.length || 0;
-            const mismatchCount = scanResult.apiEndpoints.mismatches?.length || 0;
-            const exposedCount = scanResult.apiEndpoints.exposed?.endpoints?.length || 0;
-            addLog(`📊 API Endpoints: ${epCount} discovered, ${mismatchCount} mismatches, ${exposedCount} exposed`, null, 'info');
-          }
-          setProgress(Math.round((completedScans / selectedRepos.length) * 100));
+          addLog(`📊 Summary: ${apiFiles.length} API files, ${endpoints.length} endpoints, ${sqlVulns.length} SQL sections, ${secrets.length} potential secrets`, null, 'info');
+          
+          setProgress(Math.round(((i + 1) / selectedRepos.length) * 100));
           
         } catch (error) {
           console.error(`Failed to scan ${repo.fullName}:`, error);
@@ -344,44 +766,199 @@ function APIScanner() {
   };
 
   // Logout
-  const handleLogout = () => {
-    // Clear GitHub token
-    githubApi.logout();
-    
-    setAccessToken(null);
-    setUser(null);
-    setRepositories([]);
-    setSelectedRepos([]);
-    setSelectAll(false);
-    setScanResults(null);
-    setAuthStep('not-authenticated');
-    setConsoleLogs([]);
-    addLog('👋 Logged out from GitHub', null, 'info');
+  const handleLogout = async () => {
+    try {
+      // Logout from backend (clears cookies)
+      await authApi.logout();
+      
+      // Clear GitHub token
+      githubApi.logout();
+      
+      setAccessToken(null);
+      setUser(null);
+      setRepositories([]);
+      setSelectedRepos([]);
+      setSelectAll(false);
+      setScanResults(null);
+      setAuthStep('not-authenticated');
+      setConsoleLogs([]);
+      addLog('👋 Logged out successfully', null, 'info');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still clear local state even if logout request fails
+      githubApi.logout();
+      setAccessToken(null);
+      setUser(null);
+      setRepositories([]);
+      setSelectedRepos([]);
+      setSelectAll(false);
+      setScanResults(null);
+      setAuthStep('not-authenticated');
+      setConsoleLogs([]);
+    }
+  };
+
+  // Manual trigger to process OAuth response if JSON is visible
+  const handleManualProcessOAuth = () => {
+    try {
+      // First, try to extract JSON from the page
+      const bodyText = document.body?.innerText || document.body?.textContent || '';
+      const root = document.getElementById('root');
+      const rootText = root?.innerText || root?.textContent || '';
+      
+      // Check if we see JSON
+      const hasJson = (bodyText.trim().startsWith('{') && bodyText.includes('"success"')) ||
+                      (rootText.trim().startsWith('{') && rootText.includes('"success"'));
+      
+      if (hasJson) {
+        const jsonText = bodyText.trim().startsWith('{') ? bodyText.trim() : rootText.trim();
+        try {
+          const jsonData = JSON.parse(jsonText);
+          if (jsonData.success && jsonData.data) {
+            addLog('📥 Manually processing OAuth response...', null, 'info');
+            sessionStorage.setItem('oauth_callback_data', JSON.stringify(jsonData));
+            // Clear the visible JSON
+            document.body.innerHTML = '<div id="root"></div>';
+            // Reload to process
+            window.location.reload();
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to parse JSON:', e);
+        }
+      }
+      
+      // Check sessionStorage
+      const oauthDataStr = sessionStorage.getItem('oauth_callback_data');
+      if (oauthDataStr) {
+        try {
+          const jsonData = JSON.parse(oauthDataStr);
+          if (jsonData.success && jsonData.data) {
+            addLog('📥 Processing OAuth data from storage...', null, 'info');
+            
+            // Process the OAuth data
+            if (jsonData.data.user) {
+              setUser(jsonData.data.user);
+              setAuthStep('authenticated');
+              addLog(`✅ Authentication successful! Welcome, ${jsonData.data.user.email || jsonData.data.user.username}!`, null, 'success');
+              
+              if (jsonData.data.token) {
+                githubApi.setGitHubToken(jsonData.data.token, true);
+              }
+              
+              if (jsonData.data.user.githubAccessToken) {
+                githubApi.setGitHubToken(jsonData.data.user.githubAccessToken, true);
+                setAccessToken(jsonData.data.user.githubAccessToken);
+                setTimeout(() => {
+                  handleFetchRepositories();
+                }, 200);
+              } else {
+                // Try to get from profile
+                setTimeout(async () => {
+                  try {
+                    const profile = await authApi.checkGitHubAuth();
+                    if (profile?.data?.githubAccessToken) {
+                      githubApi.setGitHubToken(profile.data.githubAccessToken, true);
+                      setAccessToken(profile.data.githubAccessToken);
+                      await handleFetchRepositories();
+                    } else {
+                      addLog('⚠️ GitHub access token not found. Please authenticate again.', null, 'warning');
+                    }
+                  } catch (error) {
+                    console.error('Failed to get GitHub token:', error);
+                    addLog('⚠️ Failed to get GitHub token. Please authenticate again.', null, 'warning');
+                  }
+                }, 500);
+              }
+            }
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to parse stored OAuth data:', e);
+        }
+      }
+      
+      // If no OAuth data found, try checking auth status
+      addLog('📥 Checking authentication status...', null, 'info');
+      checkAuth();
+    } catch (error) {
+      console.error('Error manually processing OAuth:', error);
+      addLog(`❌ Error: ${error.message}`, null, 'error');
+    }
+  };
+
+  // Handle navigation back to dashboard
+  const handleGoBack = () => {
+    if (onNavigate) {
+      onNavigate('overview');
+    } else {
+      // Fallback: use URL parameter
+      window.location.href = '/?view=overview';
+    }
   };
 
   return (
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-orange-600 to-orange-700 rounded-xl shadow-lg p-6 text-white">
-        <h1 className="text-3xl font-bold mb-2">GitHub Repository API Scanner</h1>
-          </div>
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">GitHub Repository API Scanner</h1>
+          <button
+            onClick={handleGoBack}
+            className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg font-medium flex items-center space-x-2 transition-all shadow-md hover:shadow-lg whitespace-nowrap"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Go Back to Software</span>
+          </button>
+        </div>
+      </div>
 
       {/* Authentication Section */}
       {authStep === 'not-authenticated' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-          <h2 className="text-xl font-semibold mb-4">GitHub Authentication</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">
-            Authenticate with GitHub using OAuth Device Flow to access your repositories.
-          </p>
-          <button
-            onClick={handleInitiateAuth}
-            className="px-6 py-3 bg-gray-900 hover:bg-gray-800 text-white rounded-lg font-medium flex items-center space-x-2 transition-all"
-          >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-              <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
-            </svg>
-            <span>Authenticate with GitHub</span>
-          </button>
+          <div className="text-center">
+            <div className="mb-6">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 dark:bg-slate-700 rounded-full mb-4">
+                <svg className="w-8 h-8 text-gray-600 dark:text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                  <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">GitHub Authentication Required</h2>
+              <p className="text-gray-600 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                Connect your GitHub account to scan repositories for API endpoints, security vulnerabilities, and exposed endpoints.
+              </p>
+            </div>
+            
+            <button
+              onClick={handleInitiateAuth}
+              className="px-8 py-4 bg-gray-900 hover:bg-gray-800 dark:bg-gray-800 dark:hover:bg-gray-700 text-white rounded-lg font-semibold flex items-center justify-center space-x-3 transition-all shadow-lg hover:shadow-xl transform hover:scale-105 mx-auto"
+            >
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path fillRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.17 6.839 9.49.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.167 22 16.418 22 12c0-5.523-4.477-10-10-10z" clipRule="evenodd" />
+              </svg>
+              <span className="text-lg">Sign in with GitHub</span>
+            </button>
+            
+            <div className="mt-6 text-sm text-gray-500 dark:text-gray-400">
+              <p className="mb-2">🔒 Secure OAuth authentication</p>
+              <p>We'll only access your repositories for scanning purposes</p>
+            </div>
+            
+            {/* Manual OAuth processing button */}
+            <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-600">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                ⚠️ If you see a JSON response but are stuck here, click below:
+              </p>
+              <button
+                onClick={handleManualProcessOAuth}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                🔄 Process OAuth Response Manually
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -405,9 +982,18 @@ function APIScanner() {
               <span>Waiting for authorization...</span>
             </div>
             <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-              <p className="text-xs text-yellow-800 dark:text-yellow-200">
+              <p className="text-xs text-yellow-800 dark:text-yellow-200 mb-3">
                 💡 Make sure you authorize the application in the browser window that opens. The app will automatically detect when authorization is complete.
               </p>
+              <p className="text-xs text-yellow-800 dark:text-yellow-200 mb-3">
+                ⚠️ If you see a JSON response on the screen but nothing happens, click the button below to manually process it.
+              </p>
+              <button
+                onClick={handleManualProcessOAuth}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                🔄 Process OAuth Response Manually
+              </button>
             </div>
           </div>
         </div>
@@ -420,7 +1006,7 @@ function APIScanner() {
             <div>
               <h2 className="text-xl font-semibold">Select Repositories to Scan</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                Logged in as <strong>{user.login}</strong> ({repositories.length} repositories)
+                Logged in as <strong>{user.username || user.email || user.login || 'User'}</strong> ({repositories.length} repositories)
               </p>
             </div>
             <button

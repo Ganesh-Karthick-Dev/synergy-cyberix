@@ -1,0 +1,12 @@
+{
+  "id": "log_1762579082264_ehaemznmq",
+  "timestamp": "2025-11-08T05:18:02.264Z",
+  "scanType": "server",
+  "scanName": "Server Scan",
+  "target": "webnox.in",
+  "status": "completed",
+  "startTime": "2025-11-08T05:03:02.264Z",
+  "endTime": "2025-11-08T05:18:02.264Z",
+  "duration": 900000,
+  "result": "Server scan completed successfully"
+}

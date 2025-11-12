@@ -3,21 +3,33 @@ import "./index.css"
 import Dashboard from './Dashboard'
 import InitialSetupFlow from './components/InitialSetupFlow'
 import NetworkStatus from './components/NetworkStatus'
+import SetupScreen from './setup/SetupScreen'
+import Setup from './components/Setup'
+import NetworkStatus from './components/NetworkStatus'
+import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog'
+import NativeKaliPasswordDialog from './components/NativeKaliPasswordDialog'
+import WslUserCreationDialog from './components/WslUserCreationDialog'
 import { ToastProvider, useToast } from './context/ToastContext'
 import { ScanningProvider } from './context/ScanningContext'
+import { GlobalScanProvider } from './context/GlobalScanContext'
 import { GlobalScanProvider } from './context/GlobalScanContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { NotificationProvider } from './context/NotificationContext'
 import setupStateManager from './utils/setupStateManager'
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog';
 import WslUserCreationDialog from './components/WslUserCreationDialog';
+import { NotificationProvider } from './context/NotificationContext'
+import { getSecurePassword, hasSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
+import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
+import { ensureReposInstalled } from './utils/kaliRepoInstaller'
+import authService from './utils/authService'
 import logo from './assets/webp/Cybersecurity research-02.webp'
 
 const AppContent = () => {
-  const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
+  const { showError, showSuccess, showLoading, dismissToast, updateToast, updateToast } = useToast()
   const [formData, setFormData] = useState({
-    username: '',
-    password: '',
+    username: 'pakih63038@nyfhk.com',
+    password: 'Th@X%5PJ$gu^',
     rememberMe: false
   })
   const [isLoading, setIsLoading] = useState(false)
@@ -99,6 +111,161 @@ const AppContent = () => {
       showError('Failed to complete setup. Please try again.')
     }
   }
+  const [setupComplete, setSetupComplete] = useState(false)
+  const [checkingSetup, setCheckingSetup] = useState(true)
+  const [installPath, setInstallPath] = useState(null)
+  const [envReady, setEnvReady] = useState(false)
+  const [checkingEnv, setCheckingEnv] = useState(true)
+  
+  // New states for WSL credential flow
+  const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
+  const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
+  const [showNativeKaliPasswordDialog, setShowNativeKaliPasswordDialog] = useState(false)
+  const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
+  const [wslInstallationStatus, setWslInstallationStatus] = useState(null) // 'checking', 'installing', 'installed', 'not-installed'
+  const [environment, setEnvironment] = useState(null)
+
+  // Check setup completion status and environment on app load
+  useEffect(() => {
+    const checkSetupStatus = async () => {
+      try {
+        if (window.cyberGuard) {
+          const setupStatus = await window.cyberGuard.checkSetupComplete()
+          setSetupComplete(setupStatus.completed)
+          setInstallPath(setupStatus.installPath)
+
+          // Detect environment - prioritize native Kali detection
+          const isLinux = navigator.platform.toLowerCase().includes('linux') ||
+                         navigator.userAgent.toLowerCase().includes('linux')
+          console.log('🔍 Browser platform detection - isLinux:', isLinux)
+
+          try {
+            if (window.cyberGuard && window.cyberGuard.checkEnvironment) {
+              const envResult = await window.cyberGuard.checkEnvironment()
+              setEnvironment(envResult.type)
+              console.log('🔍 Environment detected via IPC:', envResult.type)
+            } else {
+              // Fallback to browser-based detection
+              setEnvironment(isLinux ? 'native-kali' : 'wsl-kali')
+              console.log('🔍 Environment fallback to browser detection:', isLinux ? 'native-kali' : 'wsl-kali')
+            }
+          } catch (envError) {
+            console.log('Environment IPC detection failed, using browser fallback:', envError.message)
+            // Always assume native Kali on Linux, WSL on others
+            setEnvironment(isLinux ? 'native-kali' : 'wsl-kali')
+            console.log('🔍 Environment final fallback:', isLinux ? 'native-kali' : 'wsl-kali')
+          }
+        } else {
+          console.log('🔍 window.cyberGuard not available, using browser detection')
+          const isLinux = navigator.platform.toLowerCase().includes('linux')
+          setEnvironment(isLinux ? 'native-kali' : 'wsl-kali')
+        }
+      } catch (error) {
+        console.error('Error checking setup status:', error)
+        setSetupComplete(false)
+      } finally {
+        setCheckingSetup(false)
+      }
+    }
+
+    checkSetupStatus()
+  }, [])
+
+  // Check authentication status on app load
+  useEffect(() => {
+    const checkAuthStatus = async () => {
+      try {
+        console.log('🔐 [APP] Checking authentication status on app load...')
+        const authStatus = await authService.checkAuthStatus()
+
+        if (authStatus.authenticated && authStatus.user) {
+          console.log('✅ [APP] User is already authenticated:', authStatus.user.email)
+          setIsAuthenticated(true)
+
+          // Start post-login flow for authenticated users
+          await handlePostLoginFlow()
+        } else {
+          console.log('🔐 [APP] User not authenticated, showing login form')
+        }
+      } catch (error) {
+        console.error('❌ [APP] Auth status check failed:', error.message)
+        // Stay on login form if auth check fails
+      }
+    }
+
+    // Only check auth status if backend is available
+    if (window.cyberGuard) {
+      checkAuthStatus()
+    }
+  }, [])
+
+  // Logout function
+  const handleLogout = async () => {
+    try {
+      const loadingToastId = showLoading('🔐 Logging out...')
+
+      // Call backend logout
+      await authService.logout()
+
+      // Clear local state
+      setIsAuthenticated(false)
+      setFormData({
+        username: '',
+        password: '',
+        rememberMe: false
+      })
+
+      dismissToast(loadingToastId)
+      showSuccess('👋 Logged out successfully')
+
+    } catch (error) {
+      console.error('❌ [APP] Logout error:', error.message)
+      // Still clear local state even if backend logout fails
+      setIsAuthenticated(false)
+      showError('Logged out locally (server logout may have failed)')
+    }
+  }
+
+  // Hard gate: verify WSL + tools before allowing dashboard/login
+  useEffect(() => {
+    (async () => {
+      try {
+        const markReady = () => { setEnvReady(true); setCheckingEnv(false); };
+        // If a previous installation flagged ready, trust it but verify quickly
+        const flag = localStorage.getItem('cybrix.toolsReady') === 'true'
+        const wsl = await window.cyberGuard?.checkWsl?.()
+        if (!wsl) { setEnvReady(false); setCheckingEnv(false); return }
+        // Quick verify required tools (non-sudo)
+        const result = await window.cyberGuard?.checkRequiredToolsOnly?.(null)
+        if (result && Array.isArray(result.missingTools) && result.missingTools.length > 0) {
+          setEnvReady(false)
+        } else if (flag) {
+          markReady()
+          return
+        } else {
+          markReady()
+          return
+        }
+      } catch (e) {
+        setEnvReady(false)
+      } finally {
+        setCheckingEnv(false)
+      }
+    })()
+  }, [])
+
+  const handleSetupComplete = async (path) => {
+    try {
+      // Mark setup as complete
+      await window.cyberGuard.markSetupComplete(path)
+      setSetupComplete(true)
+      setInstallPath(path)
+      showSuccess('Setup completed successfully! Welcome to Cyberix.')
+    } catch (error) {
+      console.error('Error completing setup:', error)
+      showError('Failed to complete setup. Please try again.')
+    }
+  }
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
@@ -110,49 +277,94 @@ const AppContent = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    console.log('🎯 [APP] ===== LOGIN FORM SUBMIT START =====')
+    console.log('🎯 [APP] Form data:', {
+      username: formData.username,
+      passwordLength: formData.password ? formData.password.length : 0
+    })
+
     setIsLoading(true)
-    
+
     // Show professional loading toast
-    const loadingToastId = showLoading('🔐 Authenticating your credentials...')
+    const loadingToastId = showLoading('🔐 Authenticating with backend...')
     setCurrentToastId(loadingToastId)
-    
+
+    console.log('🎯 [APP] Loading toast shown, calling authService.login...')
+
     try {
-      // Simulate login process with realistic delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      
-      // Check credentials
-      if (formData.username === 'admin' && formData.password === 'admin@123') {
-        // Dismiss loading toast
-        dismissToast(loadingToastId)
-        
-        // Show success toast
-        showSuccess(`🎉 Welcome back, ${formData.username}! Login successful.`, {
-          duration: 3000
-        })
-        
-        // Start the WSL credential and tool checking flow
-        await handlePostLoginFlow()
-        
-      } else {
-        // Dismiss loading toast
-        dismissToast(loadingToastId)
-        
-        // Show error toast with professional styling
-        showError('❌ Authentication failed! Invalid credentials provided.', {
-          duration: 5000
-        })
-      }
-    } catch (error) {
+      // Call backend login API
+      console.log('🎯 [APP] About to call authService.login...')
+      const loginResult = await authService.login(formData.username, formData.password)
+      console.log('🎯 [APP] authService.login returned:', loginResult)
+
       // Dismiss loading toast
       dismissToast(loadingToastId)
-      
-      // Show error toast for unexpected errors
-      showError('🌐 Connection error. Please check your network and try again.', {
-        duration: 6000
+      console.log('🎯 [APP] Loading toast dismissed')
+
+      // Show success toast
+      showSuccess(`🎉 Welcome back, ${loginResult.user.email}! Login successful.`, {
+        duration: 3000
       })
+      console.log('🎯 [APP] Success toast shown')
+
+      // Set authentication state
+      setIsAuthenticated(true)
+      console.log('🎯 [APP] Authentication state set to true')
+
+      // Start the post-login flow (environment detection, tool checking, etc.)
+      console.log('🎯 [APP] Starting post-login flow...')
+      await handlePostLoginFlow()
+      console.log('🎯 [APP] Post-login flow completed')
+
+      console.log('🎯 [APP] ===== LOGIN FORM SUBMIT SUCCESS =====')
+
+    } catch (error) {
+      console.error('❌ [APP] ===== LOGIN FORM SUBMIT ERROR =====')
+      console.error('❌ [APP] Error caught:', error)
+      console.error('❌ [APP] Error message:', error.message)
+      console.error('❌ [APP] Error stack:', error.stack)
+
+      // Dismiss loading toast
+      dismissToast(loadingToastId)
+      console.log('🎯 [APP] Loading toast dismissed (error)')
+
+      // Show error toast with professional styling
+      const errorMessage = error.message || 'Authentication failed'
+      console.log('🎯 [APP] Error message to show:', errorMessage)
+
+      // Handle specific error types
+      if (errorMessage.includes('blocked')) {
+        console.log('🚫 [APP] Showing blocked account error')
+        showError(`🚫 ${errorMessage}`, {
+          duration: 8000
+        })
+      } else if (errorMessage.includes('Invalid credentials')) {
+        console.log('❌ [APP] Showing invalid credentials error')
+        showError('❌ Invalid email or password. Please check your credentials.', {
+          duration: 6000
+        })
+      } else if (errorMessage.includes('Too many login attempts')) {
+        console.log('⏰ [APP] Showing too many attempts error')
+        showError('⏰ Too many login attempts. Please wait before trying again.', {
+          duration: 10000
+        })
+      } else if (errorMessage.includes('Connection') || errorMessage.includes('network') || errorMessage.includes('Cannot connect')) {
+        console.log('🌐 [APP] Showing connection error')
+        showError('🌐 Connection error. Please check your internet connection and try again.', {
+          duration: 6000
+        })
+      } else {
+        console.log('❌ [APP] Showing generic error')
+        showError(`❌ ${errorMessage}`, {
+          duration: 6000
+        })
+      }
+
+      console.log('🎯 [APP] ===== LOGIN FORM SUBMIT ERROR END =====')
     } finally {
       setIsLoading(false)
       setCurrentToastId(null)
+      console.log('🎯 [APP] Finally block executed, isLoading set to false')
     }
   }
 
@@ -763,9 +975,11 @@ const AppContent = () => {
     <NetworkStatus>
       <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
+          <div className="text-center w-fit mx-auto">
             <div>
-            <h2 className="text-3xl font-bold text-white bg-orange-500 w-fit text-center mx-auto p-3 rounded-lg mb-2">
+            <h2
+              className="cyberix-logo text-4xl font-bold text-white mb-4 leading-tight tracking-widest bg-orange-500 px-3 py-2 rounded"
+            >
              Cyberix
             </h2>
             </div>
@@ -816,7 +1030,7 @@ const AppContent = () => {
                   type="checkbox"
                   checked={formData.rememberMe}
                   onChange={handleChange}
-                  className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 dark:border-slate-600 rounded"
+                  className="h-4 w-4 text-orange-500 focus:ring-orange-500 border-gray-300 dark:border-slate-600 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
                   Remember me
@@ -824,7 +1038,7 @@ const AppContent = () => {
               </div>
 
               <div>
-                <a href="#" className="text-sm text-orange-600 hover:text-orange-500 transition-colors">
+                <a href="#" className="text-sm text-orange-500 hover:text-orange-500 transition-colors">
                   Forgot password?
                 </a>
               </div>
@@ -879,10 +1093,7 @@ const AppContent = () => {
 
           {/* <div className="mt-6 text-center">
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Demo Credentials:<br />
-              <span className="font-mono text-xs bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200 px-2 py-1 rounded">
-                Username: admin | Password: admin@123
-              </span>
+              Credentials are prefilled for your convenience
             </p>
           </div> */}
         </div>

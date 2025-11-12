@@ -1,0 +1,58 @@
+{
+  "metadata": {
+    "target": "http://webnox.in/",
+    "timestamp": "2025-11-07T07:06:04.439Z",
+    "scanDuration": 93826,
+    "toolsUsed": [
+      "target",
+      "timestamp",
+      "malware"
+    ]
+  },
+  "summary": {
+    "status": "clean",
+    "riskScore": 0,
+    "severity": "LOW",
+    "totalFindings": 0
+  },
+  "findings": {
+    "malware": {
+      "count": 0,
+      "findings": [],
+      "tools": {
+        "clamav": "completed",
+        "yara": "not_run"
+      }
+    },
+    "defacement": {
+      "changed": false,
+      "message": "New baseline created"
+    }
+  },
+  "detailed": {
+    "malware": {
+      "clamav": {
+        "tool": "clamav",
+        "command": "clamscan -r -i \"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762499070613/webnox.in\" --log=\"/mnt/d/WEBNOX/cybrix/synergy-cyberix/temp-scans/maldef-1762499070613/clamav_scan.log\" || true",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "sh: 1: clamscan: not found\n",
+        "infectedCount": 0,
+        "infectedFiles": [],
+        "logFile": null
+      }
+    },
+    "defacement": {
+      "changed": false,
+      "message": "New baseline created"
+    }
+  },
+  "recommendations": [
+    {
+      "priority": "low",
+      "category": "maintenance",
+      "action": "System appears clean. Continue regular monitoring",
+      "details": "No significant threats detected"
+    }
+  ]
+}

@@ -1,772 +1,263 @@
-import { useState, useEffect, useRef } from 'react'
-import { useToast } from '../context/ToastContext'
-import { getAISuggestions } from '../utils/grokApi'
+import { useState, useEffect } from 'react'
+import { useScanning } from '../context/ScanningContext'
 
 function PortScanning() {
-  const { showSuccess, showError } = useToast()
-  const [targetUrl, setTargetUrl] = useState('')
-  const [isScanning, setIsScanning] = useState(false)
-  const [logs, setLogs] = useState([])
-  const [scanResult, setScanResult] = useState(null)
-  const [ipAddress, setIpAddress] = useState(null)
-  
-  // Timing
-  const [startTime, setStartTime] = useState(null)
-  const [endTime, setEndTime] = useState(null)
-  const [elapsedTime, setElapsedTime] = useState(0)
-  
-  // Filters
-  const [portFilter, setPortFilter] = useState('open') // default to Open
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(100)
-  const [pageInput, setPageInput] = useState('1')
-  const [showHelp, setShowHelp] = useState(false)
-  const [isExporting, setIsExporting] = useState(false)
-  const [isLoadingAI, setIsLoadingAI] = useState(false)
-  const [aiSuggestions, setAiSuggestions] = useState(null)
-  const [aiError, setAiError] = useState(null)
-  
-  const logContainerRef = useRef(null)
-  const timerRef = useRef(null)
-  const aiSuggestionRef = useRef(null)
+  const [target, setTarget] = useState('')
+  const [scanResults, setScanResults] = useState(null)
+  const [kaliStatus, setKaliStatus] = useState('Checking...')
+  const [scanStats, setScanStats] = useState({
+    openPorts: 0,
+    closedPorts: 0,
+    filteredPorts: 0,
+    services: 0
+  })
+  const [portFilter, setPortFilter] = useState('all') // 'all', 'open', 'closed', 'filtered'
 
-  // Timer for elapsed time
+  const { scanStatus, scanProgress, startPortScan, abortScan } = useScanning()
+
   useEffect(() => {
-    if (isScanning && startTime) {
-      timerRef.current = setInterval(() => {
-        setElapsedTime(Date.now() - startTime)
-      }, 1000)
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-    }
+    checkKaliStatus()
+  }, [])
 
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-      }
-    }
-  }, [isScanning, startTime])
-
-  // Auto-scroll logs
-  useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
-    }
-  }, [logs])
-
-  // Reset pagination when filter or results change
-  useEffect(() => {
-    setCurrentPage(1)
-    setPageInput('1')
-  }, [portFilter, scanResult])
-
-  const addLog = (message, type = 'info') => {
-    const timestamp = new Date().toLocaleTimeString()
-    setLogs(prev => [...prev, {
-      timestamp,
-      message,
-      type,
-      id: Date.now() + Math.random()
-    }])
-    console.log(`[${timestamp}] [${type.toUpperCase()}] ${message}`)
-  }
-
-  const copyLogs = () => {
-    const logText = logs.map(log => 
-      `[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}`
-    ).join('\n')
-    navigator.clipboard.writeText(logText)
-    showSuccess('Logs copied to clipboard!')
-  }
-
-  const clearLogs = () => {
-    setLogs([])
-  }
-
-  const fetchAISuggestions = async () => {
-    if (!scanResult) {
-      showError('No scan results available for AI suggestions')
-      return
-    }
-
-    setIsLoadingAI(true)
-    setAiError(null)
-    setAiSuggestions(null)
-
-    // Scroll to AI Suggestion section
-    setTimeout(() => {
-      if (aiSuggestionRef.current) {
-        aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    }, 100)
-
+  const checkKaliStatus = async () => {
     try {
-      // Combine all scan results for AI analysis
-      const rawOutput = JSON.stringify(scanResult, null, 2)
-
-      // Call Grok API
-      const suggestions = await getAISuggestions(
-        'port-scanning',
-        'Port Scanning',
-        scanResult,
-        rawOutput,
-        targetUrl || ipAddress || 'Unknown'
-      )
-
-      setAiSuggestions(suggestions)
-
-      // Scroll to AI Suggestion section after results are loaded
-      setTimeout(() => {
-        if (aiSuggestionRef.current) {
-          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 500)
-    } catch (error) {
-      console.error('Error fetching AI suggestions:', error)
-      setAiError(error.message || 'Failed to fetch AI suggestions. Please try again.')
-      showError(error.message || 'Failed to fetch AI suggestions. Please try again.')
-
-      // Scroll to AI Suggestion section even on error
-      setTimeout(() => {
-        if (aiSuggestionRef.current) {
-          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 100)
-    } finally {
-      setIsLoadingAI(false)
-    }
-  }
-
-  const generatePDFReport = async () => {
-    if (!scanResult) {
-      showError('No scan results available to export')
-      return
-    }
-
-    setIsExporting(true)
-    try {
-      const jsPDF = (await import('jspdf')).default
-      const doc = new jsPDF()
-      
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const pageHeight = doc.internal.pageSize.getHeight()
-      const margin = 15
-      const borderMargin = 10
-      const footerHeight = 20
-      let yPos = margin + 10
-      
-      // Function to draw page border
-      const drawPageBorder = () => {
-        doc.setDrawColor(80, 80, 80)
-        doc.setLineWidth(0.8)
-        doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
-      }
-      
-      // Function to add footer
-      const addFooter = () => {
-        const currentPage = doc.internal.getCurrentPageInfo().pageNumber
-        const totalPages = doc.internal.getNumberOfPages()
-        
-        // Footer line
-        doc.setDrawColor(200, 200, 200)
-        doc.setLineWidth(0.5)
-        doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
-        
-        // Footer text
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(100, 100, 100)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
-        
-        // Page number
-        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
-      }
-      
-      // Helper to update all page footers
-      const updateAllFooters = () => {
-        const totalPages = doc.internal.getNumberOfPages()
-        for (let i = 1; i <= totalPages; i++) {
-          doc.setPage(i)
-          drawPageBorder()
-          const currentPage = i
-          
-          // Footer line
-          doc.setDrawColor(200, 200, 200)
-          doc.setLineWidth(0.5)
-          doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
-          
-          // Footer text
-          doc.setFontSize(9)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(100, 100, 100)
-          doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
-          
-          // Page number
-          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
-        }
-      }
-      
-      // Draw border and footer on first page
-      drawPageBorder()
-      addFooter()
-      
-      const addText = (text, x, y, fontSize = 12, fontStyle = 'normal', align = 'left', color = [0, 0, 0]) => {
-        doc.setFontSize(fontSize)
-        doc.setFont('helvetica', fontStyle)
-        doc.setTextColor(color[0], color[1], color[2])
-        const lines = doc.splitTextToSize(text || '', pageWidth - 2 * x - margin - 10)
-        doc.text(lines, x, y, { align })
-        return y + (lines.length * fontSize * 0.4) + 5
-      }
-      
-      const checkNewPage = (requiredSpace = 20) => {
-        if (yPos + requiredSpace > pageHeight - footerHeight - margin) {
-          doc.addPage()
-          drawPageBorder()
-          addFooter()
-          yPos = margin + 10
-        }
-      }
-      
-      // Title
-      yPos = addText('Port Scan Security Report', margin, yPos, 20, 'bold', 'left', [0, 0, 0])
-      yPos += 5
-      
-      // Target URL
-      yPos = addText(`Target: ${targetUrl || ipAddress || 'Unknown'}`, margin, yPos, 12, 'normal', 'left', [50, 50, 50])
-      yPos += 3
-      
-      // Scan Date
-      if (startTime) {
-        yPos = addText(`Scan Date: ${new Date(startTime).toLocaleString()}`, margin, yPos, 10, 'normal', 'left', [100, 100, 100])
-        yPos += 5
-      }
-      
-      // Summary Section
-      checkNewPage(15)
-      yPos = addText('Executive Summary', margin, yPos, 16, 'bold', 'left', [0, 0, 0])
-      yPos += 5
-      
-      const host = scanResult?.nmap_scan?.hosts?.[0]
-      if (host) {
-        const openPorts = host.ports?.filter(p => p.state === 'open').length || 0
-        const closedPorts = host.ports?.filter(p => p.state === 'closed').length || 0
-        const filteredPorts = host.ports?.filter(p => p.state === 'filtered').length || 0
-        
-        yPos = addText(`This port scan identified ${openPorts} open ports, ${closedPorts} closed ports, and ${filteredPorts} filtered ports on the target system.`, margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-        yPos += 10
-      }
-      
-      // Port Details Section
-      if (host && host.ports && Array.isArray(host.ports) && host.ports.length > 0) {
-        checkNewPage(20)
-        yPos = addText('Port Details', margin, yPos, 14, 'bold', 'left', [0, 0, 0])
-        yPos += 5
-        
-        // Filter to show only open ports in PDF (or all if user wants)
-        const portsToShow = host.ports.filter(p => portFilter === 'all' || p.state === portFilter)
-        
-        portsToShow.slice(0, 100).forEach((port, idx) => {
-          checkNewPage(15)
-          
-          // Port header
-          let portHeader = `Port ${port.port || idx + 1}`
-          if (port.protocol) {
-            portHeader += `/${port.protocol.toUpperCase()}`
-          }
-          if (port.state) {
-            portHeader += ` [${port.state.toUpperCase()}]`
-          }
-          
-          yPos = addText(portHeader, margin + 5, yPos, 11, 'bold', 'left', [0, 0, 0])
-          yPos += 3
-          
-          // Service information
-          if (port.service) {
-            if (port.service.name) {
-              checkNewPage(5)
-              yPos = addText(`Service: ${port.service.name}`, margin + 10, yPos, 9, 'normal', 'left', [50, 50, 50])
-              yPos += 4
-            }
-            if (port.service.product) {
-              checkNewPage(5)
-              yPos = addText(`Product: ${port.service.product}`, margin + 10, yPos, 9, 'normal', 'left', [50, 50, 50])
-              yPos += 4
-            }
-            if (port.service.version) {
-              checkNewPage(5)
-              yPos = addText(`Version: ${port.service.version}`, margin + 10, yPos, 9, 'normal', 'left', [50, 50, 50])
-              yPos += 4
-            }
-          }
-          
-          // HTTP Title
-          if (port.http_title) {
-            checkNewPage(5)
-            yPos = addText(`HTTP Title: ${port.http_title}`, margin + 10, yPos, 9, 'normal', 'left', [50, 50, 50])
-            yPos += 4
-          }
-          
-          // SSL Certificate
-          if (port.ssl_cert) {
-            checkNewPage(5)
-            yPos = addText('SSL Certificate:', margin + 10, yPos, 9, 'bold', 'left', [50, 50, 50])
-            yPos += 3
-            if (port.ssl_cert.subject) {
-              checkNewPage(5)
-              yPos = addText(`  Subject: ${port.ssl_cert.subject}`, margin + 15, yPos, 8, 'normal', 'left', [80, 80, 80])
-              yPos += 3
-            }
-            if (port.ssl_cert.valid_from) {
-              checkNewPage(5)
-              yPos = addText(`  Valid From: ${port.ssl_cert.valid_from}`, margin + 15, yPos, 8, 'normal', 'left', [80, 80, 80])
-              yPos += 3
-            }
-            if (port.ssl_cert.valid_until) {
-              checkNewPage(5)
-              yPos = addText(`  Valid Until: ${port.ssl_cert.valid_until}`, margin + 15, yPos, 8, 'normal', 'left', [80, 80, 80])
-              yPos += 3
-            }
-          }
-          
-          // Reason
-          if (port.reason) {
-            checkNewPage(5)
-            yPos = addText(`Reason: ${port.reason}`, margin + 10, yPos, 9, 'normal', 'left', [80, 80, 80])
-            yPos += 4
-          }
-          
-          yPos += 2
-        })
-        
-        if (portsToShow.length > 100) {
-          checkNewPage(5)
-          yPos = addText(`... and ${portsToShow.length - 100} more ports`, margin + 5, yPos, 9, 'italic', 'left', [100, 100, 100])
-          yPos += 4
-        }
-        yPos += 5
-      }
-      
-      // Recommendations Section
-      checkNewPage(15)
-      yPos = addText('Recommendations', margin, yPos, 14, 'bold', 'left', [0, 0, 0])
-      yPos += 5
-      yPos = addText('1. Restrict management ports (SSH/RDP) to trusted IPs or VPN', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('2. Patch and harden exposed services; disable weak ciphers and protocols', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('3. Adopt "deny by default" at the perimeter; allow only necessary services', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('4. Monitor for unexpected changes in exposed ports', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 10
-      
-      // Update all footers
-      updateAllFooters()
-      
-      // Save PDF
-      const fileName = `port-scan-${(targetUrl || ipAddress || 'unknown').replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`
-      doc.save(fileName)
-    } catch (error) {
-      console.error('PDF generation error:', error)
-      showError(`Failed to generate PDF: ${error.message}`)
-    } finally {
-      setIsExporting(false)
-    }
-  }
-
-  const formatElapsedTime = (ms) => {
-    const seconds = Math.floor(ms / 1000)
-    const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m ${seconds % 60}s`
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`
-    } else {
-      return `${seconds}s`
-    }
-  }
-
-  // Extract domain from URL
-  const extractDomain = (url) => {
-    try {
-      let urlStr = url.trim()
-      if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
-        urlStr = `https://${urlStr}`
-      }
-      const urlObj = new URL(urlStr)
-      return urlObj.hostname
-    } catch {
-      // If URL parsing fails, try to extract domain manually
-      const cleaned = url.trim().replace(/^https?:\/\//, '').split('/')[0]
-      return cleaned
-    }
-  }
-
-  // Execute host command to get IP address
-  const executeHostCommand = async (domain) => {
-    addLog(`Executing: host ${domain}`, 'info')
-    
-    const cmd = `host ${domain}`
-    
-    if (!window.cyberGuard || !window.cyberGuard.runAsRoot) {
-      throw new Error('Electron API not available')
-    }
-
-    try {
-      const result = await window.cyberGuard.runAsRoot({ 
-        command: 'bash -lc ' + JSON.stringify(cmd), 
-        requireConfirm: false 
-      })
-      
-      const output = result.stdout || ''
-      const error = result.stderr || ''
-      
-      addLog(`Command output:`, 'info')
-      if (output) {
-        output.split('\n').forEach(line => {
-          if (line.trim()) {
-            addLog(line, 'info')
-          }
-        })
-      }
-      if (error) {
-        error.split('\n').forEach(line => {
-          if (line.trim()) {
-            addLog(line, 'warning')
-          }
-        })
-      }
-
-      // Extract IP address from output
-      // Look for pattern: "domain has address IP"
-      const ipMatch = output.match(/has address\s+([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/i)
-      
-      if (ipMatch && ipMatch[1]) {
-        const ip = ipMatch[1]
-        setIpAddress(ip)
-        addLog(`Extracted IP address: ${ip}`, 'success')
-        return ip
+      if (window.cyberGuard) {
+        const isInstalled = await window.cyberGuard.checkKali()
+        setKaliStatus(isInstalled ? 'Kali Linux is installed' : 'Kali Linux is not installed')
       } else {
-        throw new Error('Could not extract IP address from host command output')
+        setKaliStatus('Scanning system not available (development mode)')
       }
     } catch (error) {
-      addLog(`Error executing host command: ${error.message}`, 'error')
-      throw error
+      setKaliStatus('Unable to check Kali status')
+      console.error('Kali check error:', error)
     }
   }
 
-  // Execute nmap command with Python script
-  const executeNmapCommand = async (ip) => {
-    addLog(`Executing nmap scan on IP: ${ip}`, 'info')
+  const installKali = async () => {
+    if (!window.cyberGuard) return
     
-    // Ensure parser file exists in /tmp and is executable
-    const parserContent = `#!/usr/bin/env python3
-
-"""
-parse_nmap_by_state.py - compact nmap XML -> JSON grouped by open/closed/filtered
-
-Usage:
-  sudo nmap -Pn -p1-1024 -sS --script=http-title,ssl-cert -oX - TARGET \
-    | ./parse_nmap_by_state.py         # parse explicit ports only
-  sudo nmap -Pn -p- -sS --script=http-title,ssl-cert -oX - TARGET \
-    | ./parse_nmap_by_state.py --expand-all   # expand to 1..65535 (large)
-"""
-from __future__ import annotations
-import sys, json, xml.etree.ElementTree as ET
-from typing import Dict, Any, Optional
-
-def scripthash(port_elem):
-    out={}
-    for s in port_elem.findall('script'):
-        out[s.get('id')]=s.get('output')
-    return out or None
-
-def ssl_from_scripts(scripts: Optional[Dict[str,str]]):
-    if not scripts or 'ssl-cert' not in scripts: return None
-    ssl={}
-    for line in scripts['ssl-cert'].splitlines():
-        line=line.strip()
-        if line.lower().startswith('subject:'): ssl['subject']=line.split(':',1)[1].strip()
-        if line.lower().startswith('not valid after:'): ssl['valid_until']=line.split(':',1)[1].strip()
-        if line.lower().startswith('not valid before:'): ssl['valid_from']=line.split(':',1)[1].strip()
-    return ssl or None
-
-def parse(data:str, expand_all=False):
-    if not data.strip(): sys.exit("No XML input from nmap")
-    root=ET.fromstring(data)
-    hosts=[]
-    for host in root.findall('host'):
-        addr=host.find('address'); ip=addr.get('addr') if addr is not None else None
-        hn=host.find('hostnames/hostname'); hostname=hn.get('name') if hn is not None else None
-        status_el=host.find('status'); status=status_el.get('state') if status_el is not None else None
-        ports_el=host.find('ports')
-        ports_map:Dict[int,Dict[str,Any]]={}
-        extraports_state=None
-        if ports_el is not None:
-            for p in ports_el.findall('port'):
-                try: portid=int(p.get('portid'))
-                except: continue
-                proto=p.get('protocol')
-                st_el=p.find('state'); st=st_el.get('state') if st_el is not None else None
-                reason=st_el.get('reason') if st_el is not None else None
-                svc_el=p.find('service'); svc=None
-                if svc_el is not None:
-                    svc={"name":svc_el.get('name'), "product":svc_el.get('product'), "version":svc_el.get('version')}
-                scripts=scripthash(p)
-                ports_map[portid]={
-                    "port":portid, "protocol":proto, "state":st, "reason":reason,
-                    "service":svc, "http_title": (scripts.get('http-title') if scripts else None),
-                    "ssl_cert": ssl_from_scripts(scripts), "scripts": scripts
-                }
-            ex=ports_el.find('extraports')
-            if ex is not None:
-                extraports_state=ex.get('state')
-        if expand_all:
-            default = extraports_state or "unknown"
-            for pn in range(1,65536):
-                if pn not in ports_map:
-                    ports_map[pn]={
-                        "port":pn,"protocol":"tcp","state":default,"reason":None,
-                        "service":None,"http_title":None,"ssl_cert":None,"scripts":None
-                    }
-        groups={"open":[], "closed":[], "filtered":[]}
-        for k in sorted(ports_map.keys()):
-            p=ports_map[k]
-            st=(p.get('state') or "").lower()
-            if st=="open": groups["open"].append(p)
-            elif st in ("filtered","open|filtered","closed|filtered"): groups["filtered"].append(p)
-            elif st=="closed": groups["closed"].append(p)
-            else:
-                if extraports_state:
-                    es=extraports_state.lower()
-                    if es=="closed": groups["closed"].append(p)
-                    elif es=="filtered": groups["filtered"].append(p)
-                    else: groups["closed"].append(p)
-                else:
-                    groups["closed"].append(p)
-        hosts.append({"ip":ip,"hostname":hostname,"status":status,"ports_by_state":groups})
-    return {"nmap_scan":{"hosts":hosts}}
-
-def main():
-    argv=sys.argv[1:]; expand='--expand-all' in argv
-    data=sys.stdin.read()
-    out=parse(data, expand_all=expand)
-    json.dump(out, sys.stdout, indent=2)
-
-if __name__=='__main__':
-    main()
-`;
-
-    // Write the parser file using base64 encoding to avoid escaping issues
-    const parserBase64 = btoa(unescape(encodeURIComponent(parserContent)))
-    
-    if (!window.cyberGuard || !window.cyberGuard.runAsRoot) {
-      throw new Error('Electron API not available')
-    }
-
     try {
-      // Step 1: Create the parser file (separate command to avoid command line length issues)
-      addLog('Creating parser file at /tmp/parse_nmap.py', 'info')
-      const createParserCmd = `echo '${parserBase64}' | base64 -d > /tmp/parse_nmap.py && chmod +x /tmp/parse_nmap.py`
-      await window.cyberGuard.runAsRoot({ 
-        command: 'bash -lc ' + JSON.stringify(createParserCmd), 
-        requireConfirm: false 
-      })
-      addLog('Parser file created and made executable', 'success')
+      setKaliStatus('Installing Kali Linux...')
       
-      // Step 2: Run the nmap scan (separate command)
-      addLog(`Running: sudo nmap -Pn -p1-1024 -sS -sV --script=http-title,ssl-cert -T4 ${ip} -oX - | python3 /tmp/parse_nmap.py`, 'info')
-      const nmapCmd = `sudo nmap -Pn -p1-1024 -sS -sV --script=http-title,ssl-cert -T4 ${ip} -oX - | python3 /tmp/parse_nmap.py`
-      const result = await window.cyberGuard.runAsRoot({ 
-        command: 'bash -lc ' + JSON.stringify(nmapCmd), 
-        requireConfirm: false 
+      window.cyberGuard.onKaliInstallProgress((message) => {
+        setScanProgress(prev => [...prev, { stage: 'installing', message }])
       })
       
-      const output = result.stdout || ''
-      const error = result.stderr || ''
-      
-      // Log output
-      if (output) {
-        addLog('Nmap scan completed', 'success')
-        // Try to parse JSON output
-        try {
-          const jsonOutput = JSON.parse(output)
-          // Normalize output: if ports_by_state provided, flatten to a single ports array for UI
-          try {
-            const cloned = JSON.parse(JSON.stringify(jsonOutput))
-            const host = cloned?.nmap_scan?.hosts?.[0]
-            if (host) {
-              let ports = []
-              if (host.ports_by_state) {
-                const groups = host.ports_by_state
-                ;['open','closed','filtered'].forEach(state => {
-                  const arr = Array.isArray(groups[state]) ? groups[state] : []
-                  arr.forEach(p => {
-                    if (!p.state) p.state = state
-                  })
-                  ports = ports.concat(arr)
-                })
-              } else {
-                ports = Array.isArray(host.ports) ? host.ports : []
-              }
-              const existingSet = new Set(ports.map(p => Number(p.port)))
-              // Determine default state from extraports if available
-              const extra = Array.isArray(host.extraports) && host.extraports.length > 0 ? host.extraports[0] : null
-              // Prefer nmap's aggregated state; otherwise assume closed for non-listed ports
-              const defaultState = extra?.state || 'closed'
-              // Expand up to full TCP range for user filtering
-              const maxPort = 65535
-              let added = 0
-              if (defaultState) {
-                for (let n = 1; n <= maxPort; n++) {
-                  if (!existingSet.has(n)) {
-                    ports.push({
-                      port: n,
-                      protocol: 'tcp',
-                      state: defaultState,
-                      reason: null,
-                      reason_ttl: null,
-                      service: null,
-                      http_title: null,
-                      ssl_cert: null,
-                      scripts: null
-                    })
-                    added++
-                  }
-                }
-                // Sort ports ascending
-                ports.sort((a, b) => (Number(a.port) || 0) - (Number(b.port) || 0))
-              }
-              cloned.nmap_scan.hosts[0].ports = ports
-              setScanResult(cloned)
-              // Recompute summary after expansion
-              try {
-                const openCount = ports.filter(p => p.state === 'open').length
-                const closedCount = ports.filter(p => p.state === 'closed').length
-                const filteredCount = ports.filter(p => p.state === 'filtered').length
-                addLog(`JSON results parsed successfully (expanded ${added} ports as ${defaultState}). Summary: open=${openCount}, closed=${closedCount}, filtered=${filteredCount}`, 'success')
-              } catch {
-                addLog(`JSON results parsed successfully (expanded ${added} ports as ${defaultState})`, 'success')
-              }
-            } else {
-              setScanResult(jsonOutput)
-              addLog('JSON results parsed successfully', 'success')
-            }
-          } catch (e) {
-            // Fallback to original result if expansion fails
-            setScanResult(jsonOutput)
-            addLog('JSON results parsed successfully', 'success')
-          }
-          
-          // Log summary
-          if (jsonOutput.nmap_scan && jsonOutput.nmap_scan.hosts && jsonOutput.nmap_scan.hosts.length > 0) {
-            const host = jsonOutput.nmap_scan.hosts[0]
-            const openPorts = host.ports?.filter(p => p.state === 'open').length || 0
-            const closedPorts = host.ports?.filter(p => p.state === 'closed').length || 0
-            const filteredPorts = host.ports?.filter(p => p.state === 'filtered').length || 0
-            addLog(`Found ${openPorts} open, ${closedPorts} closed, ${filteredPorts} filtered ports`, 'info')
-          }
-        } catch (parseError) {
-          addLog(`Error parsing JSON: ${parseError.message}`, 'error')
-          addLog(`Raw output (first 500 chars): ${output.substring(0, 500)}`, 'warning')
+      window.cyberGuard.onKaliInstallComplete((success) => {
+        if (success) {
+          setKaliStatus('Kali Linux installation completed')
+        } else {
+          setKaliStatus('Kali Linux installation failed')
         }
-      }
+      })
       
-      if (error) {
-        error.split('\n').forEach(line => {
-          if (line.trim()) {
-            addLog(line, 'warning')
-          }
-        })
-      }
-      
-      return output
+      await window.cyberGuard.installKali()
     } catch (error) {
-      addLog(`Error executing nmap command: ${error.message}`, 'error')
-      throw error
+      setKaliStatus('Installation error: ' + error.message)
     }
   }
 
   const handleStartScan = async () => {
-    if (!targetUrl.trim()) {
-      showError('Please enter a target URL')
+    if (!target.trim()) {
+      alert('Please enter a target IP or hostname')
       return
     }
 
-    // Reset state
-    setIsScanning(true)
-    setLogs([])
-    setScanResult(null)
-    setIpAddress(null)
-    setStartTime(Date.now())
-    setEndTime(null)
-    setElapsedTime(0)
+    if (!window.cyberGuard) {
+      alert('Scanning system not available')
+      return
+    }
 
-    const startDateTime = new Date()
-    addLog(`=== Port Scan Started ===`, 'info')
-    addLog(`Start Date & Time: ${startDateTime.toLocaleString()}`, 'info')
-    addLog(`Target URL: ${targetUrl}`, 'info')
+    setScanResults(null)
+    setScanStats({ openPorts: 0, closedPorts: 0, filteredPorts: 0, services: 0 })
 
     try {
-      // Step 1: Extract domain and execute host command
-      const domain = extractDomain(targetUrl)
-      addLog(`Extracted domain: ${domain}`, 'info')
-      
-      const ip = await executeHostCommand(domain)
-      
-      if (!ip) {
-        throw new Error('Failed to get IP address from host command')
-      }
-
-      // Step 2: Execute nmap command
-      await executeNmapCommand(ip)
-
-      // Scan completed
-      const endDateTime = new Date()
-      setEndTime(endDateTime.getTime())
-      const finalElapsed = endDateTime.getTime() - startDateTime.getTime()
-      setElapsedTime(finalElapsed)
-      
-      addLog(`=== Port Scan Completed ===`, 'success')
-      addLog(`End Date & Time: ${endDateTime.toLocaleString()}`, 'info')
-      addLog(`Total Elapsed Time: ${formatElapsedTime(finalElapsed)}`, 'info')
-      
-      showSuccess('Port scan completed successfully!')
-      
-      // Send notification
-      if (window.cyberGuard?.showNotification) {
-        try {
-          window.cyberGuard.showNotification({
-            title: 'Port Scan Completed',
-            body: `Port scan for ${targetUrl || ipAddress || 'target'} has been completed successfully.`,
-            viewId: 'port-scan'
-          }).catch(err => {
-            console.log('Notification not available:', err?.message || 'Unknown error')
-          })
-        } catch (err) {
-          console.log('Notification not available:', err?.message || 'Unknown error')
-        }
-      }
+      await startPortScan(target)
     } catch (error) {
-      const endDateTime = new Date()
-      setEndTime(endDateTime.getTime())
-      const finalElapsed = endDateTime.getTime() - startDateTime.getTime()
-      setElapsedTime(finalElapsed)
-      
-      addLog(`=== Port Scan Failed ===`, 'error')
-      addLog(`Error: ${error.message}`, 'error')
-      addLog(`End Date & Time: ${endDateTime.toLocaleString()}`, 'info')
-      addLog(`Total Elapsed Time: ${formatElapsedTime(finalElapsed)}`, 'info')
-      
-      showError(`Port scan failed: ${error.message}`)
-    } finally {
-      setIsScanning(false)
+      console.error('Scan start error:', error)
     }
+  }
+
+  // Listen for scan completion
+  useEffect(() => {
+    if (window.cyberGuard) {
+      window.cyberGuard.onPortScanDone((result) => {
+        try {
+          if (result && result.success) {
+            setScanResults(result.result)
+          } else {
+            setScanResults({ error: 'Port scan failed' })
+          }
+        } catch (error) {
+          console.error('Error handling port scan completion:', error)
+          setScanResults({ error: 'Error processing scan results' })
+        }
+      })
+    }
+  }, [])
+
+  // Parse scan statistics from progress messages
+  useEffect(() => {
+    scanProgress.forEach(update => {
+      if (update.message.includes('open port')) {
+        setScanStats(prev => ({ ...prev, openPorts: prev.openPorts + 1 }))
+      }
+      if (update.message.includes('closed port')) {
+        setScanStats(prev => ({ ...prev, closedPorts: prev.closedPorts + 1 }))
+      }
+      if (update.message.includes('filtered port')) {
+        setScanStats(prev => ({ ...prev, filteredPorts: prev.filteredPorts + 1 }))
+      }
+      if (update.message.includes('service detected')) {
+        setScanStats(prev => ({ ...prev, services: prev.services + 1 }))
+      }
+    })
+  }, [scanProgress])
+
+  const downloadResults = () => {
+    if (!scanResults) return
+    
+    // Generate PDF content
+    const pdfContent = generatePDFReport(scanResults, target)
+    const pdfBlob = new Blob([pdfContent], { type: 'application/pdf' })
+    const url = URL.createObjectURL(pdfBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'port-scan-' + target + '-' + Date.now() + '.pdf'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const generatePDFReport = (data, targetHost) => {
+    let pdfContent = ''
+    
+    // PDF Header
+    pdfContent += '%PDF-1.4\n'
+    pdfContent += '1 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Type /Catalog\n'
+    pdfContent += '/Pages 2 0 R\n'
+    pdfContent += '>>\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Pages object
+    pdfContent += '2 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Type /Pages\n'
+    pdfContent += '/Kids [3 0 R]\n'
+    pdfContent += '/Count 1\n'
+    pdfContent += '>>\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Page object
+    pdfContent += '3 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Type /Page\n'
+    pdfContent += '/Parent 2 0 R\n'
+    pdfContent += '/MediaBox [0 0 612 792]\n'
+    pdfContent += '/Contents 4 0 R\n'
+    pdfContent += '/Resources <<\n'
+    pdfContent += '/Font <<\n'
+    pdfContent += '/F1 <<\n'
+    pdfContent += '/Type /Font\n'
+    pdfContent += '/Subtype /Type1\n'
+    pdfContent += '/BaseFont /Helvetica-Bold\n'
+    pdfContent += '>>\n'
+    pdfContent += '/F2 <<\n'
+    pdfContent += '/Type /Font\n'
+    pdfContent += '/Subtype /Type1\n'
+    pdfContent += '/BaseFont /Helvetica\n'
+    pdfContent += '>>\n'
+    pdfContent += '>>\n'
+    pdfContent += '>>\n'
+    pdfContent += '>>\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Content stream
+    const content = generatePDFContent(data, targetHost)
+    pdfContent += '4 0 obj\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Length ' + content.length + '\n'
+    pdfContent += '>>\n'
+    pdfContent += 'stream\n'
+    pdfContent += content
+    pdfContent += 'endstream\n'
+    pdfContent += 'endobj\n\n'
+    
+    // Xref table
+    pdfContent += 'xref\n'
+    pdfContent += '0 5\n'
+    pdfContent += '0000000000 65535 f \n'
+    pdfContent += '0000000009 00000 n \n'
+    pdfContent += '0000000058 00000 n \n'
+    pdfContent += '0000000115 00000 n \n'
+    pdfContent += '0000000204 00000 n \n'
+    pdfContent += 'trailer\n'
+    pdfContent += '<<\n'
+    pdfContent += '/Size 5\n'
+    pdfContent += '/Root 1 0 R\n'
+    pdfContent += '>>\n'
+    pdfContent += 'startxref\n'
+    pdfContent += '500\n'
+    pdfContent += '%%EOF'
+    
+    return pdfContent
+  }
+
+  const generatePDFContent = (data, targetHost) => {
+    let content = 'BT\n'
+    
+    // Title
+    content += '/F1 18 Tf\n'
+    content += '72 720 Td\n'
+    content += '(PORT SCAN REPORT) Tj\n'
+    content += '0 -30 Td\n'
+    content += '/F2 12 Tf\n'
+    content += '(Target: ' + targetHost + ') Tj\n'
+    content += '0 -20 Td\n'
+    content += '(Generated: ' + new Date().toLocaleString() + ') Tj\n'
+    content += '0 -40 Td\n'
+    
+    // Summary
+    if (data.findings && Array.isArray(data.findings)) {
+      const openPorts = data.findings.filter(port => port.state === 'open').length
+      const closedPorts = data.findings.filter(port => port.state === 'closed').length
+      const filteredPorts = data.findings.filter(port => port.state === 'filtered').length
+      
+      content += '/F1 14 Tf\n'
+      content += '(SCAN SUMMARY) Tj\n'
+      content += '0 -20 Td\n'
+      content += '/F2 12 Tf\n'
+      content += '(Total Ports Scanned: ' + data.findings.length + ') Tj\n'
+      content += '0 -15 Td\n'
+      content += '(Open Ports: ' + openPorts + ') Tj\n'
+      content += '0 -15 Td\n'
+      content += '(Closed Ports: ' + closedPorts + ') Tj\n'
+      content += '0 -15 Td\n'
+      content += '(Filtered Ports: ' + filteredPorts + ') Tj\n'
+      content += '0 -30 Td\n'
+      
+      // Port details
+      content += '/F1 14 Tf\n'
+      content += '(PORT DETAILS) Tj\n'
+      content += '0 -20 Td\n'
+      content += '/F2 10 Tf\n'
+      
+      data.findings.forEach((port, index) => {
+        if (index < 20) { // Limit to first 20 ports to fit on page
+          const portInfo = 'Port ' + port.port + ' - ' + port.protocol.toUpperCase() + ' - ' + port.state.toUpperCase() + ' - ' + (port.service || 'Unknown')
+          content += '(' + portInfo + ') Tj\n'
+          content += '0 -12 Td\n'
+        }
+      })
+      
+      if (data.findings.length > 20) {
+        content += '(... and ' + (data.findings.length - 20) + ' more ports) Tj\n'
+      }
+    }
+    
+    content += 'ET\n'
+    return content
   }
 
   // Get filtered ports
@@ -886,490 +377,432 @@ if __name__=='__main__':
           </div>
         </div>
         
-        {/* Input and Start Button */}
-        <div className="flex items-center space-x-4">
-          <input
-            type="text"
-            value={targetUrl}
-            onChange={(e) => setTargetUrl(e.target.value)}
-            placeholder="Enter target URL (e.g., https://webnox.in)"
-            disabled={isScanning}
-            className="flex-1 px-5 py-3 border-2 border-gray-300/50 dark:border-gray-600/50 rounded-xl bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 dark:focus:border-orange-400 transition-all shadow-sm hover:shadow-md disabled:opacity-50"
-          />
-          <button
-            onClick={handleStartScan}
-            disabled={isScanning || !targetUrl.trim()}
-            className="px-8 py-3 bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 hover:from-orange-600 hover:via-amber-600 hover:to-orange-700 text-white rounded-xl font-bold transition-all duration-200 shadow-xl hover:shadow-2xl hover:shadow-orange-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-xl flex items-center space-x-2 transform hover:scale-105 disabled:hover:scale-100"
-          >
-            {isScanning ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                <span>Scanning...</span>
-              </>
-            ) : (
-              <span>Start Scan</span>
-            )}
-          </button>
-        </div>
-
-        {/* Timing Information */}
-        {startTime && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
-              <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Start Date & Time</div>
-              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {new Date(startTime).toLocaleString()}
-              </div>
-            </div>
-            {isScanning && (
-              <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
-                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Elapsed Time</div>
-                <div className="text-sm font-semibold text-orange-600 dark:text-orange-400">
-                  {formatElapsedTime(elapsedTime)}
-                </div>
-              </div>
-            )}
-            {endTime && (
-              <>
-                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">End Date & Time</div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {new Date(endTime).toLocaleString()}
-                  </div>
-                </div>
-                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Elapsed Time</div>
-                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {formatElapsedTime(elapsedTime)}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Help Modal */}
-      {showHelp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-4xl bg-gradient-to-br from-white/95 via-white/90 to-gray-50/95 dark:from-gray-900/95 dark:via-gray-800/90 dark:to-gray-900/95 rounded-2xl shadow-2xl border-2 border-white/30 dark:border-gray-700/50 p-8 max-h-[85vh] overflow-y-auto backdrop-blur-xl animate-slideUp">
-            <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-gray-200 dark:border-gray-700">
-              <h3 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">About Port Scanning</h3>
-              <button 
-                onClick={() => setShowHelp(false)} 
-                className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
-              >
-                ×
-              </button>
-            </div>
-            <div className="prose prose-lg dark:prose-invert max-w-none space-y-6">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-5 rounded-xl border border-blue-200 dark:border-blue-800">
-                <p className="text-gray-800 dark:text-gray-200 leading-relaxed mb-0">
-                  Port scanning identifies which network services are reachable on a machine. Each TCP port maps to a protocol or application 
-                  <span className="font-mono bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded mx-1">(for example: 22/ssh, 80/http, 443/https)</span>. 
-                  Understanding exposure helps you reduce risk and validate firewall policies.
-                </p>
-              </div>
-              
-              <div>
-                <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                  Why it matters
-                </h4>
-                <ul className="space-y-2 text-gray-700 dark:text-gray-300">
-                  <li className="flex items-start gap-3">
-                    <span className="font-bold text-orange-600 dark:text-orange-400">Attack surface:</span>
-                    <span>Open ports are entry points. Keep only what you need.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="font-bold text-blue-600 dark:text-blue-400">Validation:</span>
-                    <span>Confirm firewall rules and service hardening are effective.</span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <span className="font-bold text-purple-600 dark:text-purple-400">Troubleshooting:</span>
-                    <span>Distinguish service issues from network filtering.</span>
-                  </li>
-                </ul>
-              </div>
-              
-              <div>
-                <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                  States explained
-                </h4>
-                <div className="space-y-3">
-                  <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border-l-4 border-green-500">
-                    <p className="mb-0"><strong className="text-green-700 dark:text-green-300">Open:</strong> A service is listening. Review product/version and apply patches, strong TLS, and authentication.</p>
-                  </div>
-                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border-l-4 border-red-500">
-                    <p className="mb-0"><strong className="text-red-700 dark:text-red-300">Closed:</strong> No service is listening, but the host answered. A good default for unused ports.</p>
-                  </div>
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border-l-4 border-yellow-500">
-                    <p className="mb-0"><strong className="text-yellow-700 dark:text-yellow-300">Filtered:</strong> A firewall dropped the probe. The service may be hidden or blocked by policy.</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div>
-                <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                  How this tool works
-                </h4>
-                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                  We run <code className="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded font-mono">nmap</code>, parse the XML results, and render a paginated table. 
-                  When nmap summarizes unlisted ports via <code className="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded font-mono">extraports</code>, we conservatively expand them 
-                  for filtering and pagination without freezing the UI.
-                </p>
-              </div>
-              
-              <div>
-                <h4 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                  Recommendations
-                </h4>
-                <ul className="space-y-2 text-gray-700 dark:text-gray-300 list-disc list-inside marker:text-orange-500">
-                  <li>Restrict management ports <span className="font-mono">(SSH/RDP)</span> to trusted IPs or VPN.</li>
-                  <li>Patch and harden exposed services; disable weak ciphers and protocols.</li>
-                  <li>Adopt <span className="font-semibold">"deny by default"</span> at the perimeter; allow only necessary services.</li>
-                  <li>Monitor for unexpected changes in exposed ports.</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* Logs Section */}
-      {logs.length > 0 && (
-        <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-6 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scan Logs</h3>
-            <div className="flex space-x-2">
-              <button
-                onClick={copyLogs}
-                className="w-8 h-8 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors shadow-sm hover:shadow-md"
-                title="Copy Logs"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-3">
+              Target IP Address or Hostname
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9v-9m0-9v9" />
                 </svg>
-              </button>
-              <button
-                onClick={clearLogs}
-                className="w-8 h-8 flex items-center justify-center bg-gray-500 hover:bg-gray-600 text-white rounded-lg transition-colors shadow-sm hover:shadow-md"
-                title="Clear Logs"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+              </div>
+              <input
+                type="text"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="e.g., 192.168.1.1, example.com, or scanme.nmap.org"
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors"
+                disabled={scanStatus.isScanning}
+              />
             </div>
           </div>
           
-          <div 
-            ref={logContainerRef}
-            className="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm h-64 overflow-y-auto"
-          >
-            {logs.map(log => (
-              <div key={log.id} className="mb-1">
-                <span className="text-gray-500">[{log.timestamp}]</span>
-                <span className={`ml-2 ${
-                  log.type === 'error' ? 'text-red-400' :
-                  log.type === 'success' ? 'text-green-400' :
-                  log.type === 'warning' ? 'text-yellow-400' :
-                  'text-blue-400'
-                }`}>
-                  [{log.type.toUpperCase()}]
-                </span>
-                <span className="ml-2">{log.message}</span>
+          {/* Scan Features */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center space-x-3 mb-2">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h4 className="font-medium text-green-900">Common Ports</h4>
+              </div>
+              <p className="text-sm text-green-700">Scans 1000 most common ports for efficiency</p>
+            </div>
+            <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-center space-x-3 mb-2">
+                <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <h4 className="font-medium text-orange-900">Service Detection</h4>
+              </div>
+              <p className="text-sm text-orange-700">Identifies running services and versions</p>
+            </div>
+            <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+              <div className="flex items-center space-x-3 mb-2">
+                <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                </svg>
+                <h4 className="font-medium text-purple-900">OS Detection</h4>
+              </div>
+              <p className="text-sm text-purple-700">Advanced OS fingerprinting capabilities</p>
+            </div>
+          </div>
+          
+          <div className="flex space-x-4">
+            <button
+              onClick={handleStartScan}
+              disabled={scanStatus.isScanning || !target.trim()}
+              className="px-8 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium flex items-center space-x-2"
+            >
+              {scanStatus.isScanning ? (
+                <>
+                  <svg className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>Scanning...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h8m-5-8V6a2 2 0 012-2h2a2 2 0 012 2v2M7 7h10a2 2 0 012 2v8a2 2 0 01-2 2H7a2 2 0 01-2-2V9a2 2 0 012-2z" />
+                  </svg>
+                  <span>Start Port Scan</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Scan Statistics */}
+      {(scanStatus.isScanning || scanResults) && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span>Scan Statistics</span>
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
+              <div className="text-2xl font-bold text-green-600">{scanStats.openPorts}</div>
+              <div className="text-sm text-green-700">Open Ports</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-green-600 mt-1 animate-pulse">Live count</div>
+              )}
+            </div>
+            <div className="text-center p-4 bg-red-50 rounded-lg border border-red-200">
+              <div className="text-2xl font-bold text-red-600">{scanStats.closedPorts}</div>
+              <div className="text-sm text-red-700">Closed Ports</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-red-600 mt-1 animate-pulse">Live count</div>
+              )}
+            </div>
+            <div className="text-center p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+              <div className="text-2xl font-bold text-yellow-600">{scanStats.filteredPorts}</div>
+              <div className="text-sm text-yellow-700">Filtered</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-yellow-600 mt-1 animate-pulse">Live count</div>
+              )}
+            </div>
+            <div className="text-center p-4 bg-orange-50 rounded-lg border border-orange-200">
+              <div className="text-2xl font-bold text-orange-600">{scanStats.services}</div>
+              <div className="text-sm text-orange-700">Services</div>
+              {scanStatus.isScanning && (
+                <div className="text-xs text-orange-600 mt-1 animate-pulse">Live count</div>
+              )}
+            </div>
+          </div>
+          
+          {scanStatus.isScanning && (
+            <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <svg className="w-4 h-4 text-orange-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span className="text-sm text-orange-800 font-medium">Scan in progress - Statistics updating in real-time</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Scan Progress */}
+      {scanProgress.length > 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Scan Progress</span>
+          </h3>
+          <div className="bg-gray-900 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+            {scanProgress.map((entry, index) => (
+              <div key={index} className={`mb-1 flex items-start space-x-2 ${
+                entry.stage === 'error' ? 'text-red-400' :
+                entry.stage === 'warning' ? 'text-yellow-400' :
+                entry.stage === 'installing' ? 'text-orange-400' :
+                'text-green-400'
+              }`}>
+                <span className="text-gray-500 dark:text-gray-400 text-xs mt-0.5">[{new Date().toLocaleTimeString()}]</span>
+                <span className="font-medium">{entry.stage.toUpperCase()}:</span>
+                <span>{entry.message}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Results Section */}
-      {scanResult && (
-        <div className="rounded-2xl shadow-2xl border border-gray-200/80 dark:border-white/20 p-6 bg-gradient-to-br from-gray-50/90 via-white/85 to-gray-50/90 dark:from-slate-800/60 dark:via-slate-800/50 dark:to-slate-900/40 backdrop-blur-xl">
+      {/* Scan Results */}
+      {scanResults && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scan Results</h3>
-            <div className="flex space-x-2">
-              <button
-                onClick={fetchAISuggestions}
-                disabled={isLoadingAI}
-                className={`w-10 h-10 flex items-center justify-center rounded-lg font-medium transition-all duration-200 ${
-                  isLoadingAI
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white shadow-lg hover:shadow-xl'
-                }`}
-                title="Get AI Suggestions"
-              >
-                {isLoadingAI ? (
-                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                )}
-              </button>
-              <button
-                onClick={generatePDFReport}
-                disabled={isExporting}
-                className={`w-10 h-10 flex items-center justify-center rounded-lg font-medium transition-all duration-200 ${
-                  isExporting
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl'
-                }`}
-                title="Export scan results to PDF"
-              >
-                {isExporting ? (
-                  <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                )}
-              </button>
-            </div>
-            
-            {/* Filter Buttons */}
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setPortFilter('all')}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  portFilter === 'all'
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                All Ports
-              </button>
-              <button
-                onClick={() => setPortFilter('open')}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  portFilter === 'open'
-                    ? 'bg-green-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                Open
-              </button>
-              <button
-                onClick={() => setPortFilter('closed')}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  portFilter === 'closed'
-                    ? 'bg-red-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                Closed
-              </button>
-              <button
-                onClick={() => setPortFilter('filtered')}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  portFilter === 'filtered'
-                    ? 'bg-yellow-500 text-white'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                Filtered
-              </button>
-            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Port Scan Results</span>
+            </h3>
+            <button
+              onClick={downloadResults}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Download PDF</span>
+            </button>
           </div>
-
-          {/* Extraports Summary (if available) */}
-          {scanResult?.nmap_scan?.hosts?.[0]?.extraports && scanResult.nmap_scan.hosts[0].extraports.length > 0 && (
-            <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">Extraports Summary</h4>
-              <div className="space-y-1">
-                {scanResult.nmap_scan.hosts[0].extraports.map((extra, idx) => (
-                  <div key={idx} className="text-sm text-gray-700 dark:text-gray-300">
-                    <span className="font-medium">{extra.count || 0} ports</span> in <span className="font-medium">{extra.state || 'unknown'}</span> state
-                    {extra.reasons && extra.reasons.length > 0 && (
-                      <span className="text-gray-500 dark:text-gray-400"> ({extra.reasons.join(', ')})</span>
-                    )}
-                  </div>
-                ))}
+          
+          {scanResults.error ? (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-red-800 font-medium">{scanResults.error}</p>
               </div>
             </div>
-          )}
-
-          {/* Results Table */}
-          <div className="overflow-x-auto rounded-xl shadow-inner bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gradient-to-r from-gray-100/80 to-gray-50/80 dark:from-gray-800/80 dark:to-gray-900/80 backdrop-blur-sm">
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Port</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Protocol</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">State</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Reason</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Service</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Product</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Version</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">HTTP Title</th>
-                  <th className="px-4 py-3 text-left border-b border-gray-300/50 dark:border-gray-700/50 text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">SSL Cert</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPorts.length === 0 ? (
-                  <tr>
-                    <td colSpan="9" className="px-4 py-12 text-center text-gray-500 dark:text-gray-400 text-lg">
-                      No ports found with selected filter
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedPorts.map((port, index) => (
-                    <tr key={index} className="hover:bg-gradient-to-r hover:from-blue-50/50 hover:to-purple-50/50 dark:hover:from-blue-900/20 dark:hover:to-purple-900/20 transition-all duration-200 border-b border-gray-200/30 dark:border-gray-700/30">
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100 font-mono font-semibold">
-                        {port.port}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        <span className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded font-mono text-xs">{port.protocol || '-'}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold shadow-sm transition-all ${
-                          port.state === 'open' ? 'bg-gradient-to-r from-green-400 to-emerald-500 text-white shadow-green-500/50' :
-                          port.state === 'closed' ? 'bg-gradient-to-r from-red-400 to-rose-500 text-white shadow-red-500/50' :
-                          port.state === 'filtered' ? 'bg-gradient-to-r from-yellow-400 to-amber-500 text-white shadow-yellow-500/50' :
-                          'bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                        }`}>
-                          {port.state || '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        <div className="flex items-center gap-1">
-                          {port.reason || '-'}
-                          {port.reason_ttl && (
-                            <span className="text-xs text-gray-500 dark:text-gray-400 px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded">TTL: {port.reason_ttl}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded font-medium">{port.service?.name || '-'}</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        <div>
-                          <span className="font-medium">{port.service?.product || '-'}</span>
-                          {port.service?.extrainfo && (
-                            <span className="text-xs text-gray-600 dark:text-gray-400 block mt-1">{port.service.extrainfo}</span>
-                          )}
-                          {port.service?.ostype && (
-                            <span className="text-xs text-gray-600 dark:text-gray-400 block mt-1">OS: {port.service.ostype}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        {port.service?.version || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        <div className="max-w-xs truncate font-medium" title={port.http_title || ''}>
-                          {port.http_title || '-'}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                        {port.ssl_cert ? (
-                          <details className="cursor-pointer">
-                            <summary className="text-blue-600 dark:text-blue-400 hover:underline">Yes</summary>
-                            <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 p-2 bg-gray-100 dark:bg-gray-800 rounded">
-                              <div><strong>Subject:</strong> {port.ssl_cert.subject || 'N/A'}</div>
-                              <div><strong>Valid From:</strong> {port.ssl_cert.valid_from || 'N/A'}</div>
-                              <div><strong>Valid Until:</strong> {port.ssl_cert.valid_until || 'N/A'}</div>
-                            </div>
-                          </details>
-                        ) : '-'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-        {/* AI Suggestions Section */}
-        <div ref={aiSuggestionRef} className="mt-6">
-          {(aiSuggestions || aiError || isLoadingAI) && (
-            <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          ) : (
+            <div className="space-y-6">
+              {/* Success Message */}
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
+                  <p className="text-green-800 font-medium">Port scan completed successfully</p>
                 </div>
-                <h5 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Suggestions</h5>
+                <p className="text-green-700 text-sm">
+                  Analysis completed for target: <span className="font-mono font-medium">{target}</span>
+                </p>
               </div>
               
-              {isLoadingAI ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="ml-3 text-gray-600 dark:text-gray-400">Generating AI suggestions...</span>
-                </div>
-              ) : aiError ? (
-                <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                  <p className="text-sm text-red-600 dark:text-red-400">{aiError}</p>
-                </div>
-              ) : aiSuggestions ? (
-                <div className="space-y-4">
-                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                      {aiSuggestions}
-                    </p>
+              {/* Results Summary */}
+              {scanResults.findings && Array.isArray(scanResults.findings) && (
+                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                  <h4 className="font-medium text-orange-900 mb-4 flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <span>Scan Summary</span>
+                  </h4>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-orange-200">
+                      <div className="text-2xl font-bold text-orange-600">
+                        {scanResults.findings.filter(port => port.state === 'open').length}
+                      </div>
+                      <div className="text-sm text-orange-700">Open Ports</div>
+                    </div>
+                    <div className="text-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-red-200">
+                      <div className="text-2xl font-bold text-red-600">
+                        {scanResults.findings.filter(port => port.state === 'closed').length}
+                      </div>
+                      <div className="text-sm text-red-700">Closed Ports</div>
+                    </div>
+                    <div className="text-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-yellow-200">
+                      <div className="text-2xl font-bold text-yellow-600">
+                        {scanResults.findings.filter(port => port.state === 'filtered').length}
+                      </div>
+                      <div className="text-sm text-yellow-700">Filtered Ports</div>
+                    </div>
+                    <div className="text-center p-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700">
+                      <div className="text-2xl font-bold text-gray-600 dark:text-gray-400">
+                        {scanResults.findings.length}
+                      </div>
+                      <div className="text-sm text-gray-700">Total Ports</div>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Click the AI Suggestions button to get AI-powered recommendations based on your scan results.
-                  </p>
+                  
+                  {scanResults.summary && (
+                    <div className="mt-4 p-3 bg-white dark:bg-slate-800 rounded-lg border border-orange-200">
+                      <p className="text-orange-800 text-sm">{scanResults.summary}</p>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Detailed Results Table */}
+              {scanResults.findings && Array.isArray(scanResults.findings) && scanResults.findings.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+                  <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                          <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Port Scan Results</span>
+                        </h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                          Showing {getFilteredPorts().length} of {scanResults.findings.length} ports
+                        </p>
+                      </div>
+                      
+                      {/* Filter Buttons */}
+                      <div className="flex space-x-2">
+                        <button
+                          onClick={() => setPortFilter('all')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'all' 
+                              ? 'bg-orange-100 text-orange-800 border border-orange-200' 
+                              : 'bg-gray-100 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                          }`}
+                        >
+                          All ({scanResults.findings.length})
+                        </button>
+                        <button
+                          onClick={() => setPortFilter('open')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'open' 
+                              ? 'bg-green-100 text-green-800 border border-green-200' 
+                              : 'bg-gray-100 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                          }`}
+                        >
+                          Open ({scanResults.findings.filter(p => p.state === 'open').length})
+                        </button>
+                        <button
+                          onClick={() => setPortFilter('closed')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'closed' 
+                              ? 'bg-red-100 text-red-800 border border-red-200' 
+                              : 'bg-gray-100 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                          }`}
+                        >
+                          Closed ({scanResults.findings.filter(p => p.state === 'closed').length})
+                        </button>
+                        <button
+                          onClick={() => setPortFilter('filtered')}
+                          className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                            portFilter === 'filtered' 
+                              ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' 
+                              : 'bg-gray-100 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
+                          }`}
+                        >
+                          Filtered ({scanResults.findings.filter(p => p.state === 'filtered').length})
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200 dark:border-slate-700">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Port</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Protocol</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Service</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white dark:bg-slate-800 divide-y divide-gray-200">
+                        {getFilteredPorts().map((port, index) => (
+                          <tr key={index} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center">
+                                <div className="flex-shrink-0 h-8 w-8 bg-orange-100 rounded-full flex items-center justify-center">
+                                  <span className="text-sm font-medium text-orange-800">{port.port}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-mono">
+                              {port.protocol ? port.protocol.toUpperCase() : 'TCP'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                port.state === 'open' ? 'bg-green-100 text-green-800' :
+                                port.state === 'closed' ? 'bg-red-100 text-red-800' :
+                                port.state === 'filtered' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {port.state ? port.state.toUpperCase() : 'UNKNOWN'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                              {port.service || 'Unknown'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {getFilteredPorts().length === 0 && portFilter !== 'all' && (
+                    <div className="bg-gray-50 px-6 py-8 text-center">
+                      <svg className="w-12 h-12 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">No {portFilter} ports found</p>
+                    </div>
+                  )}
+                  
+                  {getFilteredPorts().length > 10 && (
+                    <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 dark:border-slate-700">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
+                        Showing {getFilteredPorts().length} {portFilter === 'all' ? 'total' : portFilter} ports
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
         </div>
+      )}
 
-        {/* Bottom Pagination */}
-        <div className="mt-6 flex items-center justify-end gap-4 bg-gradient-to-r from-gray-50/50 to-transparent dark:from-gray-800/50 dark:to-transparent p-4 rounded-xl backdrop-blur-sm">
-          <div className="flex items-center gap-2 bg-white/70 dark:bg-gray-800/70 px-3 py-2 rounded-lg shadow-sm">
-            <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Rows:</span>
-            <select
-              className="px-3 py-1.5 rounded-lg border-2 border-gray-300/50 dark:border-gray-600/50 bg-white dark:bg-gray-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all cursor-pointer"
-              value={pageSize}
-              onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); setPageInput('1') }}
-            >
-              {[10,25,50,75,100].map(n => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2 bg-white/70 dark:bg-gray-800/70 px-4 py-2 rounded-lg shadow-sm">
-            <button
-              onClick={goPrev}
-              disabled={currentPage === 1}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 text-gray-700 dark:text-gray-300 font-semibold text-xs shadow-sm hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-200"
-            >
-              ← Prev
-            </button>
-            <div className="flex items-center gap-2 text-sm font-bold text-gray-700 dark:text-gray-300 px-2">
-              <input
-                value={pageInput}
-                onChange={(e) => setPageInput(e.target.value)}
-                onBlur={applyPageInput}
-                onKeyDown={(e) => { if (e.key === 'Enter') applyPageInput() }}
-                className="w-14 px-2 py-1.5 rounded-lg border-2 border-gray-300/50 dark:border-gray-600/50 bg-white dark:bg-gray-700 text-center font-bold focus:outline-none focus:ring-2 focus:ring-orange-500 transition-all"
-              />
-              <span className="text-gray-500 dark:text-gray-400">/</span>
-              <span>{totalPages}</span>
+      {/* Information Panel - Only show when no scan results */}
+      {!scanResults && (
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center space-x-2">
+          <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>About Port Scanning</span>
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">What is Port Scanning?</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Port scanning is a method used to identify open ports and services running on a target system. 
+              It helps security professionals understand what services are available and potentially vulnerable.
+            </p>
+            <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Common Ports</h4>
+            <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <div>• Port 22: SSH</div>
+              <div>• Port 80: HTTP</div>
+              <div>• Port 443: HTTPS</div>
+              <div>• Port 21: FTP</div>
+              <div>• Port 25: SMTP</div>
+              <div>• Port 53: DNS</div>
             </div>
-            <button
-              onClick={goNext}
-              disabled={currentPage === totalPages}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600 text-gray-700 dark:text-gray-300 font-semibold text-xs shadow-sm hover:shadow-md hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all duration-200"
-            >
-              Next →
-            </button>
+          </div>
+          <div>
+            <h4 className="font-medium text-gray-900 dark:text-gray-100 mb-2">Scan Types</h4>
+            <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>TCP Connect Scan - Most reliable</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                <span>SYN Scan - Fast and stealthy</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                <span>UDP Scan - For UDP services</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span>Service Detection - Version info</span>
+              </div>
+            </div>
           </div>
         </div>
-
-          {/* Raw JSON view removed per requirements */}
-        </div>
+      </div>
       )}
     </div>
   )
