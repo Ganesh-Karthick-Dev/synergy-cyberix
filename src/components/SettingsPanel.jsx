@@ -3,307 +3,64 @@ import { useToast } from '../context/ToastContext'
 import { getSecurePassword } from '../utils/securePasswordStorage'
 
 function SettingsPanel() {
-  const { showError, showSuccess, showLoading, dismissToast } = useToast()
-  const [statuses, setStatuses] = useState({
-    pip: { installed: false, checking: true },
-    tools: {},
-    tgpt: { installed: false, checking: true }
-  })
-  const [isChecking, setIsChecking] = useState(true)
-  const [repos, setRepos] = useState([])
-  const [reposChecking, setReposChecking] = useState(true)
-  const [showPasswordModal, setShowPasswordModal] = useState(false)
-  const [isInstalling, setIsInstalling] = useState(false)
-  const [installProgress, setInstallProgress] = useState({ current: 0, total: 0, message: '' })
-  const [installType, setInstallType] = useState('general') // 'general' or 'maldef'
-
-  const REQUIRED_TOOLS = ['jq','unzip','nmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','wapiti','ffuf','nuclei','dalfox','go','dnstwist','geoiplookup','wfuzz','tshark']
-  
-  // API Scanning tools subset (Wireshark-based)
-  const API_SCANNING_TOOLS = ['tshark']
-  
-  // Malware & Defacement Monitoring tools
-  const MALDEF_TOOLS = [
-    { name: 'clamav', package: 'clamav', category: 'malware' },
-    { name: 'clamav-daemon', package: 'clamav-daemon', category: 'malware' },
-    { name: 'freshclam', package: 'clamav-freshclam', category: 'malware' },
-    { name: 'yara', package: 'yara', category: 'malware' },
-    { name: 'curl', package: 'curl', category: 'helper' },
-    { name: 'wget', package: 'wget', category: 'helper' }
+  const securitySettings = [
+    {
+      category: 'Authentication',
+      settings: [
+        { name: 'Two-Factor Authentication', enabled: true, description: 'Require 2FA for all users' },
+        { name: 'Session Timeout', enabled: true, description: 'Auto logout after 30 minutes of inactivity' },
+        { name: 'Password Complexity', enabled: true, description: 'Enforce strong password requirements' },
+        { name: 'Login Monitoring', enabled: true, description: 'Monitor and alert on suspicious logins' }
+      ]
+    },
+    {
+      category: 'Network Security',
+      settings: [
+        { name: 'Firewall', enabled: true, description: 'Block unauthorized network traffic' },
+        { name: 'Intrusion Detection', enabled: true, description: 'Monitor for malicious network activity' },
+        { name: 'VPN Access', enabled: false, description: 'Allow secure remote connections' },
+        { name: 'Network Segmentation', enabled: true, description: 'Isolate critical network segments' }
+      ]
+    },
+    {
+      category: 'Data Protection',
+      settings: [
+        { name: 'Data Encryption', enabled: true, description: 'Encrypt sensitive data at rest and in transit' },
+        { name: 'Backup Encryption', enabled: true, description: 'Encrypt all backup files' },
+        { name: 'Data Loss Prevention', enabled: true, description: 'Prevent unauthorized data transfers' },
+        { name: 'File Integrity Monitoring', enabled: false, description: 'Monitor critical files for changes' }
+      ]
+    },
+    {
+      category: 'Compliance',
+      settings: [
+        { name: 'Audit Logging', enabled: true, description: 'Log all security-related events' },
+        { name: 'Compliance Reporting', enabled: true, description: 'Generate automated compliance reports' },
+        { name: 'Data Retention', enabled: true, description: 'Automatically manage data lifecycle' },
+        { name: 'Privacy Controls', enabled: true, description: 'Enforce data privacy regulations' }
+      ]
+    }
   ]
-  
-  const [maldefStatuses, setMaldefStatuses] = useState({})
-  const [isCheckingMaldef, setIsCheckingMaldef] = useState(true)
-  const [isInstallingMaldef, setIsInstallingMaldef] = useState(false)
-  const [maldefInstallProgress, setMaldefInstallProgress] = useState({ current: 0, total: 0, message: '' })
-  const [autoInstallAttempted, setAutoInstallAttempted] = useState(false)
 
-  useEffect(() => {
-    refresh()
-    refreshMaldefTools()
-  }, [])
-  
-  const refreshMaldefTools = async () => {
-    setIsCheckingMaldef(true)
-    try {
-      const result = await window.cyberGuard?.checkMaldefTools?.()
-      
-      if (result?.success) {
-        const toolStatus = {}
-        MALDEF_TOOLS.forEach(tool => {
-          const status = result.toolStatus?.[tool.name]
-          toolStatus[tool.name] = {
-            installed: status?.installed || false,
-            path: status?.path || null,
-            package: tool.package,
-            category: tool.category
-          }
-        })
-        setMaldefStatuses(toolStatus)
-        
-        // Auto-install disabled - user must manually click "Install All" button
-        // Removed automatic installation to prevent interference with scanning
-      }
-    } catch (e) {
-      console.error('Failed to check malware/defacement tools:', e)
-    } finally {
-      setIsCheckingMaldef(false)
+  const systemSettings = {
+    notifications: {
+      emailAlerts: true,
+      smsAlerts: false,
+      dashboardAlerts: true,
+      criticalOnly: false
+    },
+    monitoring: {
+      realTimeScanning: true,
+      scheduledScans: true,
+      behaviorAnalysis: true,
+      threatIntelligence: true
+    },
+    performance: {
+      autoUpdates: true,
+      lowResourceMode: false,
+      compressionEnabled: true,
+      cacheOptimization: true
     }
-  }
-  
-  const handleInstallMaldefTools = () => {
-    const missingCount = getMissingMaldefToolsCount()
-    if (missingCount === 0) {
-      showSuccess('All tools are already installed!')
-      return
-    }
-    setInstallType('maldef')
-    setShowPasswordModal(true)
-  }
-  
-  const handleInstallMaldefWithPassword = async (password) => {
-    if (!password) {
-      showError('Password is required')
-      return
-    }
-
-    setShowPasswordModal(false)
-    setIsInstallingMaldef(true)
-    setMaldefInstallProgress({ current: 0, total: MALDEF_TOOLS.length, message: 'Starting installation...' })
-
-    try {
-      // Store password for session
-      await window.cyberGuard?.storeRootPassword?.(password)
-
-      // Set up progress listener
-      window.cyberGuard?.onMaldefToolsProgress?.((progress) => {
-        if (progress.tool) {
-          const toolIndex = MALDEF_TOOLS.findIndex(t => t.name === progress.tool)
-          setMaldefInstallProgress({
-            current: toolIndex + 1,
-            total: MALDEF_TOOLS.length,
-            message: progress.message || `Installing ${progress.tool}...`
-          })
-        } else if (progress.stage === 'installing') {
-          setMaldefInstallProgress({
-            current: progress.current || 0,
-            total: progress.total || MALDEF_TOOLS.length,
-            message: progress.message || 'Installing tools...'
-          })
-        }
-      })
-
-      // Start installation
-      const result = await window.cyberGuard?.installMaldefTools?.(password)
-
-      if (result?.success) {
-        showSuccess(`Successfully installed ${result.installed?.length || 0} tools!`)
-      } else {
-        showError(`Installation failed: ${result?.error || 'Unknown error'}`)
-      }
-      
-      // Refresh tool status
-      await refreshMaldefTools()
-    } catch (error) {
-      console.error('Installation error:', error)
-      showError(`Installation failed: ${error?.message || 'Unknown error'}`)
-    } finally {
-      setIsInstallingMaldef(false)
-      setMaldefInstallProgress({ current: 0, total: 0, message: '' })
-    }
-  }
-  
-  const getMissingMaldefToolsCount = () => {
-    return MALDEF_TOOLS.filter(t => !maldefStatuses[t.name]?.installed).length
-  }
-
-  const refresh = async () => {
-    setIsChecking(true)
-    setReposChecking(true)
-    try {
-      const password = getSecurePassword()
-      const pipRes = await window.cyberGuard?.runWslCommand?.('command -v pip3 || command -v pip', password)
-      setStatuses(prev => ({
-          ...prev,
-        pip: { installed: !!(pipRes?.success && (pipRes.stdout || '').trim()), checking: false }
-      }))
-
-      // List cloned repos under /cybrix
-      const listRes = await window.cyberGuard?.runWslCommand?.('bash -lc "[ -d /cybrix ] && ls -1 /cybrix || echo \"\""', password)
-      const lines = (listRes?.stdout || '').split('\n').map(s => s.trim()).filter(Boolean)
-      setRepos(lines)
-      setReposChecking(false)
-
-      // Check tools using version flags: "--version" then "-v" if needed (no sudo, no PATH exports)
-      const toolEntries = await Promise.all(REQUIRED_TOOLS.map(async (t) => {
-        try {
-          const cmd1 = `bash -lc \"${t} --version\"`
-          console.log(`[ToolCheck] ${t}: running --version ->`, cmd1)
-          let res = await window.cyberGuard?.runWslCommand?.(cmd1, password)
-          console.log(`[ToolCheck] ${t}: --version result success=${res?.success} stdout=${(res?.stdout||'').trim()} stderr=${(res?.stderr||'').trim()}`)
-          let output = `${res?.stdout||''}\n${res?.stderr||''}`
-          let notFound = /command not found|not found/i.test(output)
-          let ok = (!!res?.success) || (!notFound && output.trim().length > 0)
-          let version = null
-          
-          if (ok && res?.stdout) {
-            // Extract version from output
-            const versionMatch = res.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
-            if (versionMatch) {
-              version = versionMatch[1]
-            } else {
-              // Try to get first line
-              const firstLine = res.stdout.split('\n')[0].trim()
-              if (firstLine && firstLine.length < 50) {
-                version = firstLine
-              }
-            }
-          }
-          
-          if (!ok) {
-            const cmd2 = `bash -lc \"${t} -v\"`
-            console.log(`[ToolCheck] ${t}: running -v ->`, cmd2)
-            res = await window.cyberGuard?.runWslCommand?.(cmd2, password)
-            console.log(`[ToolCheck] ${t}: -v result success=${res?.success} stdout=${(res?.stdout||'').trim()} stderr=${(res?.stderr||'').trim()}`)
-            output = `${res?.stdout||''}\n${res?.stderr||''}`
-            notFound = /command not found|not found/i.test(output)
-            ok = (!!res?.success) || (!notFound && output.trim().length > 0)
-            
-            if (ok && res?.stdout && !version) {
-              const versionMatch = res.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
-              if (versionMatch) {
-                version = versionMatch[1]
-              } else {
-                const firstLine = res.stdout.split('\n')[0].trim()
-                if (firstLine && firstLine.length < 50) {
-                  version = firstLine
-                }
-              }
-            }
-          }
-          
-          console.log(`[ToolCheck] ${t}: available=${ok}, version=${version || 'N/A'}`)
-          return [t, { installed: ok, checking: false, version: version || null }]
-        } catch (_e) {
-          console.log(`[ToolCheck] ${t}: error during check`, _e?.message)
-          return [t, { installed: false, checking: false, version: null }]
-        }
-      }))
-      const toolMap = Object.fromEntries(toolEntries)
-      setStatuses(prev => ({ ...prev, tools: toolMap }))
-
-      // Check tgpt
-      try {
-        setStatuses(prev => ({ ...prev, tgpt: { installed: false, checking: true } }))
-        const tgptCheckCommand = `bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`
-        const tgptRes = await window.cyberGuard?.runWslCommand?.(tgptCheckCommand, password)
-        const tgptOutput = `${tgptRes?.stdout||''}\n${tgptRes?.stderr||''}`
-        const tgptInstalled = tgptOutput.includes('tgpt is INSTALLED')
-        setStatuses(prev => ({ ...prev, tgpt: { installed: tgptInstalled, checking: false, version: tgptOutput.match(/tgpt is INSTALLED → (.+)/)?.[1] || null } }))
-      } catch (tgptError) {
-        console.log('[ToolCheck] tgpt: error during check', tgptError?.message)
-        setStatuses(prev => ({ ...prev, tgpt: { installed: false, checking: false } }))
-      }
-    } catch (e) {
-      showError('Failed to check tools')
-      setStatuses(prev => ({ ...prev, pip: { installed: false, checking: false } }))
-    }
-    setIsChecking(false)
-  }
-
-  const renderBadge = (ok) => (
-    <span className={`ml-2 text-xs font-semibold ${ok ? 'text-green-600' : 'text-red-600'}`}>
-      {ok ? 'Available' : 'Unavailable'}
-    </span>
-  )
-
-  const handleInstallAll = () => {
-    setInstallType('general')
-    setShowPasswordModal(true)
-  }
-
-  const handleInstallWithPassword = async (password) => {
-    if (!password) {
-      showError('Password is required')
-      return
-    }
-
-    setShowPasswordModal(false)
-    setIsInstalling(true)
-    setInstallProgress({ current: 0, total: REQUIRED_TOOLS.length, message: 'Starting installation...' })
-
-    try {
-      // Store password for session
-      await window.cyberGuard?.storeRootPassword?.(password)
-
-      // Check which tools are missing
-      const missingTools = REQUIRED_TOOLS.filter(t => !statuses.tools[t]?.installed)
-      
-      if (missingTools.length === 0) {
-        showSuccess('All tools are already installed!')
-        setIsInstalling(false)
-        return
-      }
-
-      const loadingToast = showLoading(`Installing ${missingTools.length} tools...`)
-
-      // Set up progress listener
-      window.cyberGuard?.onInstallProgress?.((progress) => {
-        if (progress.tool) {
-          const toolIndex = missingTools.indexOf(progress.tool)
-          setInstallProgress({
-            current: toolIndex + 1,
-            total: missingTools.length,
-            message: progress.message || `Installing ${progress.tool}...`
-          })
-        } else if (progress.phase === 'installing') {
-          setInstallProgress({
-            current: progress.current || 0,
-            total: progress.total || missingTools.length,
-            message: progress.message || 'Installing tools...'
-          })
-        }
-      })
-
-      // Start installation using rootless installer
-      await window.cyberGuard?.installAllToolsRootless?.()
-
-      dismissToast(loadingToast)
-      showSuccess(`Successfully installed ${missingTools.length} tools!`)
-      
-      // Refresh tool status
-      await refresh()
-    } catch (error) {
-      console.error('Installation error:', error)
-      showError(`Installation failed: ${error?.message || 'Unknown error'}`)
-    } finally {
-      setIsInstalling(false)
-      setInstallProgress({ current: 0, total: 0, message: '' })
-    }
-  }
-
-  const getMissingToolsCount = () => {
-    return REQUIRED_TOOLS.filter(t => !statuses.tools[t]?.installed).length
   }
 
   return (
@@ -405,82 +162,33 @@ function SettingsPanel() {
             )}
         </div>
 
-          {/* API Scanning Tools Section */}
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">API Scanning Tools</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {API_SCANNING_TOOLS.map((t) => {
-                const toolStatus = statuses.tools[t]
-                const isInstalled = !!toolStatus?.installed
-                const version = toolStatus?.version || null
-                
-                return (
-                  <div key={t} className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                        {isChecking ? (
-                          <svg className="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : null}
-                        {t}
-                      </span>
-                      {isChecking ? (
-                        <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
-                      ) : (
-                        <span className={`text-xs font-semibold ${isInstalled ? 'text-green-600' : 'text-red-600'}`}>
-                          {isInstalled ? '✓ Installed' : '✗ Missing'}
-                        </span>
-                      )}
-                    </div>
-                    {version && (
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                        Version: {version}
-                      </div>
-                    )}
+      {/* Security Settings */}
+      <div className="space-y-6">
+        {securitySettings.map((category, categoryIndex) => (
+          <div key={categoryIndex} className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">{category.category}</h3>
+            
+            <div className="space-y-4">
+              {category.settings.map((setting, settingIndex) => (
+                <div key={settingIndex} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100">{setting.name}</h4>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{setting.description}</p>
                   </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* All Tools Section */}
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">All Security Tools</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {REQUIRED_TOOLS.map((t) => {
-                const toolStatus = statuses.tools[t]
-                const isInstalled = !!toolStatus?.installed
-                const version = toolStatus?.version || null
-                const isAPITool = API_SCANNING_TOOLS.includes(t)
-                
-                return (
-                  <div key={t} className={`flex flex-col p-3 bg-gray-50 dark:bg-slate-700 rounded ${isAPITool ? 'border-2 border-blue-300 dark:border-blue-600' : ''}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-gray-900 dark:text-gray-100 flex items-center gap-2">
-                        {isChecking ? (
-                          <svg className="w-4 h-4 text-gray-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : null}
-                        {t}
-                        {isAPITool && <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 px-1 rounded">API</span>}
-                      </span>
-                      {isChecking ? (
-                        <span className="ml-2 text-xs font-semibold text-gray-400">Checking...</span>
-                      ) : (
-                        <span className={`text-xs font-semibold ${isInstalled ? 'text-green-600' : 'text-red-600'}`}>
-                          {isInstalled ? '✓' : '✗'}
-                        </span>
-                      )}
-                    </div>
-                    {version && (
-                      <div className="text-xs text-gray-600 dark:text-gray-400">
-                        v{version}
-                      </div>
-                    )}
+                  <div className="flex items-center ml-4">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        defaultChecked={setting.enabled}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white dark:bg-slate-800 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                    <span className={`ml-3 text-xs font-medium ${
+                      setting.enabled ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      {setting.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
                   </div>
                 )
               })}
