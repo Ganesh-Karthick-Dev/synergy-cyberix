@@ -20,7 +20,7 @@ export const authApi = {
   async login(credentials) {
     try {
       const response = await api.post(API_ENDPOINTS.AUTH.LOGIN, {
-        username: credentials.username,
+        email: credentials.username,
         password: credentials.password,
         rememberMe: credentials.rememberMe || false
       })

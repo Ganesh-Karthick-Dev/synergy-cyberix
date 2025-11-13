@@ -1,26 +1,49 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal } from 'lucide-react';
+import { Terminal, Moon, Sun } from 'lucide-react';
 import AgreementDialog from './AgreementDialog';
 import AdminPermissionDialog from './AdminPermissionDialog';
-import WslCredentialsDialog from './WslCredentialsDialog';
-import SystemPathDialog from './SystemPathDialog';
 import TimelineProgress from './TimelineProgress';
+import PlatformDetector from './setup/PlatformDetector';
+import Step1WslInstallation from './setup/steps/Step1WslInstallation';
+import Step2WslCredentials from './setup/steps/Step2WslCredentials';
+import Step3CyberixFolder from './setup/steps/Step3CyberixFolder';
+import Step4ToolsInstallation from './setup/steps/Step4ToolsInstallation';
+import Step5SystemPath from './setup/steps/Step5SystemPath';
 import setupStateManager from '../utils/setupStateManager';
 import { useToast } from '../context/ToastContext';
+import { useTheme } from '../context/ThemeContext';
 
 const InitialSetupFlow = ({ onComplete }) => {
-  const { showError, showSuccess, showLoading, dismissToast } = useToast();
+  const { showError, showSuccess } = useToast();
+  const { isDark, toggleTheme } = useTheme();
   const [currentStep, setCurrentStep] = useState(0); // 0-4 for the 5 steps
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [setupState, setSetupState] = useState(null);
+  const [platform, setPlatform] = useState(null);
+  const [wslCredentials, setWslCredentials] = useState({ username: null, password: null });
+  const [showDialogs, setShowDialogs] = useState(true); // Show T&C and Permission dialogs by default
   const logEndRef = useRef(null);
+
+  // Set initial theme to dark on mount
+  useEffect(() => {
+    // Force dark theme on initial load
+    if (!isDark) {
+      // Use setTimeout to avoid state update during render
+      setTimeout(() => {
+        toggleTheme();
+      }, 0);
+    }
+    // Ensure dark class is applied
+    document.documentElement.classList.add('dark');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Step states
   const [steps, setSteps] = useState([
     {
       title: 'WSL Installation',
-      description: 'Installing Windows Subsystem for Linux and Kali Linux',
+      description: 'Installing Windows Subsystem for Linux and Ubuntu',
       status: 'pending',
       progress: 0,
       message: '',
@@ -37,8 +60,8 @@ const InitialSetupFlow = ({ onComplete }) => {
       error: null
     },
     {
-      title: 'Installing Kali Tools',
-      description: 'Installing required security scanning tools',
+      title: 'Setting up Cyberix',
+      description: 'Creating folder structure, cloning repositories, and setting up Python environment',
       status: 'pending',
       progress: 0,
       message: '',
@@ -46,8 +69,8 @@ const InitialSetupFlow = ({ onComplete }) => {
       error: null
     },
     {
-      title: 'Setting up Cyberix',
-      description: 'Creating folder structure, cloning repositories, and setting up Python environment',
+      title: 'Installing Security Tools',
+      description: 'Installing required security scanning tools',
       status: 'pending',
       progress: 0,
       message: '',
@@ -87,17 +110,69 @@ const InitialSetupFlow = ({ onComplete }) => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  /**
+   * Initialize setup - check for existing installation logs and resume
+   */
   const initializeSetup = async () => {
     try {
       addLog('Initializing setup...', 'info');
+      
+      // FIRST: Check if installation log file exists (in user picked path OR default path)
+      let installationLogExists = false;
+      try {
+        if (window.cyberGuard?.checkInstallationLogFile) {
+          const logCheck = await window.cyberGuard.checkInstallationLogFile();
+          installationLogExists = logCheck?.exists === true;
+          if (installationLogExists) {
+            addLog(`Installation log found in ${logCheck?.location || 'path'}`, 'info');
+          } else {
+            addLog('No installation log found - this is a fresh install', 'info');
+          }
+        }
+      } catch (e) {
+        console.error('Error checking installation log:', e);
+      }
+      
+      // Initialize installation logs
+      if (window.cyberGuard?.initializeInstallationLogs) {
+        await window.cyberGuard.initializeInstallationLogs();
+      }
+
+      // Check for installation log file to resume
+      let resumeStep = 0;
+      if (installationLogExists && window.cyberGuard?.getLastCompletedStep) {
+        const lastStepResult = await window.cyberGuard.getLastCompletedStep();
+        if (lastStepResult?.success) {
+          resumeStep = lastStepResult.stepNumber || 0;
+          addLog(`Resuming from step ${resumeStep + 1}`, 'info');
+        }
+      }
+
+      // Initialize state manager
       await setupStateManager.initialize();
       const state = setupStateManager.getState();
+      
+      // If installation log exists, mark agreement and permission as accepted (they were done before)
+      // This prevents showing T&C and Permission dialogs again
+      if (installationLogExists) {
+        if (!state.agreementAccepted) {
+          await setupStateManager.setAgreementAccepted(true);
+          state.agreementAccepted = true;
+        }
+        if (!state.adminPermissionGranted) {
+          await setupStateManager.setAdminPermissionGranted(true);
+          state.adminPermissionGranted = true;
+        }
+        // Don't show T&C and Permission dialogs if installation log exists
+        setShowDialogs(false);
+      } else {
+        // Fresh install - show T&C and Permission dialogs
+        setShowDialogs(true);
+      }
+      
       setSetupState(state);
 
-      console.log('[SetupFlow] Loaded state:', state);
-      console.log('[SetupFlow] Current step number:', setupStateManager.getCurrentStepNumber());
-
-      // Check if setup is already complete - ALL steps must be done
+      // Check if setup is already complete
       if (state.setupComplete && 
           state.agreementAccepted && 
           state.adminPermissionGranted && 
@@ -111,64 +186,62 @@ const InitialSetupFlow = ({ onComplete }) => {
         return;
       }
 
-      // Get current step number dynamically
-      const currentStepNumber = setupStateManager.getCurrentStepNumber();
-      console.log('[SetupFlow] Resuming from step:', currentStepNumber);
-
       // Update step statuses based on saved state
       if (state.wslInstalled) {
         updateStep(0, { status: 'completed', completedAt: state.wslInstalledAt });
+        resumeStep = Math.max(resumeStep, 1);
       }
       if (state.wslPasswordStored) {
         updateStep(1, { status: 'completed', completedAt: state.wslPasswordStoredAt });
-      }
-      if (state.toolsInstalled) {
-        updateStep(2, { status: 'completed', completedAt: state.toolsInstalledAt });
+        resumeStep = Math.max(resumeStep, 2);
       }
       if (state.cyberixFolderSetup) {
-        updateStep(3, { status: 'completed', completedAt: state.cyberixFolderSetupAt });
+        updateStep(2, { status: 'completed', completedAt: state.cyberixFolderSetupAt });
+        resumeStep = Math.max(resumeStep, 3);
+      }
+      if (state.toolsInstalled) {
+        updateStep(3, { status: 'completed', completedAt: state.toolsInstalledAt });
+        resumeStep = Math.max(resumeStep, 4);
       }
       if (state.systemPathSelected) {
         updateStep(4, { status: 'completed', completedAt: state.systemPathSelectedAt });
+        resumeStep = 5;
       }
 
-      setCurrentStep(currentStepNumber);
+      // Check again if all steps are complete after updating step statuses
+      // This handles the case where the state check above might have missed it
+      const allStepsComplete = 
+        state.setupComplete === true && 
+        state.agreementAccepted === true && 
+        state.adminPermissionGranted === true && 
+        state.wslInstalled === true && 
+        state.wslPasswordStored === true && 
+        state.toolsInstalled === true && 
+        state.cyberixFolderSetup === true && 
+        state.systemPathSelected === true;
+
+      if (allStepsComplete || resumeStep >= 5) {
+        // All steps are complete, skip to login
+        addLog('✅ All setup steps are complete. Moving to login screen...', 'success');
+        setLoading(false);
+        // Small delay to show the completion message
+        setTimeout(() => {
+          onComplete();
+        }, 500);
+        return;
+      }
+
+      // Only set currentStep if we're not complete (valid range is 0-4)
+      if (resumeStep < 5) {
+        setCurrentStep(resumeStep);
+      }
       setLoading(false);
 
-      // Start from the appropriate step dynamically
-      if (currentStepNumber === 0) {
-        // Need to show agreement and admin first
-        if (!state.agreementAccepted) {
-          addLog('Resuming from: Agreement dialog', 'info');
-          return; // Will show agreement dialog
+      // Log step completion if resuming
+      if (resumeStep > 0 && resumeStep < 5 && window.cyberGuard?.logInstallationStep) {
+        for (let i = 1; i <= resumeStep; i++) {
+          await window.cyberGuard.logInstallationStep(i, steps[i - 1].title, 'completed');
         }
-        if (!state.adminPermissionGranted) {
-          addLog('Resuming from: Admin permission', 'info');
-          return; // Will show admin dialog
-        }
-        if (!state.wslInstalled) {
-          addLog('Resuming from: WSL installation', 'info');
-          await checkWsl();
-        } else if (!state.wslPasswordStored) {
-          addLog('Resuming from: WSL credentials', 'info');
-          await handleCredentialsFlow();
-        }
-      } else if (currentStepNumber === 1) {
-        addLog('Resuming from: WSL credentials', 'info');
-        await handleCredentialsFlow();
-      } else if (currentStepNumber === 2) {
-        addLog('Resuming from: Tools installation', 'info');
-        await checkAndInstallTools();
-      } else if (currentStepNumber === 3) {
-        addLog('Resuming from: Cyberix folder setup', 'info');
-        await setupCyberixFolder();
-      } else if (currentStepNumber === 4) {
-        addLog('Resuming from: System path selection', 'info');
-        // Will show system path dialog
-      } else if (currentStepNumber === 5) {
-        addLog('All steps completed. Setup is ready.', 'success');
-        onComplete();
-        return;
       }
     } catch (error) {
       console.error('[SetupFlow] Initialization error:', error);
@@ -178,467 +251,201 @@ const InitialSetupFlow = ({ onComplete }) => {
     }
   };
 
-  const checkWsl = async () => {
-    setCurrentStep(0);
-    updateStep(0, { status: 'active', message: 'Checking WSL installation...' });
-    addLog('Checking if WSL is installed using: wsl --status', 'info');
+  /**
+   * Handle Step 1 completion (WSL Installation)
+   */
+  const handleStep1Complete = async () => {
+    addLog('Step 1 completed: WSL Installation', 'success');
+    updateStep(0, { 
+      status: 'completed', 
+      progress: 100, 
+      completedAt: new Date().toISOString(),
+      message: 'WSL and Ubuntu installation complete'
+    });
     
-    try {
-      const hasWsl = await window.cyberGuard?.checkWsl?.();
-      
-      if (hasWsl) {
-        addLog('✅ WSL is already installed (verified via wsl --status).', 'success');
-        await setupStateManager.setWslInstalled(true);
-        
-        // Check if Kali Linux is already installed
-        addLog('Checking for Kali-Linux distribution...', 'info');
-        try {
-          const distrosResult = await window.cyberGuard?.listWSLDistributions?.();
-          if (distrosResult?.success && distrosResult.distributions) {
-            const kaliDistro = distrosResult.distributions.find(d => 
-              d.name.toLowerCase().includes('kali')
-            );
-            if (kaliDistro) {
-              addLog(`✅ Found Kali-Linux distribution: ${kaliDistro.name}`, 'success');
-              // Check current default
-              const currentDistro = await window.cyberGuard?.getWSLDistro?.();
-              if (currentDistro && !currentDistro.toLowerCase().includes('kali')) {
-                addLog(`Setting ${kaliDistro.name} as default distribution...`, 'info');
-                const setDefaultResult = await window.cyberGuard?.setDefaultWSLDistro?.(kaliDistro.name);
-                if (setDefaultResult?.success) {
-                  addLog(`Kali-Linux (${kaliDistro.name}) is now the default distribution`, 'success');
-                } else {
-                  addLog(`Could not set default: ${setDefaultResult?.error || 'Unknown error'}`, 'info');
-                }
-              } else {
-                addLog(`Kali-Linux (${kaliDistro.name}) is already the default`, 'success');
-              }
-              // Kali is installed, proceed to credentials
-              updateStep(0, { status: 'completed', completedAt: new Date().toISOString() });
-              await handleCredentialsFlow();
-            } else {
-              // WSL is installed but Kali is not - install it
-              addLog('Kali-Linux not found. Installing Kali Linux...', 'info');
-              await installKaliLinux();
-            }
-          } else {
-            // Could not check distributions, try installing Kali anyway
-            addLog('Could not check distributions. Installing Kali Linux...', 'info');
-            await installKaliLinux();
-          }
-        } catch (error) {
-          addLog(`Note: Could not check distributions: ${error.message}`, 'info');
-          addLog('Proceeding to install Kali Linux...', 'info');
-          await installKaliLinux();
-        }
-      } else {
-        addLog('WSL not found. Starting installation...', 'info');
-        await installWsl();
-      }
-    } catch (error) {
-      console.error('[SetupFlow] WSL check error:', error);
-      addLog(`WSL check error: ${error.message}`, 'error');
-      updateStep(0, { status: 'error', error: error.message });
-      showError('Failed to check WSL installation.');
+    // Log to installation log file
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(1, 'WSL Installation', 'completed', 'WSL and Ubuntu installed successfully');
     }
-  };
-
-  const installWsl = async () => {
-    updateStep(0, { status: 'active', progress: 0, message: 'Installing WSL...' });
-    addLog('Step 1: Installing WSL...', 'info');
-    addLog('This may take several minutes. Please wait...', 'info');
-
-    const loadingToast = showLoading('Installing WSL... This may take a while.');
-
-    try {
-      // Step 1: Install WSL
-      addLog('Installing WSL using: wsl --install', 'info');
-      const wslSuccess = await window.cyberGuard?.installWsl?.();
-
-      if (!wslSuccess) {
-        dismissToast(loadingToast);
-        addLog('WSL installation failed.', 'error');
-        updateStep(0, { status: 'error', error: 'WSL installation did not complete successfully' });
-        showError('WSL installation failed. Please try again.');
-        return;
-      }
-
-      addLog('WSL installation command completed!', 'success');
-      addLog('Step 2: Verifying WSL installation using: wsl --status', 'info');
-      updateStep(0, { progress: 40, message: 'Verifying WSL installation...' });
-
-      // Step 2: Verify WSL installation using wsl --status
-      let wslVerified = false;
-      let retryCount = 0;
-      const maxRetries = 15;
-
-      while (!wslVerified && retryCount < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds between checks
-        addLog(`Verification attempt ${retryCount + 1}/${maxRetries}...`, 'info');
-        wslVerified = await window.cyberGuard?.checkWsl?.();
-        retryCount++;
-        
-        if (!wslVerified) {
-          addLog(`WSL not verified yet, waiting... (attempt ${retryCount}/${maxRetries})`, 'info');
-        }
-      }
-
-      if (!wslVerified) {
-        addLog('⚠️ WSL verification failed after multiple attempts.', 'warning');
-        addLog('This may be normal if WSL is still installing in the background.', 'info');
-        addLog('Continuing with setup. You can verify manually later using: wsl --status', 'info');
-        // Continue anyway - don't block the setup
-      } else {
-        addLog('✅ WSL verified successfully via wsl --status!', 'success');
-        // Save WSL installation progress
-        await setupStateManager.setWslInstalled(true);
-        addLog('WSL installation step saved.', 'info');
-      }
-
-      // Step 3: Install Kali Linux
-      addLog('Step 3: Installing Kali Linux distribution...', 'info');
-      updateStep(0, { progress: 70, message: 'Installing Kali Linux...' });
-      
-      await installKaliLinux();
-      
-    } catch (error) {
-      dismissToast(loadingToast);
-      console.error('[SetupFlow] WSL installation error:', error);
-      addLog(`WSL installation error: ${error.message}`, 'error');
-      updateStep(0, { status: 'error', error: error.message });
-      showError(`WSL installation error: ${error.message}`);
-    }
-  };
-
-  const installKaliLinux = async () => {
-    const loadingToast = showLoading('Installing Kali Linux... This may take a while.');
     
-    try {
-      addLog('Installing Kali Linux using: wsl --install -d kali-linux', 'info');
-      const kaliSuccess = await window.cyberGuard?.installKaliLinux?.();
-
-      if (!kaliSuccess) {
-        addLog('Kali Linux installation command returned false, but continuing...', 'info');
-        // Don't return - continue anyway
-      } else {
-        addLog('Kali Linux installation command completed!', 'success');
-      }
-
-      dismissToast(loadingToast);
-      
-      // Update step status
-      updateStep(0, { 
-        status: 'completed', 
-        progress: 100, 
-        completedAt: new Date().toISOString(),
-        message: 'WSL and Kali Linux installation complete'
-      });
-      
-      // Save final state
-      await setupStateManager.setWslInstalled(true);
-      addLog('WSL and Kali Linux installation step saved successfully.', 'success');
-      showSuccess('WSL and Kali Linux installation completed!');
-      
-      // Now proceed to credentials flow
-      await handleCredentialsFlow();
-    } catch (error) {
-      dismissToast(loadingToast);
-      console.error('[SetupFlow] Kali Linux installation error:', error);
-      addLog(`Kali Linux installation error: ${error.message}`, 'error');
-      // Continue anyway - don't block the setup
-      updateStep(0, { 
-        status: 'completed', 
-        progress: 100, 
-        completedAt: new Date().toISOString(),
-        message: 'WSL installation complete (Kali installation may continue in background)'
-      });
-      await setupStateManager.setWslInstalled(true);
-      await handleCredentialsFlow();
-    }
+    await setupStateManager.setWslInstalled(true);
+    setCurrentStep(1);
   };
 
-  const handleCredentialsFlow = async () => {
-    const state = setupStateManager.getState();
-    if (state.wslPasswordStored) {
-      addLog('WSL credentials already configured.', 'success');
-      updateStep(1, { status: 'completed', completedAt: state.wslPasswordStoredAt });
-      await checkAndInstallTools();
-    } else {
-      setCurrentStep(1);
-      // Will show credentials dialog
+  const handleStep1Error = async (error) => {
+    addLog(`Step 1 error: ${error}`, 'error');
+    updateStep(0, { status: 'error', error: error });
+    
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(1, 'WSL Installation', 'failed', error);
     }
+    
+    showError(`WSL installation failed: ${error}`);
   };
 
-  const handleCredentialsConfirm = async (username, password) => {
-    try {
-      addLog('Saving WSL credentials...', 'info');
-      updateStep(1, { status: 'active', message: 'Saving credentials...' });
-
-      if (window.cyberGuard?.storeRootPassword) {
-        await window.cyberGuard.storeRootPassword(password);
-      }
-      
-      await setupStateManager.setWslCredentials(username, true);
-      addLog(`WSL credentials saved for user: ${username}`, 'success');
-      updateStep(1, { 
-        status: 'completed', 
-        completedAt: new Date().toISOString(),
-        message: 'Credentials saved'
-      });
-      showSuccess('WSL credentials saved successfully');
-      
-      await checkAndInstallTools();
-    } catch (error) {
-      console.error('[SetupFlow] Credentials save error:', error);
-      addLog(`Failed to save credentials: ${error.message}`, 'error');
-      updateStep(1, { status: 'error', error: error.message });
-      showError('Failed to save credentials. Please try again.');
-      throw error;
+  /**
+   * Handle Step 2 completion (WSL Credentials)
+   */
+  const handleStep2Complete = async (credentials) => {
+    addLog('Step 2 completed: WSL Credentials', 'success');
+    // Clear any previous error and mark as completed
+    updateStep(1, { 
+      status: 'completed', 
+      progress: 100, 
+      completedAt: new Date().toISOString(),
+      message: 'Credentials saved',
+      error: null // Clear any previous error
+    });
+    
+    // Save credentials
+    setWslCredentials(credentials);
+    await setupStateManager.setWslCredentials(credentials.username, true);
+    
+    // Password is already stored in Step2WslCredentials component after validation
+    // No need to store again here to avoid duplicate encryption
+    
+    // Log to installation log file
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(2, 'WSL Password Setup', 'completed', `Username: ${credentials.username}`);
     }
-  };
-
-  const checkAndInstallTools = async () => {
+    
     setCurrentStep(2);
-    updateStep(2, { status: 'active', message: 'Checking required tools...', progress: 0 });
-    addLog('Checking which tools need to be installed...', 'info');
-
-    const loadingToast = showLoading('Installing required security tools...');
-
-    try {
-      const password = window.cyberGuard?.getStoredRootPassword 
-        ? await window.cyberGuard.getStoredRootPassword() 
-        : null;
-
-      const toolCheck = await window.cyberGuard?.checkRequiredToolsOnly?.(password);
-      
-      if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
-        addLog(`Found ${toolCheck.missingTools.length} missing tools. Installing...`, 'info');
-        updateStep(2, { message: `Installing ${toolCheck.missingTools.length} tools...` });
-        
-        let installedCount = 0;
-        const totalTools = toolCheck.missingTools.length;
-
-        const progressHandler = (progress) => {
-          if (progress) {
-            if (progress.tool) {
-              installedCount++;
-              const percentage = Math.round((installedCount / totalTools) * 100);
-              const message = `Installing ${progress.tool}... (${installedCount}/${totalTools})`;
-              updateStep(2, { progress: percentage, message });
-              addLog(message, 'info');
-            } else if (progress.message) {
-              addLog(progress.message, 'info');
-            }
-          }
-        };
-
-        if (window.cyberGuard?.onToolsInstallProgress) {
-          window.cyberGuard.onToolsInstallProgress(progressHandler);
-        }
-
-        if (window.cyberGuard?.installMissingTools) {
-          await window.cyberGuard.installMissingTools(toolCheck.missingTools);
-        }
-
-        addLog('All tools installed successfully!', 'success');
-      } else {
-        addLog('All required tools are already installed!', 'success');
-        updateStep(2, { message: 'All tools available' });
-      }
-
-      dismissToast(loadingToast);
-      await setupStateManager.setToolsInstalled(true);
-      updateStep(2, { 
-        status: 'completed', 
-        progress: 100, 
-        completedAt: new Date().toISOString(),
-        message: 'Tools installation complete'
-      });
-      showSuccess('All tools installed successfully!');
-      
-      await setupCyberixFolder();
-    } catch (error) {
-      dismissToast(loadingToast);
-      console.error('[SetupFlow] Tools installation error:', error);
-      addLog(`Tools installation error: ${error.message}`, 'error');
-      updateStep(2, { status: 'error', error: error.message });
-      showError(`Tools installation error: ${error.message}`);
-    }
   };
 
-  const setupCyberixFolder = async () => {
+  const handleStep2Error = async (error) => {
+    addLog(`Step 2 error: ${error.message}`, 'error');
+    updateStep(1, { status: 'error', error: error.message });
+    
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(2, 'WSL Password Setup', 'failed', error.message);
+    }
+    
+    showError(`Credentials setup failed: ${error.message}`);
+  };
+
+  /**
+   * Handle Step 3 completion (Cyberix Folder)
+   */
+  const handleStep3Complete = async () => {
+    addLog('Step 3 completed: Cyberix Folder Setup', 'success');
+    updateStep(2, { 
+      status: 'completed', 
+      progress: 100, 
+      completedAt: new Date().toISOString(),
+      message: 'Cyberix setup complete'
+    });
+    
+    // Log to installation log file
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(3, 'Setting up Cyberix', 'completed', 'fluxploider, testssl, and venv folders installed');
+    }
+    
+    await setupStateManager.setCyberixFolderSetup(true);
     setCurrentStep(3);
-    updateStep(3, { status: 'active', message: 'Setting up Cyberix folder...', progress: 0 });
-    addLog('Starting Cyberix folder setup...', 'info');
-
-    try {
-      // Step 1: Create /root/cyberix folder
-      addLog('Creating /root/cyberix folder...', 'info');
-      updateStep(3, { progress: 10, message: 'Creating folder structure...' });
-      
-      if (window.cyberGuard?.setupCyberixFolder) {
-        const result = await window.cyberGuard.setupCyberixFolder();
-        if (result?.warning) {
-          addLog(`Folder creation warning: ${result.warning}`, 'info');
-        } else {
-          addLog('Folder created successfully', 'success');
-        }
-      }
-
-      // Step 2: Clone fluxploider
-      addLog('Cloning fluxploider repository...', 'info');
-      updateStep(3, { progress: 30, message: 'Cloning fluxploider...' });
-      
-      if (window.cyberGuard?.cloneRepository) {
-        try {
-          const result = await window.cyberGuard.cloneRepository('fluxploider');
-          if (result?.warning) {
-            addLog(`fluxploider clone warning: ${result.warning}`, 'info');
-          } else {
-            addLog('fluxploider cloned successfully', 'success');
-          }
-        } catch (error) {
-          addLog(`fluxploider clone failed (continuing): ${error.message}`, 'info');
-        }
-      }
-
-      // Step 3: Clone testssl
-      addLog('Cloning testssl repository...', 'info');
-      updateStep(3, { progress: 50, message: 'Cloning testssl...' });
-      
-      if (window.cyberGuard?.cloneRepository) {
-        try {
-          const result = await window.cyberGuard.cloneRepository('testssl');
-          if (result?.warning) {
-            addLog(`testssl clone warning: ${result.warning}`, 'info');
-          } else {
-            addLog('testssl cloned successfully', 'success');
-          }
-        } catch (error) {
-          addLog(`testssl clone failed (continuing): ${error.message}`, 'info');
-        }
-      }
-
-      // Step 4: Setup Python venv
-      addLog('Setting up Python virtual environment...', 'info');
-      updateStep(3, { progress: 70, message: 'Setting up Python environment...' });
-      
-      if (window.cyberGuard?.setupPythonVenv) {
-        try {
-          const result = await window.cyberGuard.setupPythonVenv();
-          if (result?.warning) {
-            addLog(`Python venv setup warning: ${result.warning}`, 'info');
-          } else {
-            addLog('Python virtual environment setup complete', 'success');
-          }
-        } catch (error) {
-          addLog(`Python venv setup failed (continuing): ${error.message}`, 'info');
-        }
-      }
-
-      // Mark step as completed even if there were warnings
-      updateStep(3, { 
-        status: 'completed', 
-        progress: 100, 
-        completedAt: new Date().toISOString(),
-        message: 'Cyberix setup complete'
-      });
-      addLog('Cyberix folder setup completed!', 'success');
-      await setupStateManager.setCyberixFolderSetup(true);
-      showSuccess('Cyberix folder setup completed!');
-      
-      // Move to final step
-      setCurrentStep(4);
-    } catch (error) {
-      console.error('[SetupFlow] Cyberix folder setup error:', error);
-      addLog(`Cyberix folder setup error: ${error.message} (continuing anyway)`, 'info');
-      // Mark as completed anyway and continue
-      updateStep(3, { 
-        status: 'completed', 
-        progress: 100, 
-        completedAt: new Date().toISOString(),
-        message: 'Cyberix setup attempted',
-        error: error.message
-      });
-      await setupStateManager.setCyberixFolderSetup(true);
-      // Continue to next step
-      setCurrentStep(4);
-    }
   };
 
-  const handleSystemPathConfirm = async (path) => {
-    try {
-      addLog(`Saving system path: ${path}`, 'info');
-      
-      // First, ensure all previous steps are marked as complete
-      const currentState = setupStateManager.getState();
-      if (!currentState.agreementAccepted) {
-        await setupStateManager.setAgreementAccepted(true);
-      }
-      if (!currentState.adminPermissionGranted) {
-        await setupStateManager.setAdminPermissionGranted(true);
-      }
-      if (!currentState.wslInstalled) {
-        await setupStateManager.setWslInstalled(true);
-      }
-      if (!currentState.wslPasswordStored) {
-        await setupStateManager.setWslCredentials(currentState.wslUsername || 'root', true);
-      }
-      if (!currentState.toolsInstalled) {
-        await setupStateManager.setToolsInstalled(true);
-      }
-      if (!currentState.cyberixFolderSetup) {
-        await setupStateManager.setCyberixFolderSetup(true);
-      }
-      
-      // Now set system path (this will save to step-system-path.json)
-      await setupStateManager.setSystemPath(path);
-      
-      // Mark setup as complete (this will save to step-setup-complete.json and all steps)
-      await setupStateManager.setSetupComplete(true);
-      
-      // Verify the state was saved correctly
-      const finalState = setupStateManager.getState();
-      console.log('[SetupFlow] Final setup state:', finalState);
-      
-      if (!finalState.setupComplete) {
-        throw new Error('Failed to save setup completion state');
-      }
-      
-      // Verify step files exist
-      if (window.cyberGuard?.readFile && path) {
-        try {
-          const completeFile = `${path}/step-setup-complete.json`;
-          const savedContent = await window.cyberGuard.readFile(completeFile);
-          const savedState = JSON.parse(savedContent);
-          console.log('[SetupFlow] Verified setup-complete step file:', savedState);
-          if (!savedState.data?.setupComplete) {
-            throw new Error('Setup complete step file does not have setupComplete=true');
-          }
-          addLog('All step files verified successfully', 'success');
-        } catch (e) {
-          console.error('[SetupFlow] Could not verify step files:', e);
-          addLog(`Warning: Could not verify step files: ${e.message}`, 'info');
-        }
-      }
-      
-      addLog('System path saved. Setup complete!', 'success');
-      updateStep(4, { 
-        status: 'completed', 
-        completedAt: new Date().toISOString(),
-        message: 'Path selected'
-      });
-      showSuccess('Setup completed successfully!');
-      
-      setTimeout(() => {
-        onComplete();
-      }, 1500);
-    } catch (error) {
-      console.error('[SetupFlow] System path save error:', error);
-      addLog(`Failed to save system path: ${error.message}`, 'error');
-      updateStep(4, { status: 'error', error: error.message });
-      showError('Failed to save system path. Please try again.');
+  const handleStep3Error = async (error) => {
+    addLog(`Step 3 error: ${error.message}`, 'error');
+    updateStep(2, { status: 'error', error: error.message });
+    
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(3, 'Setting up Cyberix', 'failed', error.message);
     }
+    
+    showError(`Cyberix folder setup failed: ${error.message}`);
+  };
+
+  /**
+   * Handle Step 4 completion (Tools Installation)
+   */
+  const handleStep4Complete = async () => {
+    addLog('Step 4 completed: Tools Installation', 'success');
+    updateStep(3, { 
+      status: 'completed', 
+      progress: 100, 
+      completedAt: new Date().toISOString(),
+      message: 'Tools installation complete'
+    });
+    
+    // Log to installation log file
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(4, 'Installing Security Tools', 'completed', 'All required tools installed');
+    }
+    
+    await setupStateManager.setToolsInstalled(true);
+    setCurrentStep(4);
+  };
+
+  const handleStep4Error = async (error) => {
+    addLog(`Step 4 error: ${error.message}`, 'error');
+    updateStep(3, { status: 'error', error: error.message });
+    
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(4, 'Installing Security Tools', 'failed', error.message);
+    }
+    
+    showError(`Tools installation failed: ${error.message}`);
+  };
+
+  /**
+   * Handle Step 5 completion (System Path)
+   */
+  const handleStep5Complete = async (selectedPath) => {
+    addLog('Step 5 completed: System Path Selection', 'success');
+    updateStep(4, { 
+      status: 'completed', 
+      progress: 100, 
+      completedAt: new Date().toISOString(),
+      message: 'Path selected'
+    });
+    
+    // Move installation logs to selected path
+    if (window.cyberGuard?.moveInstallationLogs) {
+      await window.cyberGuard.moveInstallationLogs(selectedPath);
+    }
+    
+    // Create System Logs folder
+    if (window.cyberGuard?.createSystemLogsFolder) {
+      await window.cyberGuard.createSystemLogsFolder(selectedPath);
+    }
+    
+    // Log to installation log file
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(5, 'System Path Selection', 'completed', `Path: ${selectedPath}`);
+    }
+    
+    // Save system path
+    await setupStateManager.setSystemPath(selectedPath);
+    await setupStateManager.setSetupComplete(true);
+    
+    // Sync files to both default and user-picked locations
+    if (window.cyberGuard?.syncFilesToBothLocations) {
+      try {
+        await window.cyberGuard.syncFilesToBothLocations(selectedPath);
+        addLog('✅ Files synced to both locations', 'success');
+      } catch (error) {
+        console.error('Error syncing files:', error);
+        addLog('⚠️ Warning: Could not sync files to both locations', 'warning');
+      }
+    }
+    
+    addLog('✅ All setup steps completed!', 'success');
+    showSuccess('Setup completed successfully!');
+    
+    setTimeout(() => {
+      onComplete();
+    }, 1500);
+  };
+
+  const handleStep5Error = async (error) => {
+    addLog(`Step 5 error: ${error.message}`, 'error');
+    updateStep(4, { status: 'error', error: error.message });
+    
+    if (window.cyberGuard?.logInstallationStep) {
+      await window.cyberGuard.logInstallationStep(5, 'System Path Selection', 'failed', error.message);
+    }
+    
+    showError(`System path selection failed: ${error.message}`);
   };
 
   const handleAgreementAccept = async () => {
@@ -660,7 +467,6 @@ const InitialSetupFlow = ({ onComplete }) => {
       setSetupState(newState);
       addLog('Admin permission granted', 'success');
       showSuccess('Administrator permission granted');
-      await checkWsl();
     } catch (error) {
       console.error('[SetupFlow] Admin permission error:', error);
       showError('Failed to grant administrator permission.');
@@ -688,99 +494,144 @@ const InitialSetupFlow = ({ onComplete }) => {
     );
   }
 
-  // Show dialogs for pre-setup steps
+  // Show dialogs for pre-setup steps ONLY if installation log doesn't exist
+  // If installation log exists, user already went through T&C and Permission
   const state = setupState || setupStateManager.getState();
-  if (!state || !state.agreementAccepted) {
+  
+  // Only show T&C and Permission if installation log doesn't exist (fresh install)
+  if (showDialogs && (!state || !state.agreementAccepted)) {
     return <AgreementDialog onAccept={handleAgreementAccept} onReject={handleAgreementReject} />;
   }
 
-  if (!state.adminPermissionGranted) {
+  if (showDialogs && (!state || !state.adminPermissionGranted)) {
     return <AdminPermissionDialog onGrant={handleAdminGrant} onSkip={handleAdminSkip} />;
   }
 
-  if (currentStep === 1 && !state.wslPasswordStored) {
-    return (
-      <WslCredentialsDialog
-        onConfirm={handleCredentialsConfirm}
-        onCancel={() => {
-          showError('WSL credentials are required to continue.');
-        }}
-      />
-    );
-  }
-
-  if (currentStep === 4 && !state.systemPathSelected) {
-    return (
-      <SystemPathDialog
-        onConfirm={handleSystemPathConfirm}
-        onCancel={() => {
-          showError('System path selection is required to complete setup.');
-        }}
-      />
-    );
-  }
-
-  // Main setup flow with timeline and logs
+  // Main setup flow with timeline and step components
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Cyberix Initial Setup
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Setting up your cybersecurity scanning environment
-          </p>
-        </div>
+    <PlatformDetector onPlatformDetected={setPlatform}>
+      <div className="h-screen bg-gray-50 dark:bg-slate-900 overflow-hidden" style={{ fontFamily: 'Poppins, sans-serif' }}>
+        {/* Theme Toggle Button - Fixed position */}
+        <button
+          onClick={toggleTheme}
+          className="fixed top-4 right-4 z-50 p-2.5 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105"
+          aria-label="Toggle theme"
+        >
+          {isDark ? (
+            <Sun className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+          ) : (
+            <Moon className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+          )}
+        </button>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Timeline Progress */}
-          <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+        <div className="flex h-full">
+          {/* Left Section: Timeline (30% width) - Scrollable separately */}
+          <div className="w-[30%] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 h-full overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+                  Cyberix Setup
+                </h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Installation Progress
+                </p>
+              </div>
+
+              {/* Timeline Progress */}
               <TimelineProgress steps={steps} currentStep={currentStep} />
             </div>
           </div>
 
-          {/* Logs Panel */}
-          <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 h-full flex flex-col">
-              <div className="flex items-center gap-2 mb-4">
-                <Terminal className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Setup Logs
-                </h2>
+          {/* Right Section: Current Process + Console Logs (70% width) - Fully scrollable */}
+          <div className="w-[70%] flex flex-col bg-gray-50 dark:bg-slate-900 h-full overflow-y-auto">
+            {/* Top: Current Step Component - Not scrollable, fits content */}
+            <div className="flex-shrink-0 p-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+                {currentStep === 0 && (
+                  <Step1WslInstallation 
+                    onComplete={handleStep1Complete}
+                    onError={handleStep1Error}
+                    onLog={addLog}
+                  />
+                )}
+                {currentStep === 1 && (
+                  <Step2WslCredentials 
+                    onComplete={handleStep2Complete}
+                    onError={handleStep2Error}
+                    onLog={addLog}
+                  />
+                )}
+                {currentStep === 2 && wslCredentials.username && wslCredentials.password && (
+                  <Step3CyberixFolder 
+                    username={wslCredentials.username}
+                    password={wslCredentials.password}
+                    onComplete={handleStep3Complete}
+                    onError={handleStep3Error}
+                    onLog={addLog}
+                  />
+                )}
+                {currentStep === 3 && wslCredentials.username && wslCredentials.password && (
+                  <Step4ToolsInstallation 
+                    username={wslCredentials.username}
+                    password={wslCredentials.password}
+                    onComplete={handleStep4Complete}
+                    onError={handleStep4Error}
+                    onLog={addLog}
+                  />
+                )}
+                {currentStep === 4 && (
+                  <Step5SystemPath 
+                    onComplete={handleStep5Complete}
+                    onError={handleStep5Error}
+                    onLog={addLog}
+                  />
+                )}
               </div>
-              <div className="flex-1 bg-gray-900 dark:bg-black rounded-lg p-4 overflow-y-auto font-mono text-sm max-h-[600px] min-h-[400px]">
-                <div className="h-full overflow-y-auto">
-                  {logs.length === 0 ? (
-                    <div className="text-gray-500">No logs yet...</div>
-                  ) : (
-                    logs.map((log, index) => (
-                      <div key={index} className="mb-1">
-                        <span className="text-gray-500">[{log.timestamp}]</span>{' '}
-                        <span
-                          className={
-                            log.type === 'error'
-                              ? 'text-red-400'
-                              : log.type === 'success'
-                              ? 'text-green-400'
-                              : 'text-gray-300'
-                          }
-                        >
-                          {log.message}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                  <div ref={logEndRef} />
+            </div>
+
+            {/* Bottom: Console Logs - Fixed height with nested scroll */}
+            <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <div className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Terminal className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Console Log
+                  </h2>
+                </div>
+                <div className="bg-gray-900 dark:bg-black rounded-lg p-4 font-mono text-sm h-[300px] overflow-hidden flex flex-col">
+                  <div className="flex-1 overflow-y-auto">
+                    {logs.length === 0 ? (
+                      <div className="text-gray-500">No logs yet...</div>
+                    ) : (
+                      logs.map((log, index) => (
+                        <div key={index} className="mb-1">
+                          <span className="text-gray-500">[{log.timestamp}]</span>{' '}
+                          <span
+                            className={
+                              log.type === 'error'
+                                ? 'text-red-400'
+                                : log.type === 'success'
+                                ? 'text-green-400'
+                                : log.type === 'warning'
+                                ? 'text-yellow-400'
+                                : 'text-gray-300'
+                            }
+                          >
+                            {log.message}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                    <div ref={logEndRef} />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </PlatformDetector>
   );
 };
 

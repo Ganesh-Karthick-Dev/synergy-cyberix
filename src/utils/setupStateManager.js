@@ -36,55 +36,47 @@ class SetupStateManager {
     }
 
     try {
-      // Get userData path first
+      // Get userData path first (C:\Users\Admin\AppData\Roaming\Cyberix)
       const userDataPath = await window.cyberGuard.getUserDataPath?.() || null;
       if (!userDataPath) {
         console.warn('[SetupState] No userData path, using localStorage');
         return this.loadFromLocalStorage();
       }
 
-      // If systemPath is provided, use it; otherwise try to find it
+      // NEW STRUCTURE: Use installation_process folder inside Cyberix-Logs
+      // For custom path: [User Path]/Cyberix-Logs/installation_process
+      // For default: C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process
       if (systemPath) {
-        this.basePath = systemPath;
+        // If custom path provided, use Cyberix-Logs/installation_process inside it
+        this.basePath = `${systemPath}/Cyberix-Logs/installation_process`;
       } else {
-        // Try to load system path from step files
-        const systemPathFile = `${userDataPath}/step-system-path.json`;
-        try {
-          if (window.cyberGuard?.readFile) {
-            const content = await window.cyberGuard.readFile(systemPathFile);
-            const pathData = JSON.parse(content);
-            if (pathData.systemPath) {
-              // Handle array case defensively
-              let loadedPath = pathData.systemPath;
-              if (Array.isArray(loadedPath)) {
-                console.warn('[SetupState] System path in file is array, extracting first element');
-                loadedPath = loadedPath.length > 0 ? loadedPath[0] : null;
-              }
-              if (loadedPath && typeof loadedPath === 'string') {
-                this.basePath = loadedPath;
-                console.log('[SetupState] Found system path from step file:', this.basePath);
-              }
-            }
-          }
-        } catch (e) {
-          // No system path yet, use userData
-          this.basePath = userDataPath;
-        }
+        // Use default: userData/Cyberix-Logs/installation_process
+        this.basePath = `${userDataPath}/Cyberix-Logs/installation_process`;
       }
 
-      // If still no basePath, use userData
-      if (!this.basePath) {
-        this.basePath = userDataPath;
-      }
+      console.log('[SetupState] Using basePath:', this.basePath);
 
-      // Load all step files
+      // Load all step files from NEW location only
       await this.loadAllSteps();
       
       // Validate and fix state
       const wasFixed = this.validateAndFixState();
       if (wasFixed) {
+        console.log('[SetupState] State was fixed, saving corrected state...');
         await this.saveAllSteps();
       }
+      
+      // Log final state for debugging
+      console.log('[SetupState] Final state after initialization:', {
+        setupComplete: this.state.setupComplete,
+        agreementAccepted: this.state.agreementAccepted,
+        adminPermissionGranted: this.state.adminPermissionGranted,
+        wslInstalled: this.state.wslInstalled,
+        wslPasswordStored: this.state.wslPasswordStored,
+        toolsInstalled: this.state.toolsInstalled,
+        cyberixFolderSetup: this.state.cyberixFolderSetup,
+        systemPathSelected: this.state.systemPathSelected
+      });
     } catch (error) {
       console.error('[SetupState] Error initializing:', error);
       return this.loadFromLocalStorage();
@@ -124,43 +116,73 @@ class SetupStateManager {
     }
 
     try {
-      const stepFile = `${this.basePath}/step-${stepName}.json`;
-      const stepContent = {
-        step: stepName,
-        data: stepData,
-        timestamp: new Date().toISOString()
-      };
+      // NEW: Save all steps to a single installation-process.log file
+      const logFile = `${this.basePath}/installation-process.log`;
       
-      // Ensure directory exists - pass as string explicitly
+      // Ensure directory exists
       const ensureResult = await window.cyberGuard.ensureDirectoryExists(String(this.basePath));
       if (!ensureResult || !ensureResult.success) {
-        console.warn(`[SetupState] Directory creation warning for ${stepName}:`, ensureResult?.error || 'Unknown error');
-        // Continue anyway - try to save
+        console.warn(`[SetupState] Directory creation warning:`, ensureResult?.error || 'Unknown error');
       }
       
-      await window.cyberGuard.writeFile(stepFile, JSON.stringify(stepContent, null, 2));
-      console.log(`[SetupState] Saved step: ${stepName} to ${stepFile}`);
+      // Read existing log file or create new
+      let existingLogs = '';
+      try {
+        if (window.cyberGuard?.readFile) {
+          existingLogs = await window.cyberGuard.readFile(logFile);
+        }
+      } catch (e) {
+        // File doesn't exist yet, start fresh
+        existingLogs = '';
+      }
+      
+      // Parse existing logs or create new structure
+      let logData = {};
+      if (existingLogs) {
+        try {
+          logData = JSON.parse(existingLogs);
+        } catch (e) {
+          // Invalid JSON, start fresh
+          logData = {};
+        }
+      }
+      
+      // Update step data
+      logData[stepName] = {
+        ...stepData,
+        updatedAt: new Date().toISOString()
+      };
+      logData.lastUpdated = new Date().toISOString();
+      
+      // Save to file
+      await window.cyberGuard.writeFile(logFile, JSON.stringify(logData, null, 2));
+      console.log(`[SetupState] Saved step: ${stepName} to ${logFile}`);
     } catch (error) {
       console.error(`[SetupState] Error saving step ${stepName}:`, error);
-      // Fallback to localStorage if file save fails
       this.saveToLocalStorage();
     }
   }
 
-  // Load a specific step file
+  // Load a specific step from installation-process.log (NEW STRUCTURE)
   async loadStep(stepName) {
     if (!this.basePath || !window.cyberGuard?.readFile) {
       return null;
     }
 
     try {
-      const stepFile = `${this.basePath}/step-${stepName}.json`;
-      const content = await window.cyberGuard.readFile(stepFile);
-      const stepData = JSON.parse(content);
-      console.log(`[SetupState] Loaded step: ${stepName} from ${stepFile}`);
-      return stepData.data;
+      // NEW: Load from single installation-process.log file
+      const logFile = `${this.basePath}/installation-process.log`;
+      const content = await window.cyberGuard.readFile(logFile);
+      const logData = JSON.parse(content);
+      
+      // Return step data if it exists
+      if (logData[stepName]) {
+        console.log(`[SetupState] Loaded step: ${stepName} from ${logFile}`);
+        return logData[stepName];
+      }
+      return null;
     } catch (error) {
-      // Step file doesn't exist yet
+      // Log file doesn't exist yet or step not found
       return null;
     }
   }
@@ -343,11 +365,35 @@ class SetupStateManager {
     try {
       const stored = localStorage.getItem('cyberix.setup.state');
       if (stored) {
-        this.state = { ...this.state, ...JSON.parse(stored) };
-        console.log('[SetupState] Loaded state from localStorage:', this.state);
+        const parsedState = JSON.parse(stored);
+        // Only load if it's actually a complete setup (all steps done)
+        // Otherwise, treat as fresh install
+        const isComplete = parsedState.setupComplete === true &&
+          parsedState.agreementAccepted === true &&
+          parsedState.adminPermissionGranted === true &&
+          parsedState.wslInstalled === true &&
+          parsedState.wslPasswordStored === true &&
+          parsedState.toolsInstalled === true &&
+          parsedState.cyberixFolderSetup === true &&
+          parsedState.systemPathSelected === true;
+        
+        if (isComplete) {
+          this.state = { ...this.state, ...parsedState };
+          console.log('[SetupState] Loaded complete state from localStorage');
+        } else {
+          console.log('[SetupState] localStorage has incomplete state, ignoring it (treating as fresh install)');
+          // Clear stale localStorage
+          localStorage.removeItem('cyberix.setup.state');
+        }
       }
     } catch (error) {
       console.error('[SetupState] Error loading from localStorage:', error);
+      // Clear corrupted localStorage
+      try {
+        localStorage.removeItem('cyberix.setup.state');
+      } catch (e) {
+        // Ignore
+      }
     }
   }
 

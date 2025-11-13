@@ -115,9 +115,17 @@ function decryptPassword(encryptedData) {
 
 function storePasswordSecurely(password) {
   try {
+    // Use async scrypt for better performance (non-blocking)
     const encryptedData = encryptPassword(password);
     const passwordFile = getPasswordFilePath();
-    fs.writeFileSync(passwordFile, JSON.stringify(encryptedData));
+    
+    // Ensure directory exists
+    const passwordDir = path.dirname(passwordFile);
+    if (!fs.existsSync(passwordDir)) {
+      fs.mkdirSync(passwordDir, { recursive: true });
+    }
+    
+    fs.writeFileSync(passwordFile, JSON.stringify(encryptedData), 'utf8');
     console.log('🔐 Password stored securely');
     return true;
   } catch (error) {
@@ -4456,6 +4464,70 @@ ipcMain.handle('notification:getCount', async () => {
     }
   });
 
+  // Cleanup old installation files and folders
+  ipcMain.handle('setup:cleanupOldInstallation', async (event) => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const deleted = [];
+      
+      logToFile('[CLEANUP] Starting cleanup of old installation files...');
+      logToFile(`[CLEANUP] UserData path: ${userDataPath}`);
+      
+      // Files and folders to delete (keep only essential ones)
+      const itemsToDelete = [
+        'installation_process',
+        'setup-config.json',
+        'cyberix-debug.log',
+        'cyberix_scan_logs', // Will be recreated if needed
+      ];
+      
+      // Keep these files/folders:
+      // - wsl_password.enc (encrypted password - keep for security)
+      // - Cyberix folder structure (will be recreated)
+      
+      for (const item of itemsToDelete) {
+        const itemPath = path.join(userDataPath, item);
+        try {
+          if (fs.existsSync(itemPath)) {
+            const stats = fs.statSync(itemPath);
+            if (stats.isDirectory()) {
+              // Delete directory recursively
+              fs.rmSync(itemPath, { recursive: true, force: true });
+              deleted.push(item);
+              logToFile(`[CLEANUP] Deleted directory: ${item}`);
+            } else if (stats.isFile()) {
+              // Delete file
+              fs.unlinkSync(itemPath);
+              deleted.push(item);
+              logToFile(`[CLEANUP] Deleted file: ${item}`);
+            }
+          }
+        } catch (err) {
+          logToFile(`[CLEANUP] Warning: Could not delete ${item}: ${err.message}`);
+        }
+      }
+      
+      // Also check for Cyberix folder in userData and delete if exists
+      const cyberixFolder = path.join(userDataPath, 'Cyberix');
+      if (fs.existsSync(cyberixFolder)) {
+        try {
+          fs.rmSync(cyberixFolder, { recursive: true, force: true });
+          deleted.push('Cyberix');
+          logToFile(`[CLEANUP] Deleted Cyberix folder`);
+        } catch (err) {
+          logToFile(`[CLEANUP] Warning: Could not delete Cyberix folder: ${err.message}`);
+        }
+      }
+      
+      logToFile(`[CLEANUP] Cleanup completed. Deleted ${deleted.length} items.`);
+      return { success: true, deleted };
+    } catch (error) {
+      logToFile(`[CLEANUP] Error during cleanup: ${error.message}`);
+      console.error('Error cleaning up old installation:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
     try {
       // Ensure dirPath is a string
@@ -5131,6 +5203,301 @@ app.whenReady().then(async () => {
     } catch (error) {
       console.error('Error listing files:', error);
       return [];
+    }
+  });
+
+  // Installation Log Management IPC Handlers
+  ipcMain.handle('setup:initializeInstallationLogs', async (event, customPath = null) => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      const result = await installationLogManager.initialize(customPath);
+      logToFile(`[SETUP] Installation logs initialized: ${result.path || 'failed'}`);
+      return result;
+    } catch (error) {
+      logToFile(`[SETUP] Error initializing installation logs: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('setup:logStep', async (event, stepNumber, description, status, details = '') => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      
+      // Extract user-picked path from details if Step 5
+      let userPickedPath = null;
+      if (stepNumber === 5 && details && details.includes('Path:')) {
+        userPickedPath = details.replace('Path:', '').trim();
+      }
+      
+      // Also try to get from system path reference file
+      if (!userPickedPath && stepNumber === 5) {
+        try {
+          const userDataPath = app.getPath('userData');
+          const referenceFile = path.join(userDataPath, 'step-system-path.json');
+          if (fs.existsSync(referenceFile)) {
+            const data = JSON.parse(fs.readFileSync(referenceFile, 'utf8'));
+            userPickedPath = data.systemPath;
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+      
+      const result = await installationLogManager.logStep(stepNumber, description, status, details, userPickedPath);
+      logToFile(`[SETUP] Logged step ${stepNumber}: ${description} - ${status}`);
+      if (userPickedPath) {
+        logToFile(`[SETUP] User picked path saved: ${userPickedPath}`);
+      }
+      return result;
+    } catch (error) {
+      logToFile(`[SETUP] Error logging step: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('setup:readInstallationLogs', async (event) => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      return await installationLogManager.readLogs();
+    } catch (error) {
+      logToFile(`[SETUP] Error reading installation logs: ${error.message}`);
+      return { success: false, error: error.message, logs: '' };
+    }
+  });
+
+  ipcMain.handle('setup:getLastCompletedStep', async (event) => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      return await installationLogManager.getLastCompletedStep();
+    } catch (error) {
+      logToFile(`[SETUP] Error getting last step: ${error.message}`);
+      return { success: false, error: error.message, stepNumber: 0 };
+    }
+  });
+
+  ipcMain.handle('setup:checkInstallationLogFile', async (event) => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      const userDataPath = app.getPath('userData');
+      
+      let exists = false;
+      let foundPath = null;
+      
+      // PRIORITY 1: Check in user selected path FIRST (if user picked a custom path)
+      try {
+        const referenceFile = path.join(userDataPath, 'step-system-path.json');
+        
+        if (fs.existsSync(referenceFile)) {
+          const data = JSON.parse(fs.readFileSync(referenceFile, 'utf8'));
+          const systemPath = data.systemPath;
+          
+          if (systemPath && typeof systemPath === 'string') {
+            // Check if user-picked path exists and has files
+            if (fs.existsSync(systemPath)) {
+              // Check in user selected path: [User Path]/Cyberix-Logs/installation_process/installation-process.log (NEW STRUCTURE)
+              const userLogPath = path.join(systemPath, 'Cyberix-Logs', 'installation_process', 'installation-process.log');
+              
+              if (fs.existsSync(userLogPath)) {
+                exists = true;
+                foundPath = userLogPath;
+                logToFile(`[SETUP] Installation log found in user selected path (PRIORITY 1): ${foundPath}`);
+                return { success: true, exists: true, path: foundPath, location: 'user-selected' };
+              }
+              
+              // Also check old location for backward compatibility: [User Path]/Cyberix-Logs/Cyberix Installation Process Logs/installation-process.log
+              const oldUserLogPath = path.join(systemPath, 'Cyberix-Logs', 'Cyberix Installation Process Logs', 'installation-process.log');
+              if (fs.existsSync(oldUserLogPath)) {
+                exists = true;
+                foundPath = oldUserLogPath;
+                logToFile(`[SETUP] Installation log found in old user selected path (migrating): ${foundPath}`);
+                return { success: true, exists: true, path: foundPath, location: 'user-selected-old' };
+              }
+            } else {
+              logToFile(`[SETUP] User-picked path does not exist: ${systemPath}, checking backup path`);
+            }
+          }
+        }
+      } catch (err) {
+        logToFile(`[SETUP] Error checking user selected path: ${err.message}`);
+      }
+      
+      // PRIORITY 2: Check in NEW default path (backup): C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process\installation-process.log
+      const newDefaultPath = path.join(userDataPath, 'Cyberix-Logs', 'installation_process');
+      const newDefaultLogFile = path.join(newDefaultPath, 'installation-process.log');
+      
+      if (fs.existsSync(newDefaultLogFile)) {
+        exists = true;
+        foundPath = newDefaultLogFile;
+        logToFile(`[SETUP] Installation log found in NEW default path (PRIORITY 2 - backup): ${foundPath}`);
+        return { success: true, exists: true, path: foundPath, location: 'default' };
+      }
+      
+      // Check OLD default path for backward compatibility
+      const oldDefaultPath = installationLogManager.getDefaultInstallationPath();
+      const oldDefaultLogFile = path.join(oldDefaultPath, 'installation-process.log');
+      if (fs.existsSync(oldDefaultLogFile)) {
+        exists = true;
+        foundPath = oldDefaultLogFile;
+        logToFile(`[SETUP] Installation log found in OLD default path: ${foundPath}`);
+        return { success: true, exists: true, path: foundPath, location: 'default-old' };
+      }
+      
+      logToFile(`[SETUP] Installation log not found in either path`);
+      return { success: true, exists: false, path: null, location: null };
+    } catch (error) {
+      logToFile(`[SETUP] Error checking installation log file: ${error.message}`);
+      return { success: false, error: error.message, exists: false, path: null, location: null };
+    }
+  });
+
+  ipcMain.handle('setup:moveInstallationLogs', async (event, newPath) => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      const result = await installationLogManager.moveLogsToPath(newPath);
+      logToFile(`[SETUP] Moved installation logs to: ${newPath}`);
+      return result;
+    } catch (error) {
+      logToFile(`[SETUP] Error moving logs: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('setup:createSystemLogsFolder', async (event, basePath) => {
+    try {
+      const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+      const result = await installationLogManager.createSystemLogsFolder(basePath);
+      logToFile(`[SETUP] Created system logs folder: ${result.path || 'failed'}`);
+      return result;
+    } catch (error) {
+      logToFile(`[SETUP] Error creating system logs folder: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Check if any files exist in C:\Users\Admin\AppData\Roaming\Cyberix
+  ipcMain.handle('setup:checkCyberixFolderExists', async (event) => {
+    try {
+      const userDataPath = app.getPath('userData');
+      logToFile(`[SETUP] Checking if Cyberix folder exists: ${userDataPath}`);
+      
+      if (!fs.existsSync(userDataPath)) {
+        logToFile(`[SETUP] Cyberix folder does not exist`);
+        return { success: true, exists: false, path: userDataPath };
+      }
+      
+      // Check if folder has any files or subdirectories
+      const files = fs.readdirSync(userDataPath);
+      const hasFiles = files.length > 0;
+      
+      logToFile(`[SETUP] Cyberix folder exists: ${hasFiles}, files count: ${files.length}`);
+      return { success: true, exists: hasFiles, path: userDataPath, fileCount: files.length };
+    } catch (error) {
+      logToFile(`[SETUP] Error checking Cyberix folder: ${error.message}`);
+      return { success: false, error: error.message, exists: false };
+    }
+  });
+
+  // Sync files to both default and user-picked locations
+  ipcMain.handle('setup:syncFilesToBothLocations', async (event, userPickedPath) => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const defaultPath = path.join(userDataPath, 'Cyberix-Logs', 'installation_process');
+      const defaultLogFile = path.join(defaultPath, 'installation-process.log');
+      
+      logToFile(`[SETUP] Syncing files to both locations`);
+      logToFile(`[SETUP] Default path: ${defaultPath}`);
+      logToFile(`[SETUP] User picked path: ${userPickedPath || 'none'}`);
+      
+      // PRIORITY 1: Get installation log content from user-picked path if it exists
+      let logContent = '';
+      if (userPickedPath) {
+        const userLogPath = path.join(userPickedPath, 'Cyberix-Logs', 'installation_process', 'installation-process.log');
+        if (fs.existsSync(userLogPath)) {
+          logContent = fs.readFileSync(userLogPath, 'utf8');
+          logToFile(`[SETUP] Read log from user path (PRIORITY 1): ${userLogPath}`);
+          
+          // Ensure user-picked path has the path saved in the log
+          if (!logContent.includes('User Selected Path:')) {
+            logContent += `User Selected Path: ${userPickedPath}\n`;
+            fs.writeFileSync(userLogPath, logContent, 'utf8');
+            logToFile(`[SETUP] Added user path to log file: ${userLogPath}`);
+          }
+        }
+      }
+      
+      // If no content from user path, try to read from old default location
+      if (!logContent) {
+        const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
+        const oldDefaultPath = installationLogManager.getDefaultInstallationPath();
+        const oldDefaultLogFile = path.join(oldDefaultPath, 'installation-process.log');
+        if (fs.existsSync(oldDefaultLogFile)) {
+          logContent = fs.readFileSync(oldDefaultLogFile, 'utf8');
+          logToFile(`[SETUP] Read log from old default path: ${oldDefaultLogFile}`);
+        }
+      }
+      
+      // PRIORITY 2: Write to backup location (NEW default path)
+      // Ensure default path exists
+      if (!fs.existsSync(defaultPath)) {
+        fs.mkdirSync(defaultPath, { recursive: true });
+      }
+      
+      if (logContent) {
+        // Ensure backup location also has the path saved
+        if (!logContent.includes('User Selected Path:') && userPickedPath) {
+          logContent += `User Selected Path: ${userPickedPath}\n`;
+        }
+        fs.writeFileSync(defaultLogFile, logContent, 'utf8');
+        logToFile(`[SETUP] Synced log to backup path (PRIORITY 2): ${defaultLogFile}`);
+      }
+      
+      // PRIORITY 1: If user picked a different path, ensure it's synced there too
+      if (userPickedPath && userPickedPath !== userDataPath) {
+        const userLogPath = path.join(userPickedPath, 'Cyberix-Logs', 'installation_process', 'installation-process.log');
+        const userLogDir = path.dirname(userLogPath);
+        
+        if (!fs.existsSync(userLogDir)) {
+          fs.mkdirSync(userLogDir, { recursive: true });
+        }
+        
+        if (logContent) {
+          // Ensure user path has the path saved
+          if (!logContent.includes('User Selected Path:')) {
+            logContent += `User Selected Path: ${userPickedPath}\n`;
+          }
+          fs.writeFileSync(userLogPath, logContent, 'utf8');
+          logToFile(`[SETUP] Synced log to user path (PRIORITY 1): ${userLogPath}`);
+        }
+      }
+      
+      return { success: true, defaultPath, userPath: userPickedPath };
+    } catch (error) {
+      logToFile(`[SETUP] Error syncing files: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Get system path selected by user during setup
+  ipcMain.handle('setup:getSystemPath', async (event) => {
+    try {
+      const userDataPath = app.getPath('userData');
+      const referenceFile = path.join(userDataPath, 'step-system-path.json');
+      
+      if (fs.existsSync(referenceFile)) {
+        const data = JSON.parse(fs.readFileSync(referenceFile, 'utf8'));
+        const systemPath = data.systemPath;
+        
+        if (systemPath && typeof systemPath === 'string') {
+          logToFile(`[SETUP] Retrieved system path: ${systemPath}`);
+          return { success: true, path: systemPath };
+        }
+      }
+      
+      logToFile(`[SETUP] System path not found, returning null`);
+      return { success: false, path: null };
+    } catch (error) {
+      logToFile(`[SETUP] Error getting system path: ${error.message}`);
+      return { success: false, error: error.message, path: null };
     }
   });
 
@@ -6527,7 +6894,7 @@ app.whenReady().then(async () => {
       console.log('🔐 Password length:', password.length);
       console.log('🔐 Password (masked):', password.replace(/./g, '*'));
       
-      // Store password securely in encrypted file
+      // Store password securely in encrypted file (fast operation)
       const stored = storePasswordSecurely(password);
       if (!stored) {
         return { success: false, error: 'Failed to store password securely' };
@@ -6536,38 +6903,45 @@ app.whenReady().then(async () => {
       // Store in memory for current session
       storedWslRootPassword = password;
       
-      // After storing password, check which tools are missing (but don't install yet)
-      console.log('🔧 Auto-checking required security tools...');
-      event.sender.send('scan:progress', { 
-        stage: 'checking', 
-        message: 'Password saved securely! Now checking which security tools are available...' 
+      // Return success immediately - tool checking can happen in background
+      // NOTE: Tool checking moved to background to avoid blocking UI
+      setImmediate(async () => {
+        try {
+          console.log('🔧 Auto-checking required security tools...');
+          if (event?.sender && !event.sender.isDestroyed()) {
+            event.sender.send('scan:progress', { 
+              stage: 'checking', 
+              message: 'Password saved securely! Now checking which security tools are available...' 
+            });
+          }
+          
+          const toolResult = await checkRequiredToolsOnly(password);
+          
+          // Check and install tgpt
+          console.log('🔧 Checking tgpt...');
+          const tgptResult = await checkAndInstallTgpt(password, event);
+          console.log('🔧 tgpt check result:', tgptResult);
+          
+          if (toolResult.success && event?.sender && !event.sender.isDestroyed()) {
+            console.log('✅ All required tools are available');
+            event.sender.send('scan:progress', { 
+              stage: 'complete', 
+              message: `All required security tools are ready! (${toolResult.installedCount}/${toolResult.totalChecked} tools)` 
+            });
+          } else if (event?.sender && !event.sender.isDestroyed()) {
+            console.log('⚠️ Some tools are missing');
+            event.sender.send('scan:progress', { 
+              stage: 'warning', 
+              message: `Tool check completed: ${toolResult.installedCount}/${toolResult.totalChecked} tools available. Missing: ${toolResult.missingTools?.join(', ') || 'Unknown'}` 
+            });
+          }
+        } catch (bgError) {
+          console.log('⚠️ Background tool check error (non-blocking):', bgError.message);
+        }
       });
       
-      const toolResult = await checkRequiredToolsOnly(password);
-      
-      // Check and install tgpt
-      console.log('🔧 Checking tgpt...');
-      const tgptResult = await checkAndInstallTgpt(password, event);
-      console.log('🔧 tgpt check result:', tgptResult);
-      
-      if (toolResult.success) {
-        console.log('✅ All required tools are available');
-        event.sender.send('scan:progress', { 
-          stage: 'complete', 
-          message: `All required security tools are ready! (${toolResult.installedCount}/${toolResult.totalChecked} tools)` 
-        });
-      } else {
-        console.log('⚠️ Some tools are missing');
-        event.sender.send('scan:progress', { 
-          stage: 'warning', 
-          message: `Tool check completed: ${toolResult.installedCount}/${toolResult.totalChecked} tools available. Missing: ${toolResult.missingTools?.join(', ') || 'Unknown'}` 
-        });
-      }
-      
-      return { 
-        success: true, 
-        toolCheck: toolResult 
-      };
+      // Return immediately without waiting for tool check
+      return { success: true };
     } catch (error) {
       console.log('❌ Failed to store root password:', error.message);
       return { success: false, error: error.message };
@@ -6923,6 +7297,56 @@ app.whenReady().then(async () => {
       };
     } catch (error) {
       console.log('❌ WSL command failed:', error.message);
+      console.log('📤 Error output:', error.stdout || '');
+      console.log('⚠️  Error stderr:', error.stderr || '');
+      
+      return { 
+        success: false, 
+        error: error.message,
+        stdout: error.stdout || '',
+        stderr: error.stderr || ''
+      };
+    }
+  });
+
+  // New handler for WSL commands with specific username and root access
+  // This simulates: wsl -> sudo su -> root@ -> execute command
+  ipcMain.handle('wsl:runCommandAsRoot', async (event, username, command, password) => {
+    try {
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+      
+      // Run command as root user: wsl -u username, then sudo su with password, then execute command
+      // The command is executed in a single bash session to maintain context
+      // Escape single quotes in command by replacing ' with '\'' (bash escaping)
+      const escapedCommand = command.replace(/'/g, "'\\''");
+      // Build the full command: wsl -u username bash -c "echo 'password' | sudo -S bash -c 'command'"
+      const fullCommand = `wsl -u ${username} bash -c "echo '${password}' | sudo -S bash -c '${escapedCommand}'"`;
+      
+      console.log('🚀 Running WSL command as root...');
+      console.log('👤 Username:', username);
+      console.log('📝 Original command:', command);
+      console.log('📝 Full command:', fullCommand.replace(password, '***'));
+      console.log('📋 [INFO] This simulates: wsl -> sudo su -> root@ -> execute command');
+      
+      const { stdout, stderr } = await execAsync(fullCommand, {
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 300000,
+        windowsHide: true,
+        shell: true
+      });
+      
+      console.log('📤 Output:', stdout);
+      if (stderr) console.log('⚠️  Errors:', stderr);
+      
+      return { 
+        success: true, 
+        stdout: stdout || '', 
+        stderr: stderr || '' 
+      };
+    } catch (error) {
+      console.log('❌ WSL root command failed:', error.message);
       console.log('📤 Error output:', error.stdout || '');
       console.log('⚠️  Error stderr:', error.stderr || '');
       

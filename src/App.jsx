@@ -9,14 +9,25 @@ import { GlobalScanProvider } from './context/GlobalScanContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { NotificationProvider } from './context/NotificationContext'
 import setupStateManager from './utils/setupStateManager'
+
+// Expose setupStateManager to window for debugging (development only)
+if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+  window.setupStateManager = setupStateManager;
+}
+
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog';
 import WslUserCreationDialog from './components/WslUserCreationDialog';
 import logo from './assets/webp/Cybersecurity research-02.webp'
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
 import { hasSecurePassword, getSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
+import { authApi } from './services/authApi'
 
 const AppContent = () => {
+  // CRITICAL: Log immediately when component loads
+  console.log('[App] ========== APP COMPONENT LOADED ==========');
+  console.log('[App] Component rendering at:', new Date().toISOString());
+  
   const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
   const [formData, setFormData] = useState({
     username: '',
@@ -27,8 +38,15 @@ const AppContent = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [currentToastId, setCurrentToastId] = useState(null)
   const [setupComplete, setSetupComplete] = useState(false)
-  const [checkingSetup, setCheckingSetup] = useState(true)
+  const [checkingSetup, setCheckingSetup] = useState(true) // Start with true to show loading
   const [showSetupFlow, setShowSetupFlow] = useState(false)
+  
+  console.log('[App] Initial state:', {
+    checkingSetup,
+    setupComplete,
+    showSetupFlow,
+    isAuthenticated
+  });
   const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
   const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
   const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
@@ -37,40 +55,127 @@ const AppContent = () => {
 
   // Check setup completion status on app load
   useEffect(() => {
+    console.log('[App] ========== useEffect TRIGGERED ==========');
+    console.log('[App] useEffect running at:', new Date().toISOString());
+    
     const checkSetupStatus = async () => {
+      console.log('[App] ========== checkSetupStatus FUNCTION CALLED ==========');
       try {
+        console.log('[App] ========== STARTING SETUP CHECK ==========');
+        console.log('[App] window.cyberGuard available:', !!window.cyberGuard);
+        
+        // FIRST: Check if files exist in C:\Users\Admin\AppData\Roaming\Cyberix
+        let cyberixFolderExists = false;
+        try {
+          if (window.cyberGuard?.checkCyberixFolderExists) {
+            const folderCheck = await window.cyberGuard.checkCyberixFolderExists();
+            cyberixFolderExists = folderCheck?.exists === true;
+            console.log('[App] Cyberix folder exists:', cyberixFolderExists);
+            console.log('[App] Cyberix folder path:', folderCheck?.path);
+            console.log('[App] Files count:', folderCheck?.fileCount || 0);
+          }
+        } catch (e) {
+          console.log('[App] Could not check Cyberix folder:', e.message);
+        }
+        
+        // SECOND: Check if installation log file exists in NEW default path: C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process\installation-process.log
+        let installationLogExists = false;
+        let installationLogLocation = null;
+        try {
+          if (window.cyberGuard?.checkInstallationLogFile) {
+            const logCheck = await window.cyberGuard.checkInstallationLogFile();
+            installationLogExists = logCheck?.exists === true;
+            installationLogLocation = logCheck?.location || null;
+            console.log('[App] Installation log file exists:', installationLogExists);
+            console.log('[App] Installation log location:', installationLogLocation);
+            if (logCheck?.path) {
+              console.log('[App] Installation log path:', logCheck.path);
+            }
+          }
+        } catch (e) {
+          console.log('[App] Could not check installation log file:', e.message);
+        }
+
+        // THIRD: Determine if this is a fresh install
+        // If Cyberix folder doesn't exist OR no installation log exists, it's a fresh install
+        const isFreshInstall = !cyberixFolderExists || !installationLogExists;
+        
+        console.log('[App] ========== SETUP STATUS CHECK ==========');
+        console.log('[App] Installation log exists:', installationLogExists);
+        console.log('[App] Installation log location:', installationLogLocation);
+        console.log('[App] Is fresh install:', isFreshInstall);
+        
+        // Initialize setup state manager to load state from files
         await setupStateManager.initialize();
         const state = setupStateManager.getState();
         
-        console.log('[App] Setup state check:', {
-          setupComplete: state.setupComplete,
-          agreementAccepted: state.agreementAccepted,
-          adminPermissionGranted: state.adminPermissionGranted,
-          wslInstalled: state.wslInstalled,
-          wslPasswordStored: state.wslPasswordStored,
-          toolsInstalled: state.toolsInstalled,
-          cyberixFolderSetup: state.cyberixFolderSetup,
-          systemPathSelected: state.systemPathSelected,
-          currentStepNumber: setupStateManager.getCurrentStepNumber()
-        });
+        // If installation log exists, check if all steps are complete
+        let allStepsComplete = false;
+        if (installationLogExists) {
+          console.log('[App] Setup state from manager:', {
+            setupComplete: state.setupComplete,
+            agreementAccepted: state.agreementAccepted,
+            adminPermissionGranted: state.adminPermissionGranted,
+            wslInstalled: state.wslInstalled,
+            wslPasswordStored: state.wslPasswordStored,
+            toolsInstalled: state.toolsInstalled,
+            cyberixFolderSetup: state.cyberixFolderSetup,
+            systemPathSelected: state.systemPathSelected
+          });
+          
+          // STRICT CHECK: All steps must be complete AND setupComplete flag must be true
+          // This ensures we don't skip setup if any step is missing
+          allStepsComplete = 
+              state.setupComplete === true && 
+              state.agreementAccepted === true && 
+              state.adminPermissionGranted === true && 
+              state.wslInstalled === true && 
+              state.wslPasswordStored === true && 
+              state.toolsInstalled === true && 
+              state.cyberixFolderSetup === true && 
+              state.systemPathSelected === true;
+        }
         
-        // Check if setup is complete - must have setupComplete flag AND all steps done
-        const allStepsComplete = state.setupComplete && 
-            state.agreementAccepted && 
-            state.adminPermissionGranted && 
-            state.wslInstalled && 
-            state.wslPasswordStored && 
-            state.toolsInstalled && 
-            state.cyberixFolderSetup && 
-            state.systemPathSelected;
+        console.log('[App] All steps complete check:', allStepsComplete);
+        if (installationLogExists) {
+          console.log('[App] Individual step status:', {
+            setupComplete: state.setupComplete,
+            agreementAccepted: state.agreementAccepted,
+            adminPermissionGranted: state.adminPermissionGranted,
+            wslInstalled: state.wslInstalled,
+            wslPasswordStored: state.wslPasswordStored,
+            toolsInstalled: state.toolsInstalled,
+            cyberixFolderSetup: state.cyberixFolderSetup,
+            systemPathSelected: state.systemPathSelected
+          });
+        }
+        console.log('[App] ==========================================');
         
-        if (allStepsComplete) {
-          console.log('[App] Setup is complete. Skipping setup flow.');
+        // DECISION: Show setup if:
+        // 1. It's a fresh install (no log file AND no setup files), OR
+        // 2. Not all steps are complete
+        if (isFreshInstall) {
+          console.log('[App] 🆕 Fresh install detected! Showing setup flow.');
+          // Clear any stale localStorage data
+          try {
+            localStorage.removeItem('cyberix-setup-state');
+            localStorage.removeItem('cyberix.setup.state');
+            console.log('[App] Cleared stale localStorage data');
+          } catch (e) {
+            console.log('[App] Could not clear localStorage:', e.message);
+          }
+          setSetupComplete(false);
+          setShowSetupFlow(true);
+          setCheckingSetup(false); // CRITICAL: Always set to false
+        } else if (allStepsComplete) {
+          console.log('[App] ✅ Setup is complete. Skipping setup flow.');
           setSetupComplete(true);
           setShowSetupFlow(false);
+          setCheckingSetup(false); // CRITICAL: Always set to false
         } else {
-          console.log('[App] Setup is incomplete. Showing setup flow.');
+          console.log('[App] ⚠️ Setup is incomplete. Showing setup flow.');
           console.log('[App] Missing steps:', {
+            setupComplete: !state.setupComplete,
             agreement: !state.agreementAccepted,
             admin: !state.adminPermissionGranted,
             wsl: !state.wslInstalled,
@@ -81,17 +186,28 @@ const AppContent = () => {
           });
           setSetupComplete(false);
           setShowSetupFlow(true);
+          setCheckingSetup(false); // CRITICAL: Always set to false
         }
       } catch (error) {
-        console.error('[App] Error checking setup status:', error);
+        console.error('[App] ❌ ERROR checking setup status:', error);
+        console.error('[App] Error stack:', error.stack);
+        // On error, ALWAYS show setup flow to be safe
+        console.log('[App] ⚠️ Error occurred, showing setup flow as fallback');
         setSetupComplete(false);
         setShowSetupFlow(true);
-      } finally {
         setCheckingSetup(false);
       }
     };
 
-    checkSetupStatus();
+    // CRITICAL: Always call checkSetupStatus
+    console.log('[App] Calling checkSetupStatus()...');
+    checkSetupStatus().catch(err => {
+      console.error('[App] ❌ FATAL ERROR in checkSetupStatus:', err);
+      // Fallback: show setup flow
+      setSetupComplete(false);
+      setShowSetupFlow(true);
+      setCheckingSetup(false);
+    });
   }, [])
 
   const handleSetupComplete = async (path) => {
@@ -124,38 +240,34 @@ const AppContent = () => {
     setCurrentToastId(loadingToastId)
     
     try {
-      // Simulate login process with realistic delay
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Call the API for authentication
+      const response = await authApi.login({
+        username: formData.username,
+        password: formData.password,
+        rememberMe: formData.rememberMe
+      })
       
-      // Check credentials
-      if (formData.username === 'admin' && formData.password === 'admin@123') {
-        // Dismiss loading toast
-        dismissToast(loadingToastId)
-        
-        // Show success toast
-        showSuccess(`🎉 Welcome back, ${formData.username}! Login successful.`, {
-          duration: 3000
-        })
-        
-        // Start the WSL credential and tool checking flow
-        await handlePostLoginFlow()
-        
-      } else {
-        // Dismiss loading toast
-        dismissToast(loadingToastId)
-        
-        // Show error toast with professional styling
-        showError('❌ Authentication failed! Invalid credentials provided.', {
-          duration: 5000
-        })
-      }
+      // Dismiss loading toast
+      dismissToast(loadingToastId)
+      
+      // Show success toast
+      showSuccess(`🎉 Welcome back, ${response.user?.username || formData.username}! Login successful.`, {
+        duration: 3000
+      })
+      
+      // Start the WSL credential and tool checking flow
+      await handlePostLoginFlow()
+      
     } catch (error) {
       // Dismiss loading toast
       dismissToast(loadingToastId)
       
-      // Show error toast for unexpected errors
-      showError('🌐 Connection error. Please check your network and try again.', {
-        duration: 6000
+      // Show error toast with message from API or default message
+      const errorMessage = error.response?.data?.message || 
+                           error.message || 
+                           '❌ Authentication failed! Invalid credentials provided.'
+      showError(errorMessage, {
+        duration: 5000
       })
     } finally {
       setIsLoading(false)
@@ -496,7 +608,15 @@ const AppContent = () => {
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      // Call logout API
+      await authApi.logout()
+    } catch (error) {
+      // Even if API call fails, clear local state
+      console.error('Logout API error:', error)
+    }
+    
     // Show logout toast
     showSuccess('👋 Successfully logged out! See you next time.', {
       duration: 2500
@@ -510,19 +630,6 @@ const AppContent = () => {
         rememberMe: false
       })
     }, 500)
-  }
-
-  const handlePrefillCredentials = () => {
-    setFormData(prev => ({
-      ...prev,
-      username: 'admin',
-      password: 'admin@123'
-    }))
-    
-    // Show success toast
-    showSuccess('✅ Demo credentials filled! Ready to sign in.', {
-      duration: 2000
-    })
   }
 
   const handleClearCredentials = () => {
@@ -699,27 +806,9 @@ const AppContent = () => {
     )
   }
 
-  // Show setup flow if not complete
-  if (checkingSetup) {
-    return (
-      <NetworkStatus>
-        <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-blue-500 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Initializing...</h2>
-            <p className="text-gray-600 dark:text-gray-300">Checking setup status</p>
-          </div>
-        </div>
-      </NetworkStatus>
-    )
-  }
 
   if (showSetupFlow) {
+    console.log('[App] Rendering InitialSetupFlow (showSetupFlow=true)');
     return (
       <NetworkStatus>
         <InitialSetupFlow 
@@ -733,6 +822,8 @@ const AppContent = () => {
       </NetworkStatus>
     )
   }
+  
+  console.log('[App] Rendering login screen (neither checkingSetup nor showSetupFlow)');
 
   if (isAuthenticated) {
     return (
@@ -742,29 +833,6 @@ const AppContent = () => {
     )
   }
 
-  // Show credential checking screen
-  if (isCheckingCredentials) {
-    return (
-      <NetworkStatus>
-        <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-16 h-16 bg-orange-500 rounded-lg flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            </div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              Initializing System...
-            </h2>
-            <p className="text-gray-600 dark:text-gray-300">
-              Checking WSL credentials and security tools
-            </p>
-          </div>
-        </div>
-      </NetworkStatus>
-    )
-  }
 
   return (
     <NetworkStatus>

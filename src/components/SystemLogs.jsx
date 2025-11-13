@@ -19,6 +19,7 @@ function SystemLogs() {
   const [stats, setStats] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [logsPerPage] = useState(50)
+  const [logsPath, setLogsPath] = useState('')
 
   // Load logs on component mount
   useEffect(() => {
@@ -33,6 +34,15 @@ function SystemLogs() {
   const loadLogs = async () => {
     setLoading(true)
     try {
+      // Clear cached logs directory to force re-resolution
+      if (scanLogger.logsDir) {
+        scanLogger.logsDir = null
+      }
+      
+      // Get the current logs directory path
+      const logsDir = await scanLogger.resolveLogsDirectory()
+      setLogsPath(logsDir)
+      
       let loadedLogs = []
       
       if (selectedDate === 'all') {
@@ -334,13 +344,18 @@ function SystemLogs() {
         <div className="relative z-10 space-y-6">
           {/* Header Section */}
           <div className="flex items-center justify-between">
-            <div>
+            <div className="flex-1">
               <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent mb-2">
                 System Logs
               </h1>
-              <p className="text-gray-600 dark:text-gray-400 text-lg">
+              <p className="text-gray-600 dark:text-gray-400 text-lg mb-1">
                 Comprehensive logging of all scanning activities and user actions
               </p>
+              {logsPath && (
+                <p className="text-sm text-gray-500 dark:text-gray-500 font-mono bg-gray-100 dark:bg-slate-700/50 px-3 py-1.5 rounded-md inline-block mt-2">
+                  📁 {logsPath}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <button

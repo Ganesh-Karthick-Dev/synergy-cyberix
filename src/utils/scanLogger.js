@@ -200,6 +200,7 @@ class ScanLogger {
 
   /**
    * Save log entry to file via Electron
+   * Saves to both user-picked path (PRIORITY 1) and backup path (PRIORITY 2)
    */
   async saveLogToFile(logEntry) {
     if (!this.isElectron) return
@@ -211,7 +212,42 @@ class ScanLogger {
     }
 
     try {
-      const baseDir = await this.resolveLogsDirectory()
+      // Get user-picked path (PRIORITY 1)
+      let userPickedPath = null
+      if (window.cyberGuard?.getSystemPath) {
+        try {
+          const result = await window.cyberGuard.getSystemPath()
+          if (result?.success && result?.path) {
+            userPickedPath = result.path
+            console.log('[scanLogger] User-picked path found:', userPickedPath)
+          }
+        } catch (err) {
+          console.warn('[scanLogger] Error getting user-picked path:', err)
+        }
+      }
+
+      // Get backup path (PRIORITY 2)
+      let backupPath = null
+      if (window.cyberGuard?.getUserDataPath) {
+        try {
+          backupPath = await window.cyberGuard.getUserDataPath()
+          console.log('[scanLogger] Backup path found:', backupPath)
+        } catch (err) {
+          console.warn('[scanLogger] Error getting backup path:', err)
+        }
+      }
+
+      // Determine paths for both locations
+      const userPickedLogsDir = userPickedPath 
+        ? `${userPickedPath}/Cyberix-Logs/System Logs`.replace(/\\/g, '/')
+        : null
+      
+      const backupLogsDir = backupPath
+        ? `${backupPath}/Cyberix-Logs/System Logs`.replace(/\\/g, '/')
+        : null
+
+      // Get primary directory (user-picked if available, otherwise backup)
+      const primaryDir = userPickedLogsDir || backupLogsDir || await this.resolveLogsDirectory()
 
       // Compatibility: if the host provides a consolidated saver, use it as well
       if (window.cyberGuard.saveLogToFile) {
@@ -219,47 +255,77 @@ class ScanLogger {
         try { await window.cyberGuard.saveLogToFile(dateKey, logEntry) } catch {}
       }
 
-      // Create logs directory if it doesn't exist
-      await window.cyberGuard.ensureDirectoryExists(baseDir)
-      
-      // Save individual log entry
-      const logFileName = `scan_log_${logEntry.id}.json`
-      const entryPath = `${baseDir}/${logFileName}`
-      console.log('[SystemLogs] Writing entry file:', entryPath)
-      try {
-        await window.cyberGuard.writeFile(entryPath, JSON.stringify(logEntry, null, 2))
-        console.log('[SystemLogs] Entry file written OK:', entryPath)
-      } catch (e) {
-        // Retry once after ensuring directory exists
-        console.error('[scanLogger] writeFile failed for entry, retrying:', e)
-        try { await window.cyberGuard.ensureDirectoryExists(baseDir) } catch {}
-        await window.cyberGuard.writeFile(entryPath, JSON.stringify(logEntry, null, 2))
-        console.log('[SystemLogs] Entry file written on retry:', entryPath)
+      // Helper function to save logs to a specific directory
+      const saveToDirectory = async (dir, priority) => {
+        if (!dir) return
+
+        try {
+          // Create logs directory if it doesn't exist
+          await window.cyberGuard.ensureDirectoryExists(dir)
+          
+          // Save individual log entry
+          const logFileName = `scan_log_${logEntry.id}.json`
+          const entryPath = `${dir}/${logFileName}`
+          console.log(`[scanLogger] [${priority}] Writing entry file:`, entryPath)
+          try {
+            await window.cyberGuard.writeFile(entryPath, JSON.stringify(logEntry, null, 2))
+            console.log(`[scanLogger] [${priority}] Entry file written OK:`, entryPath)
+          } catch (e) {
+            // Retry once after ensuring directory exists
+            console.error(`[scanLogger] [${priority}] writeFile failed for entry, retrying:`, e)
+            try { await window.cyberGuard.ensureDirectoryExists(dir) } catch {}
+            await window.cyberGuard.writeFile(entryPath, JSON.stringify(logEntry, null, 2))
+            console.log(`[scanLogger] [${priority}] Entry file written on retry:`, entryPath)
+          }
+
+          // Also append to daily log file
+          const today = new Date().toISOString().split('T')[0]
+          const dailyLogFile = `${dir}/daily_log_${today}.json`
+          
+          // Read existing daily log or create new one
+          let dailyLogs = []
+          try {
+            const existingContent = await window.cyberGuard.readFile(dailyLogFile)
+            dailyLogs = JSON.parse(existingContent)
+            console.log(`[scanLogger] [${priority}] Existing daily log entries:`, dailyLogs.length)
+          } catch (error) {
+            // File doesn't exist, start with empty array
+            dailyLogs = []
+            console.log(`[scanLogger] [${priority}] Daily log not found, will create:`, dailyLogFile)
+          }
+
+          // Add new log entry (avoid duplicates by checking ID)
+          const existingIndex = dailyLogs.findIndex(log => log.id === logEntry.id)
+          if (existingIndex >= 0) {
+            dailyLogs[existingIndex] = logEntry // Update existing
+          } else {
+            dailyLogs.push(logEntry) // Add new
+          }
+
+          // Write back to daily log file
+          console.log(`[scanLogger] [${priority}] Writing daily log file:`, dailyLogFile, 'entries:', dailyLogs.length)
+          await window.cyberGuard.writeFile(dailyLogFile, JSON.stringify(dailyLogs, null, 2))
+          console.log(`[scanLogger] [${priority}] Daily log file written OK:`, dailyLogFile)
+        } catch (error) {
+          console.error(`[scanLogger] [${priority}] Error saving to directory ${dir}:`, error)
+          // Don't throw, continue to next directory
+        }
       }
 
-      // Also append to daily log file
-      const today = new Date().toISOString().split('T')[0]
-      const dailyLogFile = `${baseDir}/daily_log_${today}.json`
-      
-      // Read existing daily log or create new one
-      let dailyLogs = []
-      try {
-        const existingContent = await window.cyberGuard.readFile(dailyLogFile)
-        dailyLogs = JSON.parse(existingContent)
-        console.log('[SystemLogs] Existing daily log entries:', dailyLogs.length)
-      } catch (error) {
-        // File doesn't exist, start with empty array
-        dailyLogs = []
-        console.log('[SystemLogs] Daily log not found, will create:', dailyLogFile)
+      // PRIORITY 1: Save to user-picked path first
+      if (userPickedLogsDir) {
+        await saveToDirectory(userPickedLogsDir, 'PRIORITY 1 (User-Picked)')
       }
 
-      // Add new log entry
-      dailyLogs.push(logEntry)
+      // PRIORITY 2: Save to backup path
+      if (backupLogsDir && backupLogsDir !== userPickedLogsDir) {
+        await saveToDirectory(backupLogsDir, 'PRIORITY 2 (Backup)')
+      }
 
-      // Write back to daily log file
-      console.log('[SystemLogs] Writing daily log file:', dailyLogFile, 'entries:', dailyLogs.length)
-      await window.cyberGuard.writeFile(dailyLogFile, JSON.stringify(dailyLogs, null, 2))
-      console.log('[SystemLogs] Daily log file written OK:', dailyLogFile)
+      // Also save to primary directory if it's different from both above
+      if (primaryDir && primaryDir !== userPickedLogsDir && primaryDir !== backupLogsDir) {
+        await saveToDirectory(primaryDir, 'Fallback')
+      }
 
     } catch (error) {
       console.error('Error saving log to file:', error)
@@ -391,27 +457,50 @@ class ScanLogger {
     try {
       console.log('[SystemLogs] Resolving logs directory...')
       
-      // Always use userData path for logs (writable location)
-      let userDataPath = null
-      if (window.cyberGuard?.getUserDataPath) {
-        userDataPath = await window.cyberGuard.getUserDataPath()
-        console.log('[SystemLogs] UserData path:', userDataPath)
+      // First, try to get the user's selected system path
+      let systemPath = null
+      if (window.cyberGuard?.getSystemPath) {
+        try {
+          const result = await window.cyberGuard.getSystemPath()
+          if (result?.success && result?.path) {
+            systemPath = result.path
+            console.log('[SystemLogs] Found user selected system path:', systemPath)
+          }
+        } catch (err) {
+          console.warn('[SystemLogs] Error getting system path:', err)
+        }
       }
 
-      if (userDataPath) {
-        // Use userData/cyberix_scan_logs instead of install path
-        this.logsDir = `${userDataPath}/cyberix_scan_logs`.replace(/\\/g, '/')
-        console.log('[SystemLogs] Using userData path for logs:', this.logsDir)
+      if (systemPath) {
+        // Use user's selected path + "Cyberix-Logs/System Logs"
+        // New structure: [User Selected Path]/Cyberix-Logs/System Logs/
+        const systemLogsPath = `${systemPath}/Cyberix-Logs/System Logs`.replace(/\\/g, '/')
+        this.logsDir = systemLogsPath
+        console.log('[SystemLogs] Using user selected path for logs:', this.logsDir)
+        console.log('[SystemLogs] Full path structure: [User Selected Path]/Cyberix-Logs/System Logs')
       } else {
-        // Fallback to Downloads for first-time use
-        if (window.cyberGuard?.getDownloadsPath) {
-          const downloads = await window.cyberGuard.getDownloadsPath()
-          const base = (downloads || '').replace(/[\\/]+$/, '')
-          this.logsDir = base ? `${base}/cyberix_scan_logs` : 'cyberix_scan_logs'
-          console.log('[SystemLogs] Using Downloads path for logs:', this.logsDir)
+        // Fallback: use userData path for logs (writable location)
+        let userDataPath = null
+        if (window.cyberGuard?.getUserDataPath) {
+          userDataPath = await window.cyberGuard.getUserDataPath()
+          console.log('[SystemLogs] UserData path:', userDataPath)
+        }
+
+        if (userDataPath) {
+          // Use userData/cyberix_scan_logs as fallback
+          this.logsDir = `${userDataPath}/cyberix_scan_logs`.replace(/\\/g, '/')
+          console.log('[SystemLogs] Using userData path for logs (fallback):', this.logsDir)
         } else {
-          this.logsDir = 'cyberix_scan_logs'
-          console.log('[SystemLogs] Using fallback path for logs:', this.logsDir)
+          // Fallback to Downloads for first-time use
+          if (window.cyberGuard?.getDownloadsPath) {
+            const downloads = await window.cyberGuard.getDownloadsPath()
+            const base = (downloads || '').replace(/[\\/]+$/, '')
+            this.logsDir = base ? `${base}/cyberix_scan_logs` : 'cyberix_scan_logs'
+            console.log('[SystemLogs] Using Downloads path for logs (fallback):', this.logsDir)
+          } else {
+            this.logsDir = 'cyberix_scan_logs'
+            console.log('[SystemLogs] Using fallback path for logs:', this.logsDir)
+          }
         }
       }
 

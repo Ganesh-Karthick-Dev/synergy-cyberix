@@ -86,12 +86,17 @@ contextBridge.exposeInMainWorld('cyberGuard', {
     console.log('🔐 [PRELOAD] About to invoke wsl:testRootCredentials IPC...');
     return ipcRenderer.invoke('wsl:testRootCredentials', password);
   },
+  testRootCredentials: (password) => {
+    // Alias for testWslRootCredentials
+    return ipcRenderer.invoke('wsl:testRootCredentials', password);
+  },
   testWslConnectivity: () => {
     console.log('🔍 [PRELOAD] testWslConnectivity called');
     return ipcRenderer.invoke('wsl:testConnectivity');
   },
   getWslUsername: () => ipcRenderer.invoke('wsl:getUsername'),
   runWslCommand: (command, password) => ipcRenderer.invoke('wsl:runCommand', command, password),
+  runWslCommandAsRoot: (username, command, password) => ipcRenderer.invoke('wsl:runCommandAsRoot', username, command, password),
   // Auto-install all tools
   autoInstallAllTools: () => ipcRenderer.invoke('tools:autoInstallAll'),
   onAutoInstallProgress: (listener) => ipcRenderer.on('tools:autoInstallProgress', (_e, progress) => listener(progress)),
@@ -109,6 +114,18 @@ contextBridge.exposeInMainWorld('cyberGuard', {
   createDirectory: (path) => ipcRenderer.invoke('setup:createDirectory', path),
   checkSetupComplete: () => ipcRenderer.invoke('setup:checkComplete'),
   markSetupComplete: (installPath) => ipcRenderer.invoke('setup:markComplete', installPath),
+  // Installation Log Management
+  initializeInstallationLogs: (customPath) => ipcRenderer.invoke('setup:initializeInstallationLogs', customPath),
+  logInstallationStep: (stepNumber, description, status, details) => ipcRenderer.invoke('setup:logStep', stepNumber, description, status, details),
+  readInstallationLogs: () => ipcRenderer.invoke('setup:readInstallationLogs'),
+  getLastCompletedStep: () => ipcRenderer.invoke('setup:getLastCompletedStep'),
+  checkInstallationLogFile: () => ipcRenderer.invoke('setup:checkInstallationLogFile'),
+  moveInstallationLogs: (newPath) => ipcRenderer.invoke('setup:moveInstallationLogs', newPath),
+  checkCyberixFolderExists: () => ipcRenderer.invoke('setup:checkCyberixFolderExists'),
+  syncFilesToBothLocations: (userPickedPath) => ipcRenderer.invoke('setup:syncFilesToBothLocations', userPickedPath),
+  createSystemLogsFolder: (basePath) => ipcRenderer.invoke('setup:createSystemLogsFolder', basePath),
+  getSystemPath: () => ipcRenderer.invoke('setup:getSystemPath'),
+  cleanupOldInstallation: () => ipcRenderer.invoke('setup:cleanupOldInstallation'),
   // File system operations for logging
   getUserDataPath: () => ipcRenderer.invoke('fs:getUserDataPath'),
   getInstallPath: () => ipcRenderer.invoke('fs:getInstallPath'),

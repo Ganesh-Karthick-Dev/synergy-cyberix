@@ -17,7 +17,12 @@ function SettingsPanel() {
   const [installProgress, setInstallProgress] = useState({ current: 0, total: 0, message: '' })
   const [installType, setInstallType] = useState('general') // 'general' or 'maldef'
 
-  const REQUIRED_TOOLS = ['jq','unzip','nmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','wapiti','ffuf','nuclei','dalfox','go','dnstwist','geoiplookup','wfuzz','tshark']
+  // Required tools from initial setup (Step4ToolsInstallation)
+  const REQUIRED_TOOLS = [
+    'jq', 'unzip', 'curl', 'wget', 'nmap', 'nikto', 'sqlmap', 'hydra', 
+    'gobuster', 'dirb', 'sslscan', 'dnstwist', 'geoip-bin', 'wapiti', 
+    'golang-go', 'amass', 'ffuf', 'nuclei', 'dalfox'
+  ]
   
   // API Scanning tools subset (Wireshark-based)
   const API_SCANNING_TOOLS = ['tshark']
