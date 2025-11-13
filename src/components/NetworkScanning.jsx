@@ -4,7 +4,7 @@ import { useGlobalScanState } from '../context/GlobalScanContext'
 import scanLogger from '../utils/scanLogger'
 // Removed useToast import - no snack bars in network scan tab
 import { getSecurePassword } from '../utils/securePasswordStorage'
-import jsPDF from 'jspdf'
+import ProfessionalPDFExporter from './ProfessionalPDFExporter'
 
 // Import markdown converter
 let markdownToHTML;
@@ -367,256 +367,28 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
     }
 
     try {
-      const doc = new jsPDF()
-      let yPos = 20
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const margin = 15
-      const maxWidth = pageWidth - 2 * margin
+      const exporter = new ProfessionalPDFExporter()
 
-      // Helper function to add new page if needed
-      const checkNewPage = (requiredSpace = 10) => {
-        if (yPos > 280) {
-          doc.addPage()
-          yPos = 20
-        }
+      // Extract clean content for PDF (no raw commands, JSON, etc.)
+      const pdfData = {
+        target: scanResults.target || target,
+        scanType: 'Network Security Scan',
+        startTime: scanResults.startTime,
+        endTime: scanResults.endTime,
+        duration: scanResults.duration,
+        summary: scanResults.summary || {
+          totalFindings: 0,
+          critical: 0,
+          high: 0,
+          medium: 0,
+          low: 0
+        },
+        findings: scanResults.findings || [],
+        recommendations: scanResults.recommendations || [],
+        cleanResults: scanResults.cleanResults || 'Network scan completed successfully. Detailed analysis shows the target system configuration and identified security posture.'
       }
 
-      // Title
-      doc.setFontSize(20)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Network Scan Security Report', margin, yPos)
-      yPos += 10
-
-      // Scan Info
-      doc.setFontSize(12)
-      doc.setFont('helvetica', 'normal')
-      doc.text(`Target: ${scanResults.target || target}`, margin, yPos)
-      yPos += 7
-      if (scanResults.extractedIP) {
-        doc.text(`IP Address: ${scanResults.extractedIP}`, margin, yPos)
-        yPos += 7
-      }
-      doc.text(`Scan Date: ${new Date().toLocaleString()}`, margin, yPos)
-      yPos += 10
-
-      // Get analyzed results
-      const analyzedResults = scanResults?.results?.json?.analyzedResults
-      if (analyzedResults && Object.keys(analyzedResults).length > 0) {
-        // Command configs in order
-        const commandConfigs = [
-          { key: 'whatweb', title: 'Web Technology Detection' },
-          { key: 'ping', title: 'Network Connectivity Test' },
-          { key: 'host', title: 'DNS Record Lookup' },
-          { key: 'hping', title: 'Advanced Packet Testing' },
-          { key: 'nmapSn', title: 'Host Discovery Analysis' },
-          { key: 'nmapFast', title: 'Quick Port Scan' },
-          { key: 'nmapFull', title: 'Comprehensive Port Scan' }
-        ]
-
-        // Export each command result
-        for (const config of commandConfigs) {
-          const analyzed = analyzedResults[config.key]
-          if (!analyzed || analyzed.error) continue
-
-          checkNewPage(20)
-          yPos += 5
-
-          // Command Title
-          doc.setFontSize(16)
-          doc.setFont('helvetica', 'bold')
-          doc.text(config.title, margin, yPos)
-          yPos += 8
-
-          doc.setFontSize(11)
-          doc.setFont('helvetica', 'normal')
-
-          // What We Did
-          if (analyzed.whatWeDid) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('What We Did:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            const whatWeDidText = typeof analyzed.whatWeDid === 'string' ? analyzed.whatWeDid : JSON.stringify(analyzed.whatWeDid)
-            const whatWeDidLines = doc.splitTextToSize(whatWeDidText, maxWidth)
-            whatWeDidLines.forEach(line => {
-              checkNewPage(7)
-              doc.text(line, margin, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // What We Got
-          if (analyzed.whatWeGot) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('What We Got:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            const whatWeGotText = typeof analyzed.whatWeGot === 'string' ? analyzed.whatWeGot : JSON.stringify(analyzed.whatWeGot)
-            const whatWeGotLines = doc.splitTextToSize(whatWeGotText, maxWidth)
-            whatWeGotLines.forEach(line => {
-              checkNewPage(7)
-              doc.text(line, margin, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // Summary
-          if (analyzed.summary && typeof analyzed.summary === 'object') {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('Summary:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            Object.entries(analyzed.summary).forEach(([key, value]) => {
-              if (value === null || value === undefined) return
-              checkNewPage(7)
-              const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
-              const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-              doc.text(`${formattedKey}: ${displayValue}`, margin + 5, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // Ports (for port scans)
-          if ((config.key === 'nmapFast' || config.key === 'nmapFull') && analyzed.ports && Array.isArray(analyzed.ports) && analyzed.ports.length > 0) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text(`Port Details (${analyzed.ports.length} ports):`, margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            analyzed.ports.forEach(port => {
-              checkNewPage(7)
-              const portNum = port.port || port.number || port.portNumber || 'N/A'
-              const state = port.state || 'unknown'
-              const service = port.service || (typeof port.service === 'object' ? port.service?.name : 'N/A')
-              const version = port.version || (typeof port.service === 'object' ? port.service?.version : 'N/A')
-              doc.text(`Port ${portNum}: ${state} - ${service} ${version ? `(${version})` : ''}`, margin + 5, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // Findings
-          if (analyzed.findings) {
-            if (Array.isArray(analyzed.findings) && analyzed.findings.length > 0) {
-              checkNewPage(15)
-              doc.setFont('helvetica', 'bold')
-              doc.text(`Findings (${analyzed.findings.length}):`, margin, yPos)
-              yPos += 6
-              doc.setFont('helvetica', 'normal')
-              analyzed.findings.forEach((finding, idx) => {
-                checkNewPage(20)
-                doc.setFont('helvetica', 'bold')
-                doc.text(`${idx + 1}. ${finding.type || finding.name || `Finding ${idx + 1}`}`, margin + 5, yPos)
-                yPos += 6
-                doc.setFont('helvetica', 'normal')
-                
-                // Display all properties
-                Object.entries(finding).forEach(([key, value]) => {
-                  if (['type', 'name'].includes(key.toLowerCase()) || value === null || value === undefined) return
-                  checkNewPage(7)
-                  const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
-                  const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-                  const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
-                  lines.forEach(line => {
-                    checkNewPage(7)
-                    doc.text(line, margin + 10, yPos)
-                    yPos += 6
-                  })
-                })
-                yPos += 3
-              })
-            } else if (!Array.isArray(analyzed.findings) && typeof analyzed.findings === 'object') {
-              checkNewPage(15)
-              doc.setFont('helvetica', 'bold')
-              doc.text('Findings:', margin, yPos)
-              yPos += 6
-              doc.setFont('helvetica', 'normal')
-              Object.entries(analyzed.findings).forEach(([key, value]) => {
-                if (value === null || value === undefined) return
-                checkNewPage(7)
-                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
-                const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-                const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
-                lines.forEach(line => {
-                  checkNewPage(7)
-                  doc.text(line, margin + 5, yPos)
-                  yPos += 6
-                })
-              })
-            }
-            yPos += 3
-          }
-
-          // Vulnerabilities
-          if (analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text(`Vulnerabilities (${analyzed.vulnerabilities.length}):`, margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            analyzed.vulnerabilities.forEach((vuln, idx) => {
-              checkNewPage(20)
-              doc.setFont('helvetica', 'bold')
-              doc.text(`${idx + 1}. ${vuln.name || `Vulnerability ${idx + 1}`}`, margin + 5, yPos)
-              yPos += 6
-              doc.setFont('helvetica', 'normal')
-              
-              // Display all properties
-              Object.entries(vuln).forEach(([key, value]) => {
-                if (['name'].includes(key.toLowerCase()) || value === null || value === undefined) return
-                checkNewPage(7)
-                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
-                const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-                const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
-                lines.forEach(line => {
-                  checkNewPage(7)
-                  doc.text(line, margin + 10, yPos)
-                  yPos += 6
-                })
-              })
-              yPos += 3
-            })
-            yPos += 3
-          }
-
-          // Recommendations
-          if (analyzed.recommendations && Array.isArray(analyzed.recommendations) && analyzed.recommendations.length > 0) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('Recommendations:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            analyzed.recommendations.forEach((rec, idx) => {
-              checkNewPage(7)
-              const recText = typeof rec === 'string' ? rec : (rec.description || rec.recommendation || rec.text || JSON.stringify(rec))
-              const lines = doc.splitTextToSize(`${idx + 1}. ${recText}`, maxWidth - 10)
-              lines.forEach(line => {
-                checkNewPage(7)
-                doc.text(line, margin + 5, yPos)
-                yPos += 6
-              })
-            })
-            yPos += 3
-          }
-        }
-      }
-
-      // Footer
-      const totalPages = doc.internal.getNumberOfPages()
-      for (let i = 1; i <= totalPages; i++) {
-        doc.setPage(i)
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(128, 128, 128)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, 285, { align: 'center' })
-        doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, 285, { align: 'right' })
-      }
+      const doc = await exporter.generatePDF(pdfData, ProfessionalPDFExporter.extractNetworkScanContent)
 
       // Save PDF
       const fileName = `network-scan-${(scanResults.target || target).replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`

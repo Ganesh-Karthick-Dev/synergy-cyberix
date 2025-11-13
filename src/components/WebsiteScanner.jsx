@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useToast } from '../context/ToastContext'
 import FrameworkDetector from '../scanners/framework-detection'
+import ProfessionalPDFExporter from './ProfessionalPDFExporter'
 
 const WebsiteScanner = () => {
   const { showSuccess, showError, showLoading, dismissToast } = useToast()
@@ -614,11 +615,9 @@ const WebsiteScanner = () => {
         filename = `scan-report-${Date.now()}.html`
         break
       case 'pdf':
-        // Generate a print-friendly HTML that the browser can save as PDF
-        content = generateCombinedHTMLReport(data)
-        mimeType = 'text/html'
-        filename = `scan-report-${Date.now()}.html`
-        break
+        // Use professional PDF exporter
+        handlePDFExport()
+        return // handlePDFExport handles the download itself
       case 'excel':
         // Create a simple Excel-compatible HTML table (.xls)
         content = generateExcelReport(data)
@@ -640,6 +639,40 @@ const WebsiteScanner = () => {
     URL.revokeObjectURL(url)
     
     showSuccess(`${format.toUpperCase()} report exported successfully!`)
+  }
+
+  const handlePDFExport = async () => {
+    if (!scanResults) {
+      showError('No scan results to export')
+      return
+    }
+
+    try {
+      const exporter = new ProfessionalPDFExporter()
+
+      // Extract clean content for PDF (no raw commands, JSON, etc.)
+      const pdfData = {
+        target: scanResults.target || scanResults.url || targetUrl,
+        scanType: 'Website Security Audit',
+        startTime: scanResults.timestamp,
+        endTime: scanResults.completedAt,
+        duration: scanResults.scanDuration,
+        summary: scanResults.summary,
+        findings: scanResults.findings || scanResults.vulnerabilities,
+        recommendations: scanResults.recommendations,
+        cleanResults: scanResults.cleanResults || scanResults.analysis
+      }
+
+      const doc = await exporter.generatePDF(pdfData, ProfessionalPDFExporter.extractWebsiteScanContent)
+
+      // Save PDF
+      const fileName = `website-scan-${(scanResults.target || targetUrl).replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`
+      doc.save(fileName)
+      showSuccess('PDF report exported successfully!')
+    } catch (error) {
+      console.error('Failed to export PDF:', error)
+      showError(`Failed to export PDF: ${error.message}`)
+    }
   }
 
   const generateHTMLReport = (data) => {
