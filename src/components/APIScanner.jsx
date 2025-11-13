@@ -17,6 +17,7 @@ function APIScanner() {
   const [showConsole, setShowConsole] = useState(true);
   const consoleEndRef = useRef(null);
   
+  
   // Auto-scroll console to bottom when new logs arrive
   useEffect(() => {
     if (consoleEndRef.current && showConsole) {
