@@ -124,12 +124,12 @@ function Dashboard({ onLogout }) {
     },
     { 
       id: 'wordpress-shield', 
-      name: 'WordPress Security Scan', 
+      name: 'WordPress Cloud Shield', 
       icon: <Layers className="w-5 h-5" strokeWidth={2.5} />
     },
     { 
       id: 'shopify-shield', 
-      name: 'Shopify Security Scan', 
+      name: 'Shopify Cloud Shield', 
       icon: <ShoppingCart className="w-5 h-5" strokeWidth={2.5} />
     },
     {

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getSecurePassword } from '../utils/securePasswordStorage';
+import { useGlobalScanState } from '../context/GlobalScanContext';
 
 function PhishingDetection() {
   // State management
@@ -20,11 +21,71 @@ function PhishingDetection() {
   const [showHelp, setShowHelp] = useState(false);
   const [showOverview, setShowOverview] = useState(true);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
+  
+  // Timing state
+  const [startTime, setStartTime] = useState(null);
+  const [endTime, setEndTime] = useState(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [expectedCompletionTime, setExpectedCompletionTime] = useState(null);
+  const timerRef = useRef(null);
+  const scanIdRef = useRef(null);
+  
+  // Global scan state for notifications and floating window
+  const { registerScan, updateScan, completeScan, stopScan } = useGlobalScanState();
 
   // Initialize component
   useEffect(() => {
     checkKaliStatus();
   }, []);
+
+  // Timer - keep running during scan
+  useEffect(() => {
+    if (isScanning && startTime && !endTime) {
+      timerRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        setElapsedTime(elapsed);
+        // Update expected completion time (phishing scans typically take 1-2 minutes)
+        const expected = startTime + (2 * 60 * 1000); // 2 minutes from start
+        setExpectedCompletionTime(expected);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isScanning, startTime, endTime]);
+
+  // Format elapsed time
+  const formatElapsedTime = (seconds) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
+  };
+
+  // Format date/time
+  const formatDateTime = (date) => {
+    if (!date) return 'N/A';
+    return new Date(date).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
 
   // Check Kali Linux status
   const checkKaliStatus = async () => {
@@ -63,18 +124,47 @@ function PhishingDetection() {
     if (!password) { setAskPassword(true); return; }
 
     // Start real phishing scan with dnstwist
+    const scanStartTime = Date.now();
     setIsScanning(true);
+    setStartTime(scanStartTime);
+    setEndTime(null);
+    setElapsedTime(0);
     setProgress(0);
     setProgressMessage('Initializing dnstwist phishing detection engine...');
     setLogs((l) => [...l, 'Starting phishing scan', 'Initializing dnstwist engine']);
     setScanResults(null);
     setReadableText(null);
 
-    await startRealPhishingScan(url, password);
+    // Register scan in global state for floating window and notifications
+    const scanId = registerScan({
+      scanType: 'Phishing & Brand Abuse Detection',
+      target: url.trim(),
+      progress: 0,
+      message: 'Initializing dnstwist phishing detection engine...',
+      startTime: new Date(scanStartTime).toISOString(),
+      viewId: 'phishing-scan',
+      onStop: async () => {
+        setIsScanning(false);
+        setEndTime(Date.now());
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        stopScan(scanId);
+      },
+      onView: () => {
+        if (window.cyberGuard?.navigateToView) {
+          window.cyberGuard.navigateToView('phishing-scan');
+        }
+      }
+    });
+    scanIdRef.current = scanId;
+
+    await startRealPhishingScan(url, password, scanId);
   };
 
   // Real phishing scan implementation using dnstwist
-  const startRealPhishingScan = async (targetUrl, password) => {
+  const startRealPhishingScan = async (targetUrl, password, scanId) => {
     let logListener = null;
     try {
       // Clear logs at start
@@ -114,6 +204,13 @@ function PhishingDetection() {
         setProgress(step.progress);
         setProgressMessage(step.message);
         setLogs((l) => [...l, `${step.message}`]);
+        // Update global scan state
+        if (scanId) {
+          updateScan(scanId, {
+            progress: step.progress,
+            message: step.message
+          });
+        }
         await new Promise(resolve => setTimeout(resolve, 300));
       }
 
@@ -125,6 +222,12 @@ function PhishingDetection() {
       setProgress(30);
       setProgressMessage('Running dnstwist domain fuzzing analysis...');
       setLogs((l) => [...l, 'Executing dnstwist via WSL']);
+      if (scanId) {
+        updateScan(scanId, {
+          progress: 30,
+          message: 'Running dnstwist domain fuzzing analysis...'
+        });
+      }
 
       // Call real dnstwist API
       const result = await window.cyberGuard.runDnstwist(targetUrl, password);
@@ -132,6 +235,12 @@ function PhishingDetection() {
       setProgress(70);
       setProgressMessage('Analyzing results and generating threat assessment...');
       setLogs((l) => [...l, 'Parsing dnstwist output']);
+      if (scanId) {
+        updateScan(scanId, {
+          progress: 70,
+          message: 'Analyzing results and generating threat assessment...'
+        });
+      }
 
       // Wait a moment for progress update
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -146,6 +255,12 @@ function PhishingDetection() {
       setProgress(95);
       setProgressMessage('Generating comprehensive phishing threat report...');
       setLogs((l) => [...l, 'Building report']);
+      if (scanId) {
+        updateScan(scanId, {
+          progress: 95,
+          message: 'Generating comprehensive phishing threat report...'
+        });
+      }
 
       // Use real results from dnstwist
       const scanResults = result.results;
@@ -201,15 +316,37 @@ function PhishingDetection() {
       setProgress(100);
       setProgressMessage('Phishing detection analysis complete!');
       setLogs((l) => [...l, 'Scan complete']);
-
+      const scanEndTime = Date.now();
+      
+      // Update global scan state to 100%
+      if (scanId) {
+        updateScan(scanId, {
+          progress: 100,
+          message: 'Phishing detection analysis complete!'
+        });
+      }
+      
       // Wait a moment before showing results
       await new Promise(resolve => setTimeout(resolve, 300));
 
       // Complete the scan
       setIsScanning(false);
+      setEndTime(scanEndTime);
       setProgress(0);
       setProgressMessage('');
       setScanResults(finalResults);
+      
+      // Complete scan in global state (this triggers notification and floating window update)
+      if (scanId) {
+        completeScan(scanId, finalResults);
+        scanIdRef.current = null;
+      }
+      
+      // Stop timer
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       
       // Convert JSON to readable text using tgpt
       try {
@@ -239,8 +376,19 @@ function PhishingDetection() {
       console.error('Phishing scan error:', error);
       setLogs((l) => [...l, `[ERROR] ${error.message}`]);
       setIsScanning(false);
+      setEndTime(Date.now());
       setProgress(0);
       setProgressMessage('');
+      // Stop timer
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      // Stop scan in global state
+      if (scanIdRef.current) {
+        stopScan(scanIdRef.current);
+        scanIdRef.current = null;
+      }
       // Surface inline guidance for missing dnstwist
       if (/dnstwist\s+is\s+not\s+installed/i.test(error.message || '')) {
         setDnstwistInstall({ installing: false, progress: 0, error: null, done: false });
@@ -1068,6 +1216,62 @@ function PhishingDetection() {
           </div>
         </div>
       </div>
+
+      {/* Progress Bar and Timing Info */}
+      {startTime && (
+        <div className="bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900/50 rounded-lg">
+              <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scan Timing</h3>
+          </div>
+
+          {/* Progress Bar */}
+          {(isScanning || (startTime && progress > 0)) && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{progressMessage || (isScanning ? 'Scanning...' : 'Scan completed')}</span>
+                <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{progress}%</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden">
+                <div
+                  className={`h-3 rounded-full transition-all duration-300 ease-out ${
+                    progress === 100 
+                      ? 'bg-gradient-to-r from-green-500 to-green-600' 
+                      : 'bg-gradient-to-r from-orange-500 to-amber-600'
+                  }`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Timing Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Start Date/Time</div>
+              <div className="text-lg font-bold text-gray-900 dark:text-white">{formatDateTime(startTime)}</div>
+            </div>
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Elapsed Time</div>
+              <div className="text-lg font-bold text-orange-600 dark:text-orange-400">{formatElapsedTime(elapsedTime)}</div>
+            </div>
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Expected Completion</div>
+              <div className="text-lg font-bold text-purple-600 dark:text-purple-400">
+                {expectedCompletionTime ? formatDateTime(expectedCompletionTime) : (endTime ? formatDateTime(endTime) : <span className="text-gray-500 dark:text-gray-400">Calculating...</span>)}
+              </div>
+            </div>
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">End Date/Time</div>
+              <div className="text-lg font-bold text-gray-900 dark:text-white">{endTime ? formatDateTime(endTime) : <span className="text-green-600 dark:text-green-400">Running...</span>}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Help Dialog */}
       {showHelpDialog && (

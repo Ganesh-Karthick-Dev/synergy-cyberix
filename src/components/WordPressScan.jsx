@@ -391,7 +391,7 @@ const WordPressScan = () => {
 
   return (
     <WapitiScan
-      title="WordPress Security Scan"
+      title="WordPress Cloud Shield"
       description="Comprehensive security scanning for WordPress sites using Wapiti. Detects XSS, SQL injection, and other web application vulnerabilities."
       helpContent={helpContent}
       onDetectionCheck={detectWordPress}

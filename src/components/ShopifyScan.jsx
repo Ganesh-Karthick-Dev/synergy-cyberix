@@ -433,7 +433,7 @@ const ShopifyScan = () => {
 
   return (
     <WapitiScan
-      title="Shopify Security Scan"
+      title="Shopify Cloud Shield"
       description="Comprehensive security scanning for Shopify stores using Wapiti. Detects XSS, SQL injection, and other web application vulnerabilities."
       helpContent={helpContent}
       onDetectionCheck={detectShopify}
