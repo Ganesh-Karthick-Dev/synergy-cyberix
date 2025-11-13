@@ -1,17 +1,11 @@
 [
     {
         "arguments": "/usr/bin/dnsrecon -d webnox.in -j dnsrecon_output.json",
-        "date": "2025-11-08 09:52:08.772161",
+        "date": "2025-11-12 15:35:54.885375",
         "type": "ScanInfo"
     },
     {
         "address": "173.245.58.93",
-        "domain": "webnox.in",
-        "mname": "dee.ns.cloudflare.com",
-        "type": "SOA"
-    },
-    {
-        "address": "108.162.192.93",
         "domain": "webnox.in",
         "mname": "dee.ns.cloudflare.com",
         "type": "SOA"
@@ -23,7 +17,7 @@
         "type": "SOA"
     },
     {
-        "address": "2a06:98c1:50::ac40:205d",
+        "address": "108.162.192.93",
         "domain": "webnox.in",
         "mname": "dee.ns.cloudflare.com",
         "type": "SOA"
@@ -41,8 +35,62 @@
         "type": "SOA"
     },
     {
+        "address": "2a06:98c1:50::ac40:205d",
+        "domain": "webnox.in",
+        "mname": "dee.ns.cloudflare.com",
+        "type": "SOA"
+    },
+    {
         "Version": "\"2025.11.1\"",
-        "address": "162.159.44.8",
+        "address": "173.245.58.93",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "172.64.32.93",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "108.162.192.93",
+        "domain": "webnox.in",
+        "recursive": "True",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2606:4700:50::adf5:3a5d",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2803:f800:50::6ca2:c05d",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "",
+        "address": "2a06:98c1:50::ac40:205d",
+        "domain": "webnox.in",
+        "recursive": "False",
+        "target": "dee.ns.cloudflare.com",
+        "type": "NS"
+    },
+    {
+        "Version": "\"2025.11.1\"",
+        "address": "172.64.35.8",
         "domain": "webnox.in",
         "recursive": "True",
         "target": "leland.ns.cloudflare.com",
@@ -50,7 +98,7 @@
     },
     {
         "Version": "\"2025.11.1\"",
-        "address": "172.64.35.8",
+        "address": "162.159.44.8",
         "domain": "webnox.in",
         "recursive": "True",
         "target": "leland.ns.cloudflare.com",
@@ -66,7 +114,7 @@
     },
     {
         "Version": "",
-        "address": "2606:4700:58::a29f:2c08",
+        "address": "2a06:98c1:50::ac40:2308",
         "domain": "webnox.in",
         "recursive": "False",
         "target": "leland.ns.cloudflare.com",
@@ -82,59 +130,17 @@
     },
     {
         "Version": "",
-        "address": "2a06:98c1:50::ac40:2308",
+        "address": "2606:4700:58::a29f:2c08",
         "domain": "webnox.in",
         "recursive": "False",
         "target": "leland.ns.cloudflare.com",
         "type": "NS"
     },
     {
-        "Version": "\"2025.11.1\"",
-        "address": "108.162.192.93",
+        "address": "142.251.10.27",
         "domain": "webnox.in",
-        "recursive": "True",
-        "target": "dee.ns.cloudflare.com",
-        "type": "NS"
-    },
-    {
-        "Version": "\"2025.11.1\"",
-        "address": "172.64.32.93",
-        "domain": "webnox.in",
-        "recursive": "True",
-        "target": "dee.ns.cloudflare.com",
-        "type": "NS"
-    },
-    {
-        "Version": "\"2025.11.1\"",
-        "address": "173.245.58.93",
-        "domain": "webnox.in",
-        "recursive": "True",
-        "target": "dee.ns.cloudflare.com",
-        "type": "NS"
-    },
-    {
-        "Version": "",
-        "address": "2a06:98c1:50::ac40:205d",
-        "domain": "webnox.in",
-        "recursive": "False",
-        "target": "dee.ns.cloudflare.com",
-        "type": "NS"
-    },
-    {
-        "Version": "",
-        "address": "2606:4700:50::adf5:3a5d",
-        "domain": "webnox.in",
-        "recursive": "False",
-        "target": "dee.ns.cloudflare.com",
-        "type": "NS"
-    },
-    {
-        "Version": "",
-        "address": "2803:f800:50::6ca2:c05d",
-        "domain": "webnox.in",
-        "recursive": "False",
-        "target": "dee.ns.cloudflare.com",
-        "type": "NS"
+        "exchange": "aspmx.l.google.com",
+        "type": "MX"
     },
     {
         "address": "142.250.101.27",
@@ -155,19 +161,19 @@
         "type": "MX"
     },
     {
-        "address": "172.217.78.27",
+        "address": "172.217.78.26",
         "domain": "webnox.in",
         "exchange": "alt2.aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "74.125.24.27",
+        "address": "2404:6800:4003:c11::1b",
         "domain": "webnox.in",
         "exchange": "aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "2607:f8b0:4023:c06::1a",
+        "address": "2607:f8b0:4023:c06::1b",
         "domain": "webnox.in",
         "exchange": "alt3.aspmx.l.google.com",
         "type": "MX"
@@ -179,21 +185,15 @@
         "type": "MX"
     },
     {
-        "address": "2607:f8b0:400e:c17::1b",
+        "address": "2607:f8b0:400e:c17::1a",
         "domain": "webnox.in",
         "exchange": "alt1.aspmx.l.google.com",
         "type": "MX"
     },
     {
-        "address": "2607:f8b0:4023:1c05::1a",
+        "address": "2607:f8b0:4023:1c05::1b",
         "domain": "webnox.in",
         "exchange": "alt2.aspmx.l.google.com",
-        "type": "MX"
-    },
-    {
-        "address": "2404:6800:4003:c06::1b",
-        "domain": "webnox.in",
-        "exchange": "aspmx.l.google.com",
         "type": "MX"
     },
     {
@@ -217,13 +217,13 @@
     {
         "domain": "webnox.in",
         "name": "_dmarc.webnox.in",
-        "strings": "v=DMARC1; p=none;",
+        "strings": "v=DMARC1; p=none; rua=mailto:contact@webnox.in",
         "type": "TXT"
     },
     {
         "domain": "webnox.in",
         "name": "_dmarc.webnox.in",
-        "strings": "v=DMARC1; p=none; rua=mailto:contact@webnox.in",
+        "strings": "v=DMARC1; p=none;",
         "type": "TXT"
     }
 ]

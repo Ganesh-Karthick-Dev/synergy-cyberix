@@ -38,10 +38,15 @@ class AdditionalSecurityScanner {
     }
     
     return new Promise((resolve, reject) => {
-      const child = exec(wslCmd, { 
-        maxBuffer: 1024 * 1024 * 10,
-        timeout: timeout
-      }, (error, stdout, stderr) => {
+      // Prepare exec options - only set timeout if it's defined and > 0
+      const execOptions = { 
+        maxBuffer: 1024 * 1024 * 10
+      };
+      if (timeout && timeout > 0) {
+        execOptions.timeout = timeout;
+      }
+      
+      const child = exec(wslCmd, execOptions, (error, stdout, stderr) => {
         console.log(`🔧 [${label}] Command completed`);
         console.log(`🔧 [${label}] stdout length:`, stdout ? stdout.length : 0);
         console.log(`🔧 [${label}] stderr length:`, stderr ? stderr.length : 0);
@@ -96,19 +101,21 @@ class AdditionalSecurityScanner {
         resolve({ label, output: stdout, stderr });
       });
       
-      // Handle timeout
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill('SIGTERM');
-          reject({
-            label,
-            error: 'Command timeout after 5 minutes',
-            stderr: '',
-            stdout: '',
-            fullError: new Error('Timeout')
-          });
-        }
-      }, timeout);
+      // Handle timeout - only set up timeout if timeout is defined and > 0
+      if (timeout && timeout > 0) {
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGTERM');
+            reject({
+              label,
+              error: `Command timeout after ${timeout / 1000} seconds`,
+              stderr: '',
+              stdout: '',
+              fullError: new Error('Timeout')
+            });
+          }
+        }, timeout);
+      }
     });
   }
 
@@ -673,8 +680,8 @@ class AdditionalSecurityScanner {
       let result;
       
       try {
-        // Use longer timeout for amass (5 minutes)
-        result = await this.runKaliCommand('Subdomain Enumeration', cmd, 300000);
+        // No timeout for amass - let it run until completion
+        result = await this.runKaliCommand('Subdomain Enumeration', cmd, undefined);
       } catch (amassError) {
         console.log('🔍 [Subdomain Enumeration] amass not found or failed, trying alternative method...');
         // Fallback to using dig for subdomain enumeration

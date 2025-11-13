@@ -82,13 +82,17 @@ class ErrorBoundary extends React.Component {
             >
               Refresh Page
             </button>
-            {process.env.NODE_ENV === 'development' && (
+            {process.env.NODE_ENV === 'development' && (this.state.error || this.state.errorInfo) && (
               <details className="mt-4">
                 <summary className="cursor-pointer text-sm text-gray-500">Error Details</summary>
                 <pre className="mt-2 text-xs bg-gray-100 dark:bg-gray-700 p-2 rounded overflow-auto max-h-32">
-                  {this.state.error && this.state.error.toString()}
-                  <br />
-                  {this.state.errorInfo.componentStack}
+                  {this.state.error ? this.state.error.toString() : 'No error details available'}
+                  {this.state.errorInfo && this.state.errorInfo.componentStack && (
+                    <>
+                      <br />
+                      {this.state.errorInfo.componentStack}
+                    </>
+                  )}
                 </pre>
               </details>
             )}
@@ -263,6 +267,12 @@ const AppContent = () => {
 
   // Check authentication status on app load
   useEffect(() => {
+    // ===== HARDCODED MODE: SKIP AUTO-AUTH CHECK (API INTEGRATION COMMENTED OUT) =====
+    // In hardcoded mode, always show login form - users must manually log in
+    console.log('🔐 [APP] Hardcoded mode: Showing login form (auto-auth check disabled)')
+
+    // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
+    /*
     const checkAuthStatus = async () => {
       try {
         console.log('🔐 [APP] Checking authentication status on app load...')
@@ -287,6 +297,7 @@ const AppContent = () => {
     if (window.cyberGuard) {
       checkAuthStatus()
     }
+    */
   }, [])
 
   // Logout function
@@ -295,9 +306,6 @@ const AppContent = () => {
       const loadingToastId = showLoading('🔐 Logging out...')
 
       // ===== HARDCODED LOGOUT (API INTEGRATION COMMENTED OUT) =====
-      // Clear localStorage for hardcoded auth
-      localStorage.removeItem('isAuthenticated')
-      
       // Call backend logout (hardcoded mode - no API call)
       await authService.logout()
 
@@ -391,13 +399,10 @@ const AppContent = () => {
 
     try {
       // ===== HARDCODED LOGIN (API INTEGRATION COMMENTED OUT) =====
-      // Call backend login API
+      // Call backend login API (hardcoded mode - no actual API call)
       console.log('🎯 [APP] About to call authService.login...')
       const loginResult = await authService.login(formData.username, formData.password)
       console.log('🎯 [APP] authService.login returned:', loginResult)
-
-      // Set localStorage for hardcoded auth
-      localStorage.setItem('isAuthenticated', 'true')
 
       // Dismiss loading toast
       dismissToast(loadingToastId)

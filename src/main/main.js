@@ -1102,6 +1102,184 @@ app.whenReady().then(async () => {
 
   const win = await createMainWindow();
 
+  // Wapiti scan handlers - Register early so they're available when renderer loads
+  let wapitiProcess = null;
+  let wapitiMainWindow = null;
+
+  ipcMain.handle('wapiti:start', async (event, url) => {
+    try {
+      // Store reference to the window that initiated the scan
+      wapitiMainWindow = BrowserWindow.fromWebContents(event.sender);
+
+      // Kill any existing wapiti process
+      if (wapitiProcess) {
+        try {
+          wapitiProcess.kill('SIGTERM');
+          wapitiProcess = null;
+        } catch (e) {
+          console.log('Error killing existing wapiti process:', e.message);
+        }
+      }
+
+      console.log(`🚀 Starting Wapiti scan for: ${url}`);
+
+      // Build wapiti command
+      // Using -d 3 (depth 3), -m xss,sql (modules), -f json (JSON format), -o local_scan.json (output file)
+      // --max-scan-time 300 (5 minutes max), --skip for image files
+      const command = `wapiti -u ${url} -d 3 -m xss,sql -f json -o local_scan.json --max-scan-time 300 --skip .jpg --skip .jpeg --skip .png --skip .webp`;
+      
+      console.log(`📋 WSL Command: wsl bash -lc "${command}"`);
+
+      // Spawn the process - execute command in WSL bash
+      wapitiProcess = spawn('wsl', ['bash', '-lc', command], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        shell: false
+      });
+
+      let stdoutBuffer = '';
+      let stderrBuffer = '';
+
+      // Handle stdout (progress messages)
+      wapitiProcess.stdout.on('data', (data) => {
+        const output = data.toString();
+        stdoutBuffer += output;
+        
+        // Emit progress events
+        const lines = output.split('\n').filter(line => line.trim());
+        lines.forEach(line => {
+          if (line.trim()) {
+            // Determine message type based on content
+            let stage = 'info';
+            if (line.toLowerCase().includes('error') || line.toLowerCase().includes('failed')) {
+              stage = 'error';
+            } else if (line.toLowerCase().includes('warning')) {
+              stage = 'warning';
+            } else if (line.toLowerCase().includes('found') || line.toLowerCase().includes('vulnerability')) {
+              stage = 'success';
+            }
+
+            // Send progress event to renderer
+            if (wapitiMainWindow && !wapitiMainWindow.isDestroyed()) {
+              wapitiMainWindow.webContents.send('wapiti:progress', {
+                message: line.trim(),
+                stage: stage,
+                timestamp: Date.now()
+              });
+            }
+          }
+        });
+      });
+
+      // Handle stderr (error messages)
+      wapitiProcess.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderrBuffer += output;
+        
+        // Emit error progress events
+        const lines = output.split('\n').filter(line => line.trim());
+        lines.forEach(line => {
+          if (line.trim()) {
+            if (wapitiMainWindow && !wapitiMainWindow.isDestroyed()) {
+              wapitiMainWindow.webContents.send('wapiti:progress', {
+                message: line.trim(),
+                stage: 'error',
+                timestamp: Date.now()
+              });
+            }
+          }
+        });
+      });
+
+      // Handle process completion
+      wapitiProcess.on('close', (code) => {
+        console.log(`✅ Wapiti scan completed with code: ${code}`);
+        
+        // Try to read the output file
+        let scanResults = null;
+        try {
+          // Read the JSON output file from WSL
+          const readCommand = `wsl bash -lc "cat local_scan.json 2>/dev/null || echo '{}'"`;
+          const { execSync } = require('child_process');
+          const jsonOutput = execSync(readCommand, { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
+          
+          if (jsonOutput && jsonOutput.trim() && jsonOutput.trim() !== '{}') {
+            try {
+              scanResults = JSON.parse(jsonOutput.trim());
+            } catch (parseError) {
+              console.log('Failed to parse wapiti JSON output:', parseError.message);
+              scanResults = { raw: jsonOutput.trim() };
+            }
+          }
+        } catch (readError) {
+          console.log('Failed to read wapiti output file:', readError.message);
+        }
+
+        // Send done event to renderer
+        if (wapitiMainWindow && !wapitiMainWindow.isDestroyed()) {
+          wapitiMainWindow.webContents.send('wapiti:done', {
+            success: code === 0,
+            code: code,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer,
+            results: scanResults
+          });
+        }
+
+        wapitiProcess = null;
+        wapitiMainWindow = null;
+      });
+
+      // Handle process errors
+      wapitiProcess.on('error', (error) => {
+        console.error('❌ Wapiti process error:', error);
+        
+        if (wapitiMainWindow && !wapitiMainWindow.isDestroyed()) {
+          wapitiMainWindow.webContents.send('wapiti:done', {
+            success: false,
+            code: -1,
+            error: error.message,
+            stdout: stdoutBuffer,
+            stderr: stderrBuffer
+          });
+        }
+
+        wapitiProcess = null;
+        wapitiMainWindow = null;
+      });
+
+      return { success: true, message: 'Wapiti scan started' };
+    } catch (error) {
+      console.error('❌ Failed to start Wapiti scan:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('wapiti:stop', async () => {
+    try {
+      if (wapitiProcess) {
+        console.log('⏹️ Stopping Wapiti scan...');
+        wapitiProcess.kill('SIGTERM');
+        
+        // Wait a bit, then force kill if still running
+        setTimeout(() => {
+          if (wapitiProcess && !wapitiProcess.killed) {
+            console.log('🔪 Force killing Wapiti process...');
+            wapitiProcess.kill('SIGKILL');
+          }
+        }, 2000);
+
+        wapitiProcess = null;
+        wapitiMainWindow = null;
+        return { success: true, message: 'Wapiti scan stopped' };
+      } else {
+        return { success: false, message: 'No Wapiti scan running' };
+      }
+    } catch (error) {
+      console.error('❌ Failed to stop Wapiti scan:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // IPC: expose OS helpers
   ipcMain.handle('os:getPlatform', async () => detectPlatform());
   ipcMain.handle('os:checkWsl', async () => {

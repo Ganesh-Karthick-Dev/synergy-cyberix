@@ -455,9 +455,48 @@ function ChatBot() {
     setIsLoading(true)
 
     try {
+      // Check if WSL password is available (optional - only needed for tgpt)
       const password = getSecurePassword()
+      
+      // If password is not available, provide a helpful response without requiring WSL
       if (!password) {
-        throw new Error('WSL password not available. Please configure WSL credentials first.')
+        // Always provide a helpful response, regardless of question complexity
+        const lowerMessage = userMessage.text.toLowerCase()
+        
+        // Provide contextual responses based on the question
+        let botResponse = "Hello! I'm Gans, your AI assistant for Cyberix. "
+        
+        if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('hey')) {
+          botResponse += "How can I help you today? For advanced AI features, please configure WSL credentials in the Settings panel."
+        } else if (lowerMessage.includes('help')) {
+          botResponse += "I can help you with cybersecurity questions, tool usage, and troubleshooting. For full AI capabilities, please configure WSL credentials in the Settings panel."
+        } else if (lowerMessage.includes('what') || lowerMessage.includes('how') || lowerMessage.includes('why') || lowerMessage.includes('when') || lowerMessage.includes('where')) {
+          botResponse += "I'd love to answer your question! To provide detailed AI responses, please configure your WSL root password in Settings → WSL Configuration. Once configured, I'll be able to help you with detailed questions about cybersecurity, tools, and more!"
+        } else if (lowerMessage.includes('scan') || lowerMessage.includes('security') || lowerMessage.includes('vulnerability') || lowerMessage.includes('test')) {
+          botResponse += "I can help you with security scanning and testing! For detailed AI assistance, please configure WSL credentials in Settings. You can also use the scanning tools directly from the dashboard."
+        } else {
+          // Generic helpful response for any other question
+          botResponse += "I'd love to help you! To provide detailed AI responses, please configure your WSL root password in Settings → WSL Configuration. Once configured, I'll be able to assist you with comprehensive answers to your questions!"
+        }
+        
+        const botMessage = {
+          id: Date.now() + 1,
+          text: botResponse,
+          sender: 'bot',
+          timestamp: new Date()
+        }
+        
+        setMessages(prev => [...prev, botMessage])
+        
+        // Speak the bot's response if speech is enabled
+        if (speechEnabled && botMessage.text) {
+          setTimeout(() => {
+            speakText(botMessage.text)
+          }, 300)
+        }
+        
+        setIsLoading(false)
+        return
       }
 
       // Create a context-aware prompt for tgpt
@@ -515,11 +554,24 @@ Please provide a helpful, clear, and concise response. If the question is about 
       }
     } catch (error) {
       console.error('ChatBot error:', error)
+      
+      // Provide a more helpful error message
+      let errorMessage = error.message || 'An unexpected error occurred'
+      
+      // Check if it's a WSL-related error
+      if (errorMessage.includes('WSL') || errorMessage.includes('password') || errorMessage.includes('credentials')) {
+        errorMessage = `I need WSL credentials configured to provide AI responses. Please go to Settings → WSL Configuration and set your WSL root password. Once configured, I'll be able to help you with detailed questions!`
+      } else if (errorMessage.includes('tgpt') || errorMessage.includes('not installed')) {
+        errorMessage = `The AI assistant requires tgpt to be installed in WSL. Please make sure tgpt is installed in your Kali Linux environment. You can install it by running: pip install tgpt`
+      } else {
+        errorMessage = `I encountered an error: ${errorMessage}. If this persists, please check that WSL is configured and tgpt is installed.`
+      }
+      
       setMessages(prev => [
         ...prev,
         {
           id: Date.now() + 1,
-          text: `I'm sorry, I encountered an error: ${error.message}. Please make sure WSL is configured and tgpt is installed.`,
+          text: errorMessage,
           sender: 'bot',
           timestamp: new Date()
         }

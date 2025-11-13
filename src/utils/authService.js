@@ -195,27 +195,9 @@ class AuthService {
   // Check if user is authenticated by checking cookies
   async checkAuthStatus() {
     // ===== HARDCODED AUTH STATUS CHECK (API INTEGRATION COMMENTED OUT) =====
-    // In hardcoded mode, we check localStorage for a simple auth flag
-    try {
-      const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-      
-      if (isAuthenticated) {
-        return {
-          authenticated: true,
-          user: {
-            email: 'admin',
-            username: 'admin',
-            name: 'Administrator',
-            role: 'admin'
-          }
-        };
-      }
-      
-      return { authenticated: false };
-    } catch (error) {
-      console.error('❌ [AuthService] Auth status check error:', error.message);
-      return { authenticated: false };
-    }
+    // In hardcoded mode, always return false so login form always shows
+    // Users must manually log in with admin/admin@123
+    return { authenticated: false };
 
     // ===== ORIGINAL API INTEGRATION CODE (COMMENTED OUT) =====
     /*
