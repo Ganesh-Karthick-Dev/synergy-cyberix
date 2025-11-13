@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getSecurePassword } from '../utils/securePasswordStorage';
 import { useGlobalScanState } from '../context/GlobalScanContext';
-import ProfessionalPDFExporter from './ProfessionalPDFExporter';
 
 function PhishingDetection() {
   // State management
@@ -434,30 +433,335 @@ function PhishingDetection() {
   // Download PDF report
   const downloadPDF = async () => {
     try {
-      const exporter = new ProfessionalPDFExporter()
+      const { default: jsPDF } = await import('jspdf');
+      
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      let yPosition = 20;
 
-      // Extract clean content for PDF (no raw commands, JSON, etc.)
-      const pdfData = {
-        target_url: scanResults.target_url,
-        scanType: 'Phishing Detection',
-        scanStartTime: scanResults.scanStartTime,
-        scanEndTime: scanResults.scanEndTime,
-        scanDuration: scanResults.scanDuration,
-        threat_score: scanResults.threat_score,
-        findings: scanResults.findings || [],
-        recommendations: scanResults.recommendations || [],
-        analysis: scanResults.analysis || readableText
+      // Header with company branding
+      doc.setFillColor(220, 38, 38); // Red background
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      
+      doc.setTextColor(255, 255, 255); // White text
+      doc.setFontSize(18);
+      doc.setFont(undefined, 'bold');
+      doc.text('Advanced Phishing Detection Report', pageWidth / 2, 20, { align: 'center' });
+      
+      // Reset text color
+      doc.setTextColor(0, 0, 0);
+      yPosition = 45;
+
+      // Executive Summary Box
+      doc.setFillColor(240, 240, 240);
+      doc.rect(15, yPosition, pageWidth - 30, 25, 'F');
+      doc.setFontSize(14);
+      doc.setFont(undefined, 'bold');
+      doc.text('EXECUTIVE SUMMARY', 20, yPosition + 8);
+      
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      const riskLevel = scanResults.threat_score <= 30 ? 'LOW RISK' : 
+                       scanResults.threat_score <= 60 ? 'MEDIUM RISK' : 'HIGH RISK';
+      doc.text(`Risk Assessment: ${riskLevel} (${scanResults.threat_score}/100)`, 20, yPosition + 15);
+      doc.text(`Target: ${scanResults.target_url}`, 20, yPosition + 20);
+      yPosition += 35;
+
+      // Report Information Table
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('REPORT INFORMATION', 20, yPosition);
+      yPosition += 8;
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      const reportData = [
+        ['Report ID', `PH-${Date.now()}`],
+        ['Scan Date', new Date().toLocaleString()],
+        ['Target URL', scanResults.target_url],
+        ['Scan Type', 'Phishing Detection Analysis'],
+        ['Risk Level', riskLevel],
+        ['Threat Score', `${scanResults.threat_score}/100`]
+      ];
+
+      reportData.forEach(([label, value]) => {
+        doc.setFont(undefined, 'bold');
+        doc.text(`${label}:`, 20, yPosition);
+        doc.setFont(undefined, 'normal');
+        doc.text(value, 80, yPosition);
+        yPosition += 6;
+      });
+      yPosition += 10;
+
+      // Threat Assessment Section
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('THREAT ASSESSMENT', 20, yPosition);
+      yPosition += 8;
+
+      // Risk level indicator
+      const riskColor = scanResults.threat_score <= 30 ? [34, 197, 94] : 
+                       scanResults.threat_score <= 60 ? [234, 179, 8] : [239, 68, 68];
+      doc.setFillColor(riskColor[0], riskColor[1], riskColor[2]);
+      doc.rect(20, yPosition, 30, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.text(riskLevel, 35, yPosition + 6, { align: 'center' });
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, 'normal');
+      doc.text(`Score: ${scanResults.threat_score}/100`, 60, yPosition + 6);
+      yPosition += 15;
+
+      // Security Findings
+      if (scanResults.findings && scanResults.findings.length > 0) {
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text('SECURITY FINDINGS', 20, yPosition);
+        yPosition += 8;
+
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        
+        scanResults.findings.forEach((finding, index) => {
+          if (yPosition > pageHeight - 40) {
+            doc.addPage();
+            yPosition = 20;
+          }
+          
+          // Finding header with severity indicator
+          const severityColor = finding.severity === 'High' ? [239, 68, 68] :
+                               finding.severity === 'Medium' ? [234, 179, 8] : [34, 197, 94];
+          doc.setFillColor(severityColor[0], severityColor[1], severityColor[2]);
+          doc.rect(20, yPosition - 2, 15, 6, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(8);
+          doc.setFont(undefined, 'bold');
+          doc.text(finding.severity.toUpperCase(), 27, yPosition + 2, { align: 'center' });
+          
+          doc.setTextColor(0, 0, 0);
+          doc.setFontSize(10);
+          doc.setFont(undefined, 'bold');
+          doc.text(`${index + 1}. ${finding.type}`, 40, yPosition);
+          yPosition += 6;
+          
+          doc.setFont(undefined, 'normal');
+          const evidenceLines = doc.splitTextToSize(`Evidence: ${finding.evidence}`, pageWidth - 50);
+          doc.text(evidenceLines, 40, yPosition);
+          yPosition += evidenceLines.length * 4 + 8;
+        });
       }
 
-      const doc = await exporter.generatePDF(pdfData, ProfessionalPDFExporter.extractPhishingScanContent)
+      // Recommendations
+      if (scanResults.recommendations && scanResults.recommendations.length > 0) {
+        if (yPosition > pageHeight - 50) {
+          doc.addPage();
+          yPosition = 20;
+        }
 
-      // Save PDF
-      const fileName = `phishing-detection-${url.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`
-      doc.save(fileName)
-      alert('PDF report exported successfully!')
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text('SECURITY RECOMMENDATIONS', 20, yPosition);
+        yPosition += 8;
+
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        
+        scanResults.recommendations.forEach((rec, index) => {
+          if (yPosition > pageHeight - 20) {
+            doc.addPage();
+            yPosition = 20;
+          }
+          doc.setFont(undefined, 'bold');
+          doc.text(`${index + 1}.`, 20, yPosition);
+          doc.setFont(undefined, 'normal');
+          const recLines = doc.splitTextToSize(rec, pageWidth - 40);
+          doc.text(recLines, 30, yPosition);
+          yPosition += recLines.length * 4 + 5;
+        });
+      }
+
+    // Domain Variations Table
+    if (Array.isArray(scanResults.domain_variations) && scanResults.domain_variations.length > 0) {
+      if (yPosition > pageHeight - 60) {
+        doc.addPage();
+        yPosition = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(`DOMAIN VARIATIONS (${scanResults.domain_variations.length})`, 20, yPosition);
+      yPosition += 8;
+
+      // Table headers
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.text('Domain', 20, yPosition);
+      doc.text('Active', 110, yPosition);
+      doc.text('A/MX/NS', 140, yPosition);
+      yPosition += 6;
+
+      doc.setFont(undefined, 'normal');
+      const rowsPerPage = 30;
+      let rowCounter = 0;
+      for (const v of scanResults.domain_variations) {
+        const aCnt = Array.isArray(v.dns_a) ? v.dns_a.length : (v.a?.length || 0);
+        const mxCnt = Array.isArray(v.dns_mx) ? v.dns_mx.length : (v.mx?.length || 0);
+        const nsCnt = Array.isArray(v.dns_ns) ? v.dns_ns.length : (v.ns?.length || 0);
+
+        doc.text(String(v.domain || v.domain_name || ''), 20, yPosition, { maxWidth: 80 });
+        doc.text(v.active ? 'Yes' : 'No', 110, yPosition);
+        doc.text(`${aCnt}/${mxCnt}/${nsCnt}`, 140, yPosition);
+        yPosition += 5;
+        rowCounter += 1;
+
+        if (rowCounter % rowsPerPage === 0 && yPosition > pageHeight - 20) {
+          doc.addPage();
+          yPosition = 20;
+        }
+      }
+    }
+
+      // Screenshots Section
+      if (scanResults.screenshots && Array.isArray(scanResults.screenshots) && scanResults.screenshots.length > 0) {
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+
+        doc.setFontSize(12);
+        doc.setFont(undefined, 'bold');
+        doc.text(`VISUAL SIMILARITY ANALYSIS - SCREENSHOTS (${scanResults.screenshots.length})`, 20, yPosition);
+        yPosition += 10;
+
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        doc.text('These screenshots show visual similarity between suspicious domains and the original.', 20, yPosition);
+        yPosition += 8;
+
+        // Process screenshots
+        const screenshotsPerRow = 2;
+        const imageWidth = (pageWidth - 50) / screenshotsPerRow;
+        const imageHeight = 60;
+        let currentRow = 0;
+        let currentCol = 0;
+
+        scanResults.screenshots.forEach((screenshot, idx) => {
+          // Check if we need a new page
+          if (yPosition + imageHeight + 30 > pageHeight) {
+            doc.addPage();
+            yPosition = 20;
+            currentRow = 0;
+            currentCol = 0;
+          }
+
+          // Calculate position
+          const xPos = 20 + (currentCol * (imageWidth + 10));
+          
+          // Find matching domain variation for info
+          const matchingVar = scanResults.domain_variations?.find(
+            v => (v.domain || v.domain_name) === screenshot.domain
+          );
+          const phashSim = matchingVar?.phash_similarity || matchingVar?.phash;
+          const riskScore = matchingVar?.risk_score || 0;
+
+          try {
+            // Add screenshot image
+            if (screenshot.base64) {
+              // Convert base64 to image data
+              const imgData = 'data:image/png;base64,' + screenshot.base64;
+              
+              // Add image with proper sizing
+              doc.addImage(imgData, 'PNG', xPos, yPosition, imageWidth, imageHeight, undefined, 'FAST');
+              
+              // Add domain name and info below image
+              doc.setFontSize(8);
+              doc.setFont(undefined, 'bold');
+              const domainName = (screenshot.domain || 'Unknown').substring(0, 25);
+              doc.text(domainName, xPos, yPosition + imageHeight + 4, { maxWidth: imageWidth });
+              
+              // Add similarity and risk info
+              doc.setFontSize(7);
+              doc.setFont(undefined, 'normal');
+              let infoY = yPosition + imageHeight + 8;
+              
+              if (phashSim) {
+                const simText = `Visual: ${typeof phashSim === 'number' ? Math.round(phashSim) : phashSim}%`;
+                doc.text(simText, xPos, infoY, { maxWidth: imageWidth });
+                infoY += 4;
+              }
+              
+              if (riskScore > 0) {
+                doc.text(`Risk: ${riskScore}/100`, xPos, infoY, { maxWidth: imageWidth });
+              }
+            }
+          } catch (error) {
+            console.error(`Error adding screenshot ${idx}:`, error);
+            // Add text placeholder if image fails
+            doc.setFontSize(8);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Screenshot ${idx + 1}: ${screenshot.domain || 'Unknown'}`, xPos, yPosition + 20);
+            doc.text('(Image could not be loaded)', xPos, yPosition + 26);
+          }
+
+          // Move to next position
+          currentCol++;
+          if (currentCol >= screenshotsPerRow) {
+            currentCol = 0;
+            currentRow++;
+            yPosition += imageHeight + 25; // Move down for next row
+          }
+        });
+
+        // If we ended mid-row, move to next line
+        if (currentCol > 0) {
+          yPosition += imageHeight + 25;
+        }
+        
+        yPosition += 10; // Add spacing after screenshots section
+      }
+
+      // Technical Details Section
+      if (yPosition > pageHeight - 60) {
+        doc.addPage();
+        yPosition = 20;
+      }
+
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('TECHNICAL DETAILS', 20, yPosition);
+      yPosition += 8;
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text('Analysis Method: Automated Phishing Detection', 20, yPosition);
+      yPosition += 6;
+      doc.text('Detection Engine: Advanced Phishing Detection System', 20, yPosition);
+      yPosition += 6;
+      doc.text('Scan Duration: ~30 seconds', 20, yPosition);
+      yPosition += 6;
+      doc.text('Report Version: 1.0', 20, yPosition);
+      yPosition += 6;
+      doc.text('Generated: ' + new Date().toISOString(), 20, yPosition);
+
+      // Footer with company info
+      const footerY = pageHeight - 20;
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.text('Advanced Phishing Detection System', pageWidth / 2, footerY, { align: 'center' });
+      doc.text('Specialized Phishing Threat Analysis Report', pageWidth / 2, footerY + 5, { align: 'center' });
+      doc.text('© 2024 Phishing Detection System. All rights reserved.', pageWidth / 2, footerY + 10, { align: 'center' });
+
+      // Save the PDF
+      const filename = `security-analysis-${url.replace(/[^a-zA-Z0-9]/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+      
+      alert(`Professional PDF report downloaded: ${filename}`);
     } catch (error) {
-      console.error('PDF generation error:', error)
-      alert(`PDF generation failed: ${error.message}`)
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
     }
   };
 

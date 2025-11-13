@@ -5,7 +5,6 @@ import FrameworkDetector from '../scanners/framework-detection'
 import ToolInstaller from './ToolInstaller'
 import WslPasswordPrompt from './WslPasswordPrompt'
 import ToolInstallationDialog from './ToolInstallationDialog'
-import ProfessionalPDFExporter from './ProfessionalPDFExporter'
 import { ensureToolsInstalled, checkAllTools } from '../utils/toolChecker'
 import { hasSecurePassword } from '../utils/securePasswordStorage'
 import { getAISuggestions, formatAISuggestions } from '../utils/grokApi'
@@ -440,50 +439,888 @@ const ComprehensiveSecurityScanner = () => {
   const generateScanPDF = async (testId, result) => {
     setIsExporting(true)
     try {
-      const exporter = new ProfessionalPDFExporter()
-
+      const jsPDF = (await import('jspdf')).default
+      const doc = new jsPDF()
+      
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 15
+      const borderMargin = 10
+      const footerHeight = 20
+      let yPos = margin + 10
+      let pageNumber = 1
+      const totalPages = 1 // Will be updated after content is added
+      
+      // Function to draw page border (only on each page, not around content)
+      const drawPageBorder = () => {
+        doc.setDrawColor(80, 80, 80)
+        doc.setLineWidth(0.8)
+        doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
+      }
+      
+      // Function to add footer with "Cyberix - A Webnox Product" and page number
+      const addFooter = () => {
+        const currentPage = doc.internal.getCurrentPageInfo().pageNumber
+        const totalPages = doc.internal.getNumberOfPages()
+        
+        // Footer line
+        doc.setDrawColor(200, 200, 200)
+        doc.setLineWidth(0.5)
+        doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
+        
+        // Footer text: "Cyberix - A Webnox Product"
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(100, 100, 100)
+        doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+        
+        // Page number
+        doc.setFontSize(9)
+        doc.setTextColor(100, 100, 100)
+        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+      }
+      
+      // Helper to update all page footers
+      const updateAllFooters = () => {
+        const totalPages = doc.internal.getNumberOfPages()
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i)
+          drawPageBorder()
+          const currentPage = i
+          
+          // Footer line
+          doc.setDrawColor(200, 200, 200)
+          doc.setLineWidth(0.5)
+          doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
+          
+          // Footer text: "Cyberix - A Webnox Product"
+          doc.setFontSize(9)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(100, 100, 100)
+          doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+          
+          // Page number
+          doc.setFontSize(9)
+          doc.setTextColor(100, 100, 100)
+          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+        }
+      }
+      
+      // Draw border and footer on first page
+      drawPageBorder()
+      addFooter()
+      
+      const addText = (text, x, y, fontSize = 12, fontStyle = 'normal', align = 'left', color = [0, 0, 0]) => {
+        doc.setFontSize(fontSize)
+        doc.setFont('helvetica', fontStyle)
+        doc.setTextColor(color[0], color[1], color[2])
+        const lines = doc.splitTextToSize(text || '', pageWidth - 2 * x - margin - 10)
+        doc.text(lines, x, y, { align })
+        return y + (lines.length * fontSize * 0.4) + 5
+      }
+      
+      const checkNewPage = (requiredSpace = 20) => {
+        // Account for footer space
+        const availableHeight = pageHeight - margin - footerHeight - 10
+        if (yPos + requiredSpace > availableHeight) {
+          // Add footer to current page before adding new page
+          addFooter()
+          
+          doc.addPage()
+          pageNumber++
+          drawPageBorder() // Draw border on new page
+          addFooter() // Add footer to new page
+          yPos = margin + 10
+        }
+      }
+      
+      const addSectionBox = (title, contentLines = [], heightPadding = 15, backgroundColor = [250, 250, 250], borderColor = [180, 180, 180]) => {
+        checkNewPage(30)
+        
+        // Calculate approximate height
+        let estimatedHeight = 20 + heightPadding
+        contentLines.forEach(line => {
+          if (line.text) {
+            const lines = doc.splitTextToSize(line.text || '', pageWidth - 2 * margin - 25)
+            estimatedHeight += Math.max(8, lines.length * 6) + 4
+          }
+        })
+        
+        // Professional section box
+        doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2])
+        doc.setLineWidth(0.6)
+        doc.setFillColor(backgroundColor[0], backgroundColor[1], backgroundColor[2])
+        doc.rect(margin + 5, yPos - 5, pageWidth - 2 * margin - 10, estimatedHeight, 'FD')
+        
+        // Section title with professional background
+        doc.setFillColor(245, 245, 245)
+        doc.rect(margin + 6, yPos - 4, pageWidth - 2 * margin - 12, 16, 'F')
+        
+        // Title text
+        doc.setTextColor(40, 40, 40)
+        doc.setFontSize(13)
+        doc.setFont('helvetica', 'bold')
+        doc.text(title, margin + 10, yPos + 6)
+        
+        // Content lines
+        let currentY = yPos + 18
+        contentLines.forEach(line => {
+          if (line.text) {
+            doc.setFontSize(line.fontSize || 10)
+            doc.setFont('helvetica', line.fontStyle || 'normal')
+            doc.setTextColor(line.color ? line.color[0] : 60, line.color ? line.color[1] : 60, line.color ? line.color[2] : 60)
+            const lines = doc.splitTextToSize(line.text, pageWidth - 2 * margin - 30)
+            lines.forEach((l, idx) => {
+              doc.text(l, margin + 10 + (line.indent || 0), currentY + (idx * 6))
+            })
+            currentY += Math.max(8, lines.length * 6) + 4
+          }
+        })
+        
+        yPos = yPos - 5 + estimatedHeight + 10
+      }
+      
       const test = securityTests.find(t => t.id === testId)
       const testName = test ? test.name : testId
-
-      // Extract clean content for PDF (no raw commands, JSON, etc.)
-      const pdfData = {
-        target: targetUrl,
-        scanType: testName,
-        startTime: result?.timestamp || result?.startTime,
-        endTime: result?.completedAt || result?.endTime,
-        duration: result?.duration,
-        summary: result?.summary || {
-          totalFindings: result?.findings?.length || 0,
-          critical: 0,
-          high: 0,
-          medium: 0,
-          low: 0
-        },
-        findings: result?.findings || [],
-        recommendations: result?.recommendations || [],
-        cleanResults: result?.cleanResults || result?.analysis || 'Scan completed successfully.'
+      
+      // Enhanced Header with better styling
+      doc.setFillColor(59, 130, 246) // Blue
+      doc.setDrawColor(59, 130, 246)
+      doc.setLineWidth(0)
+      doc.rect(margin + 5, yPos - 5, pageWidth - 2 * margin - 10, 35, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(22)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Security Scan Report', pageWidth / 2, yPos + 10, { align: 'center' })
+      doc.setFontSize(14)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Test: ${testName}`, pageWidth / 2, yPos + 20, { align: 'center' })
+      yPos += 45
+      
+      // Enhanced Scan Details Section
+      addSectionBox('Scan Details', [
+        { text: `Target: ${targetUrl}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
+        { text: `Date: ${new Date().toLocaleString()}`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] },
+        { text: `Scanner: Cyberix Security Scanner`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] }
+      ])
+      
+      // Result Content - Include all content from detailed report dialog
+      if (result) {
+        const report = result.report || {}
+        
+        // Enhanced Scan Summary Section
+        const statusColor = result.status === 'completed' ? [34, 197, 94] : result.status === 'failed' ? [239, 68, 68] : [156, 163, 175]
+        addSectionBox('Scan Summary', [
+          { text: `Status: ${result.status || 'N/A'}`, fontSize: 11, fontStyle: 'bold', color: statusColor },
+          { text: `Findings Count: ${result.findings?.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
+          { text: `Recommendations: ${result.recommendations?.length || report.recommendations?.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
+          { text: `Severity Level: ${result.severity || test?.severity || 'N/A'}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] }
+        ])
+        
+        // Enhanced Risk Assessment Section
+        if (report.riskLevel || report.risk_summary) {
+          const riskLevel = report.risk_summary?.overall_risk || report.riskLevel
+          const riskColor = riskLevel === 'Critical' ? [239, 68, 68] : riskLevel === 'High' ? [249, 115, 22] : 
+                           riskLevel === 'Medium' ? [234, 179, 8] : riskLevel === 'Low' ? [34, 197, 94] : [100, 100, 100]
+          const riskLines = [
+            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold', color: riskColor }
+          ]
+          if (report.risk_summary?.summary) {
+            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          }
+          if (report.risk_summary) {
+            riskLines.push(
+              { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] },
+              { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            )
+          }
+          addSectionBox('Risk Assessment', riskLines)
+        }
+        
+        // Enhanced Security Score Section (for DNS scans)
+        if (report.security_score) {
+          addSectionBox('Security Score', [
+            { text: `Score: ${report.security_score.score}/100`, fontSize: 12, fontStyle: 'bold', color: [30, 30, 30] },
+            { text: `Grade: ${report.security_score.grade}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] },
+            { text: report.security_score.description || '', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+          ])
+        }
+        
+        // Enhanced Scan Details Section
+        if (report.target || report.scanType) {
+          const scanDetailsLines = []
+          if (report.target) scanDetailsLines.push({ text: `Target: ${report.target}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (report.scanType) scanDetailsLines.push({ text: `Scan Type: ${report.scanType}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (scanDetailsLines.length > 0) {
+            addSectionBox('Scan Information', scanDetailsLines)
+          }
+        }
+        
+        // DNS-Specific Content - Enhanced with structured boxes
+        if (testId === 'dns-resolution' || report.scanType === 'DNS Resolution & Analysis' || report.scanType === 'DNS Analysis') {
+          // DNS Summary
+          if (report.summary) {
+            const dnsLines = []
+            if (report.summary.dnssec !== undefined) {
+              const dnssecColor = report.summary.dnssec ? [34, 197, 94] : [234, 179, 8]
+              dnsLines.push({ text: `DNSSEC: ${report.summary.dnssec ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'normal', color: dnssecColor })
+            }
+            if (report.summary.zoneTransfer) {
+              dnsLines.push({ text: `Zone Transfer: ${report.summary.zoneTransfer}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            }
+            if (report.summary.spfRecord !== undefined) {
+              const spfColor = report.summary.spfRecord ? [34, 197, 94] : [234, 179, 8]
+              dnsLines.push({ text: `SPF Record: ${report.summary.spfRecord ? 'Configured' : 'Missing'}`, fontSize: 11, fontStyle: 'normal', color: spfColor })
+            }
+            if (report.summary.dmarcRecord !== undefined) {
+              const dmarcColor = report.summary.dmarcRecord ? [34, 197, 94] : [234, 179, 8]
+              dnsLines.push({ text: `DMARC Record: ${report.summary.dmarcRecord ? 'Configured' : 'Missing'}`, fontSize: 11, fontStyle: 'normal', color: dmarcColor })
+            }
+            if (report.summary.subdomainsFound !== undefined) {
+              dnsLines.push({ text: `Subdomains Found: ${report.summary.subdomainsFound}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            }
+            if (dnsLines.length > 0) {
+              addSectionBox('DNS Summary', dnsLines)
+            }
+          }
+          
+          // DNS Records - Enhanced
+          if (report.records) {
+            const recordLines = []
+            Object.entries(report.records).forEach(([recordType, records]) => {
+              if (records && Array.isArray(records) && records.length > 0) {
+                recordLines.push({ text: `${recordType} Records (${records.length}):`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+                records.slice(0, 10).forEach((record, idx) => {
+                  const recordText = typeof record === 'object' ? JSON.stringify(record) : String(record)
+                  recordLines.push({ text: `  ${idx + 1}. ${recordText}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 0 })
+                })
+                if (records.length > 10) {
+                  recordLines.push({ text: `  ... and ${records.length - 10} more ${recordType} records`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100], indent: 0 })
+                }
+              }
+            })
+            if (recordLines.length > 0) {
+              addSectionBox('DNS Records', recordLines, 20)
+            }
+          }
+          
+          // DNSSEC Status - Enhanced
+          if (report.dnssec) {
+            const dnssecColor = report.dnssec.enabled ? [34, 197, 94] : [239, 68, 68]
+            const dnssecLines = [
+              { text: `Status: ${report.dnssec.enabled ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'bold', color: dnssecColor }
+            ]
+            if (report.dnssec.recommendation) {
+              dnssecLines.push({ text: report.dnssec.recommendation, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            }
+            addSectionBox('DNSSEC Status', dnssecLines)
+          }
+          
+          // Zone Transfer Status - Enhanced
+          if (report.zone_transfer) {
+            const zoneColor = report.zone_transfer.allowed ? [239, 68, 68] : [34, 197, 94]
+            addSectionBox('Zone Transfer Status', [
+              { text: `Status: ${report.zone_transfer.allowed ? 'Allowed (Security Risk)' : 'Blocked (Secure)'}`, fontSize: 11, fontStyle: 'bold', color: zoneColor }
+            ])
+          }
+          
+          // Subdomains - Enhanced
+          if (report.subdomains && report.subdomains.length > 0) {
+            const subdomainLines = report.subdomains.slice(0, 30).map((subdomain, idx) => ({
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+            }))
+            if (report.subdomains.length > 30) {
+              subdomainLines.push({ text: `... and ${report.subdomains.length - 30} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Discovered Subdomains', subdomainLines, 15)
+          }
+          
+          // Scan Health (if available)
+          if (report.scan_health) {
+            const healthLines = [
+              { text: `Status: ${report.scan_health.status}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] }
+            ]
+            if (report.scan_health.notes && report.scan_health.notes.length > 0) {
+              report.scan_health.notes.forEach(note => {
+                healthLines.push({ text: `• ${note}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60], indent: 0 })
+              })
+            }
+            addSectionBox('Scan Health', healthLines)
+          }
+        }
+        
+        // SSL/TLS-Specific Content - Enhanced
+        if (report.scanType === 'SSL/TLS Analysis') {
+          if (report.supportedProtocols) {
+            const sslLines = [
+              { text: `Supported Protocols: ${report.supportedProtocols.join(', ')}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] }
+            ]
+            if (report.cipherStrength) {
+              sslLines.push({ text: `Cipher Strength: ${report.cipherStrength}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            }
+            if (report.certificateInfo) {
+              if (report.certificateInfo.issuer) {
+                sslLines.push({ text: `Certificate Issuer: ${report.certificateInfo.issuer}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+              }
+              if (report.certificateInfo.validTo) {
+                sslLines.push({ text: `Valid Until: ${report.certificateInfo.validTo}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+              }
+            }
+            addSectionBox('SSL/TLS Configuration', sslLines)
+          }
+        }
+        
+        // Security Headers-Specific Content - Enhanced
+        if (report.scanType === 'Security Headers') {
+          if (report.headersFound || report.missingHeaders) {
+            const headerLines = []
+            if (report.headersFound) {
+              headerLines.push({ text: 'Headers Found:', fontSize: 11, fontStyle: 'bold', color: [34, 197, 94] })
+              Object.entries(report.headersFound).slice(0, 15).forEach(([key, value]) => {
+                headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              })
+            }
+            if (report.missingHeaders && report.missingHeaders.length > 0) {
+              headerLines.push({ text: 'Missing Headers:', fontSize: 11, fontStyle: 'bold', color: [239, 68, 68] })
+              report.missingHeaders.forEach((header) => {
+                headerLines.push({ text: `- ${header}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              })
+            }
+            if (headerLines.length > 0) {
+              addSectionBox('Security Headers', headerLines, 20)
+            }
+          }
+        }
+        
+        // Port Scanning-Specific Content - Enhanced
+        if (report.scanType === 'Port Scanning') {
+          if (report.openPorts && report.openPorts.length > 0) {
+            const portLines = []
+            report.openPorts.slice(0, 25).forEach((port, idx) => {
+              portLines.push({ 
+                text: `Port ${port.port}: ${port.service || 'Unknown Service'} ${port.version ? `(${port.version})` : ''}`, 
+                fontSize: 10, 
+                fontStyle: 'normal', 
+                color: [60, 60, 60] 
+              })
+            })
+            if (report.openPorts.length > 25) {
+              portLines.push({ text: `... and ${report.openPorts.length - 25} more ports`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Open Ports', portLines, 15)
+          }
+        }
+        
+        // Subdomain Enumeration-Specific Content - Enhanced
+        if (report.scanType === 'Subdomain Enumeration') {
+          if (report.subdomainsFound && report.subdomainsFound.length > 0) {
+            const subdomainLines = report.subdomainsFound.slice(0, 35).map((subdomain, idx) => ({
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+            }))
+            if (report.subdomainsFound.length > 35) {
+              subdomainLines.push({ text: `... and ${report.subdomainsFound.length - 35} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Discovered Subdomains', subdomainLines, 15)
+          }
+        }
+        
+        // Quick Fingerprint-Specific Content - ALL from detailed dialog
+        if (testId === 'quick-fingerprint' && report.summary) {
+          const summary = report.summary
+          const quickFingerprintLines = []
+          
+          // Summary section
+          if (summary.target_url) quickFingerprintLines.push({ text: `Target URL: ${summary.target_url}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.status_code) quickFingerprintLines.push({ text: `Status Code: ${summary.status_code}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.title) quickFingerprintLines.push({ text: `Title: ${summary.title}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.ip) quickFingerprintLines.push({ text: `IP Address: ${summary.ip}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.country) quickFingerprintLines.push({ text: `Country: ${summary.country}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.plugins) quickFingerprintLines.push({ text: `Plugins Detected: ${summary.plugins.length || 0}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+          if (summary.summary) quickFingerprintLines.push({ text: `Summary: ${summary.summary}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          if (summary.severity_hint) {
+            const severityColor = summary.severity_hint === 'High' ? [239, 68, 68] : summary.severity_hint === 'Medium' ? [249, 115, 22] : [59, 130, 246]
+            quickFingerprintLines.push({ text: `Severity: ${summary.severity_hint}`, fontSize: 11, fontStyle: 'bold', color: severityColor })
+          }
+          
+          if (quickFingerprintLines.length > 0) {
+            addSectionBox('Quick Fingerprint Summary', quickFingerprintLines)
+          }
+          
+          // Plugins section
+          if (summary.plugins && summary.plugins.length > 0) {
+            const pluginLines = summary.plugins.slice(0, 20).map((plugin, idx) => ({
+              text: `${idx + 1}. ${plugin.name || 'Unknown'}${plugin.description ? ` - ${plugin.description}` : ''}`, 
+              fontSize: 10, 
+              fontStyle: 'normal', 
+              color: [60, 60, 60]
+            }))
+            if (summary.plugins.length > 20) {
+              pluginLines.push({ text: `... and ${summary.plugins.length - 20} more plugins`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Detected Plugins', pluginLines, 15)
+          }
+          
+          // HTTP Headers section
+          if (summary.http_headers && Object.keys(summary.http_headers).length > 0) {
+            const headerLines = []
+            Object.entries(summary.http_headers).slice(0, 30).forEach(([key, value]) => {
+              headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60] })
+            })
+            if (Object.keys(summary.http_headers).length > 30) {
+              headerLines.push({ text: `... and ${Object.keys(summary.http_headers).length - 30} more headers`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            if (headerLines.length > 0) {
+              addSectionBox('HTTP Headers', headerLines, 15)
+            }
+          }
+          
+          // Recommendation section
+          if (summary.recommendation) {
+            addSectionBox('Recommendations', [
+              { text: summary.recommendation, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            ])
+          }
+        }
+        
+        // File Upload Check-Specific Content - ALL from detailed dialog
+        if (testId === 'file-upload-check' && report.json) {
+          const json = report.json
+          
+          // Aggregate Findings
+          if (json.aggregate_findings) {
+            const findings = json.aggregate_findings
+            const uploadAllowedColor = findings.upload_allowed === true ? [239, 68, 68] : findings.upload_allowed === false ? [34, 197, 94] : [156, 163, 175]
+            const findingLines = [
+              { text: `Upload Allowed: ${findings.upload_allowed === true ? 'Yes' : findings.upload_allowed === false ? 'No' : 'Unknown'}`, fontSize: 11, fontStyle: 'bold', color: uploadAllowedColor },
+              { text: `Confidence: ${findings.confidence || 'low'}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
+              { text: `Severity: ${findings.severity || 'unknown'}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
+              { text: `Evidence Count: ${findings.evidence?.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] }
+            ]
+            if (findings.rationale) {
+              findingLines.push({ text: `Rationale: ${findings.rationale}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            }
+            addSectionBox('Aggregate Findings', findingLines)
+          }
+          
+          // Professional Client-Facing Summary (Report section from dialog)
+          if (json.meta || json.commands || json.public_accessibility) {
+            const reportLines = []
+            
+            if (json.meta) {
+              if (json.meta.generated_at_utc) reportLines.push({ text: `Timestamp: ${json.meta.generated_at_utc}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+              if (json.meta.target) reportLines.push({ text: `Target: ${json.meta.target}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            }
+            
+            reportLines.push({ text: 'Test Objective: Assess whether the upload endpoint correctly validates and stores files, and whether uploaded content is publicly accessible.', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            
+            if (json.commands && Array.isArray(json.commands)) {
+              const cmds = json.commands
+              const byLabel = (label) => cmds.find(c => (c.raw_label || '').includes(label) || (c.raw_label === label) || (c.id === label))
+              const upTest = byLabel('curl_upload_test') || byLabel('curl_upload_test.txt')
+              const upHarmless = byLabel('curl_upload_harmless') || byLabel('curl_upload_harmless.txt')
+              const head = byLabel('curl_head_candidate') || byLabel('curl_head_candidate.txt')
+              const etcp = byLabel('curl_upload_etcpasswd') || byLabel('curl_upload_etcpasswd.txt')
+              const status = (c) => c?.status_code ?? null
+              const ok = (c) => !!(status(c) && status(c) >= 200 && status(c) < 300)
+              
+              reportLines.push({ text: 'Commands Executed (summary):', fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              reportLines.push({ text: `  • Basic upload with test.txt ${ok(upTest) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Disguised script upload harmless.php.txt ${ok(upHarmless) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Checked public accessibility of uploaded file (HEAD) ${ok(head) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Sensitive file upload attempt (/etc/passwd) ${ok(etcp) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              
+              reportLines.push({ text: 'Results:', fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              reportLines.push({ text: `  • Upload (test.txt): ${status(upTest) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Upload (harmless.php.txt): ${status(upHarmless) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Public access (HEAD): ${status(head) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Upload (/etc/passwd): ${status(etcp) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              
+              const uploadAllowed = ok(upTest) || ok(upHarmless)
+              const publicAccess = ok(head)
+              
+              reportLines.push({ text: 'Vulnerability Status:', fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              reportLines.push({ text: `  • File upload allowed: ${uploadAllowed ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Malicious file upload possible: ${ok(upHarmless) ? 'Yes (disguised script accepted)' : 'Unclear'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: `  • Public file access allowed: ${publicAccess ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            }
+            
+            if (json.aggregate_findings?.severity) {
+              reportLines.push({ text: `Risk Level: ${json.aggregate_findings.severity}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+            }
+            
+            if (reportLines.length > 0) {
+              addSectionBox('Detailed Report', reportLines, 20)
+            }
+          }
+        }
+        
+        // CT Log Subdomain Discovery-Specific Content - ALL from detailed dialog
+        if (testId === 'ct-log-subdomain-discovery' && report.summary) {
+          const summary = report.summary
+          const ctLines = []
+          
+          if (summary.status) ctLines.push({ text: `Status: ${summary.status}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.certificates) ctLines.push({ text: `Total Certificates: ${summary.certificates.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.unique_subdomains) ctLines.push({ text: `Unique Subdomains: ${summary.unique_subdomains.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (summary.evidence) ctLines.push({ text: `Evidence: ${summary.evidence}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          
+          if (ctLines.length > 0) {
+            addSectionBox('Certificate Transparency Log Summary', ctLines)
+          }
+          
+          // Unique Subdomains
+          if (summary.unique_subdomains && summary.unique_subdomains.length > 0) {
+            const subdomainLines = summary.unique_subdomains.slice(0, 50).map((subdomain, idx) => ({
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+            }))
+            if (summary.unique_subdomains.length > 50) {
+              subdomainLines.push({ text: `... and ${summary.unique_subdomains.length - 50} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Unique Subdomains', subdomainLines, 15)
+          }
+          
+          // Discovered Certificates
+          if (summary.certificates && summary.certificates.length > 0) {
+            const certLines = []
+            summary.certificates.slice(0, 20).forEach((cert, idx) => {
+              certLines.push({ text: `Certificate ${idx + 1}:`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              if (cert.name_value) certLines.push({ text: `  Name Value: ${cert.name_value}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (cert.serial_number) certLines.push({ text: `  Serial Number: ${cert.serial_number}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (cert.entry_timestamp) certLines.push({ text: `  Entry Timestamp: ${cert.entry_timestamp}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (cert.not_before) certLines.push({ text: `  Not Before: ${cert.not_before}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (cert.not_after) certLines.push({ text: `  Not After: ${cert.not_after}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+            })
+            if (summary.certificates.length > 20) {
+              certLines.push({ text: `... and ${summary.certificates.length - 20} more certificates`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            if (certLines.length > 0) {
+              addSectionBox('Discovered Certificates', certLines, 20)
+            }
+          }
+        }
+        
+        // WAF Detection-Specific Content - ALL from detailed dialog
+        if (testId === 'waf-detection' && report.summary) {
+          const wafLines = []
+          
+          if (report.summary.wafDetected !== undefined) {
+            const wafDetectedColor = report.summary.wafDetected ? [59, 130, 246] : [156, 163, 175]
+            wafLines.push({ text: `WAF Detected: ${report.summary.wafDetected ? 'Yes' : 'No'}`, fontSize: 11, fontStyle: 'bold', color: wafDetectedColor })
+          }
+          if (report.summary.wafType) wafLines.push({ text: `WAF Type: ${report.summary.wafType}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (report.summary.wafVendor) wafLines.push({ text: `Vendor: ${report.summary.wafVendor}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (report.summary.numberOfRequests) wafLines.push({ text: `Requests Made: ${report.summary.numberOfRequests}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          
+          if (report.details?.wafInfo) {
+            wafLines.push({ text: `Detection Information: ${report.details.wafInfo}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          }
+          if (report.details?.reason) {
+            wafLines.push({ text: `Detection Reason: ${report.details.reason}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          }
+          
+          if (wafLines.length > 0) {
+            addSectionBox('WAF Detection Summary', wafLines)
+          }
+          
+          // Raw Output
+          if (report.rawOutput) {
+            const rawLines = doc.splitTextToSize(report.rawOutput.substring(0, 2000), pageWidth - 2 * margin - 25)
+            const displayRawLines = rawLines.slice(0, 40).map(line => ({
+              text: line, fontSize: 8, fontStyle: 'normal', color: [80, 80, 80]
+            }))
+            if (report.rawOutput.length > 2000 || rawLines.length > 40) {
+              displayRawLines.push({ text: `... (output truncated, showing first 2000 characters of ${report.rawOutput.length} total)`, fontSize: 8, fontStyle: 'italic', color: [120, 120, 120] })
+            }
+            addSectionBox('Raw wafw00f Output', displayRawLines, 10)
+          }
+        }
+        
+        // CSRF Test-Specific Content - ALL from detailed dialog
+        if ((testId === 'csrf-test' || report.scanType === 'Cross-Site Request Forgery (CSRF) Testing') && report.csrfVulnerability) {
+          const csrfColor = report.csrfVulnerability === 'Potential Vulnerability' ? [239, 68, 68] : report.csrfVulnerability === 'Protected' ? [34, 197, 94] : [234, 179, 8]
+          const csrfLines = [
+            { text: `CSRF Vulnerability: ${report.csrfVulnerability}`, fontSize: 11, fontStyle: 'bold', color: csrfColor }
+          ]
+          
+          if (report.summary) csrfLines.push({ text: `Summary: ${report.summary}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          if (report.httpStatusCode) csrfLines.push({ text: `HTTP Status Code: ${report.httpStatusCode}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (report.target) csrfLines.push({ text: `Target: ${report.target}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          
+          if (csrfLines.length > 0) {
+            addSectionBox('CSRF Test Results', csrfLines)
+          }
+          
+          // Response Headers
+          if (report.responseHeaders && Object.keys(report.responseHeaders).length > 0) {
+            const headerLines = []
+            Object.entries(report.responseHeaders).slice(0, 20).forEach(([key, value]) => {
+              headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60] })
+            })
+            if (Object.keys(report.responseHeaders).length > 20) {
+              headerLines.push({ text: `... and ${Object.keys(report.responseHeaders).length - 20} more headers`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            if (headerLines.length > 0) {
+              addSectionBox('Response Headers', headerLines, 15)
+            }
+          }
+          
+          // CSRF Protection Analysis
+          const protectionLines = []
+          const hasCsrfToken = report.responseHeaders?.['x-csrf-token'] || report.responseHeaders?.['csrf-token']
+          const hasSameSite = report.responseHeaders?.['set-cookie']?.includes('SameSite')
+          const hasOrigin = report.responseHeaders?.['access-control-allow-origin']
+          
+          protectionLines.push({ 
+            text: `CSRF Tokens: ${hasCsrfToken ? 'Present' : 'Missing'}`, 
+            fontSize: 11, 
+            fontStyle: 'normal', 
+            color: hasCsrfToken ? [34, 197, 94] : [239, 68, 68] 
+          })
+          protectionLines.push({ 
+            text: `SameSite Cookies: ${hasSameSite ? 'Present' : 'Missing'}`, 
+            fontSize: 11, 
+            fontStyle: 'normal', 
+            color: hasSameSite ? [34, 197, 94] : [239, 68, 68] 
+          })
+          protectionLines.push({ 
+            text: `Origin Validation: ${hasOrigin ? 'Configured' : 'Not Configured'}`, 
+            fontSize: 11, 
+            fontStyle: 'normal', 
+            color: hasOrigin ? [34, 197, 94] : [234, 179, 8] 
+          })
+          
+          if (protectionLines.length > 0) {
+            addSectionBox('CSRF Protection Analysis', protectionLines)
+          }
+        }
+        
+        // XSS Test-Specific Content - ALL from detailed dialog
+        if ((testId === 'xss-test' || report.scanType === 'Cross-Site Scripting (XSS) Testing') && report.vulnerabilities_found !== undefined) {
+          const xssColor = report.vulnerabilities_found > 0 ? [239, 68, 68] : (report.reflected_parameters && report.reflected_parameters.length > 0) ? [249, 115, 22] : [34, 197, 94]
+          const xssLines = [
+            { text: `Vulnerabilities Found: ${report.vulnerabilities_found || 0}`, fontSize: 11, fontStyle: 'bold', color: xssColor },
+            { text: `Status: ${report.vulnerabilities_found > 0 ? 'VULNERABLE' : (report.reflected_parameters && report.reflected_parameters.length > 0) ? 'REFLECTED' : 'SAFE'}`, fontSize: 11, fontStyle: 'bold', color: xssColor }
+          ]
+          
+          if (report.summary) xssLines.push({ text: `Summary: ${report.summary}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          
+          if (report.scan_details) {
+            if (report.scan_details.method) xssLines.push({ text: `Method: ${report.scan_details.method}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.scan_details.performance) xssLines.push({ text: `Workers: ${report.scan_details.performance}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.scan_details.timeout) xssLines.push({ text: `Timeout: ${report.scan_details.timeout}s`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.scan_details.fast_scan !== undefined) xssLines.push({ text: `Fast Scan: ${report.scan_details.fast_scan ? 'Yes' : 'No'}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+          }
+          
+          if (xssLines.length > 0) {
+            addSectionBox('XSS Test Results', xssLines)
+          }
+          
+          // Scan Statistics
+          if (report.parameters_tested !== undefined || report.total_testing_points_found !== undefined || report.vulnerabilities_found !== undefined || report.reflected_parameters) {
+            const statsLines = []
+            if (report.parameters_tested !== undefined) statsLines.push({ text: `Parameters Tested: ${report.parameters_tested}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.total_testing_points_found !== undefined) statsLines.push({ text: `Testing Points: ${report.total_testing_points_found}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.vulnerabilities_found !== undefined) statsLines.push({ text: `Vulnerabilities: ${report.vulnerabilities_found}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.reflected_parameters) statsLines.push({ text: `Reflected Parameters: ${report.reflected_parameters.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+            
+            if (statsLines.length > 0) {
+              addSectionBox('Scan Statistics', statsLines)
+            }
+          }
+          
+          // Vulnerability Details
+          if (report.vulnerability_details && report.vulnerability_details.length > 0) {
+            const vulnLines = []
+            report.vulnerability_details.slice(0, 15).forEach((vuln, idx) => {
+              vulnLines.push({ text: `Vulnerability ${idx + 1}:`, fontSize: 11, fontStyle: 'bold', color: [239, 68, 68] })
+              if (vuln.param) vulnLines.push({ text: `  Parameter: ${vuln.param}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (vuln.payload) vulnLines.push({ text: `  Payload: ${vuln.payload}`, fontSize: 9, fontStyle: 'normal', color: [80, 80, 80], indent: 5 })
+              if (vuln.severity) vulnLines.push({ text: `  Severity: ${vuln.severity}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (vuln.cwe) vulnLines.push({ text: `  CWE: ${vuln.cwe}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (vuln.inject_type) vulnLines.push({ text: `  Type: ${vuln.inject_type}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+              if (vuln.evidence) vulnLines.push({ text: `  Evidence: ${vuln.evidence}`, fontSize: 9, fontStyle: 'normal', color: [80, 80, 80], indent: 5 })
+            })
+            if (report.vulnerability_details.length > 15) {
+              vulnLines.push({ text: `... and ${report.vulnerability_details.length - 15} more vulnerabilities`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            if (vulnLines.length > 0) {
+              addSectionBox('Vulnerabilities Detected', vulnLines, 20)
+            }
+          }
+          
+          // Reflected Parameters
+          if (report.reflected_parameters && report.reflected_parameters.length > 0) {
+            const reflectedLines = report.reflected_parameters.slice(0, 30).map((param, idx) => ({
+              text: `${idx + 1}. ${param}`, fontSize: 10, fontStyle: 'normal', color: [249, 115, 22]
+            }))
+            if (report.reflected_parameters.length > 30) {
+              reflectedLines.push({ text: `... and ${report.reflected_parameters.length - 30} more reflected parameters`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Reflected Parameters', reflectedLines, 15)
+          }
+          
+          // Content Type
+          if (report.content_type) {
+            addSectionBox('Content Type', [
+              { text: report.content_type, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            ])
+          }
+          
+          // Raw Output
+          if (report.raw_output) {
+            const rawLines = doc.splitTextToSize(report.raw_output.substring(0, 2000), pageWidth - 2 * margin - 25)
+            const displayRawLines = rawLines.slice(0, 40).map(line => ({
+              text: line, fontSize: 8, fontStyle: 'normal', color: [80, 80, 80]
+            }))
+            if (report.raw_output.length > 2000 || rawLines.length > 40) {
+              displayRawLines.push({ text: `... (output truncated, showing first 2000 characters)`, fontSize: 8, fontStyle: 'italic', color: [120, 120, 120] })
+            }
+            addSectionBox('Raw Scan Output', displayRawLines, 10)
+          }
+        }
+        
+        // SQL Injection Test-Specific Content - ALL from detailed dialog
+        if ((testId === 'sql-injection-test' || report.scanType === 'SQL Injection Test' || report.scanType === 'SQL Injection Scan') && report.vulnerability_found !== undefined) {
+          const sqlColor = report.vulnerability_found ? [239, 68, 68] : (report.http_errors && report.http_errors.length > 0) ? [249, 115, 22] : [34, 197, 94]
+          const sqlLines = [
+            { text: `Vulnerability Found: ${report.vulnerability_found ? 'Yes' : 'No'}`, fontSize: 11, fontStyle: 'bold', color: sqlColor },
+            { text: `Status: ${report.vulnerability_found ? 'VULNERABLE' : (report.http_errors && report.http_errors.length > 0) ? 'PROTECTED' : 'SAFE'}`, fontSize: 11, fontStyle: 'bold', color: sqlColor }
+          ]
+          
+          if (report.summary) sqlLines.push({ text: `Summary: ${report.summary}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          
+          if (report.test_details) {
+            if (report.test_details.level) sqlLines.push({ text: `Level: ${report.test_details.level}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.test_details.risk) sqlLines.push({ text: `Risk: ${report.test_details.risk}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.test_details.technique) sqlLines.push({ text: `Technique: ${report.test_details.technique}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.test_details.threads) sqlLines.push({ text: `Threads: ${report.test_details.threads}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+          }
+          
+          if (sqlLines.length > 0) {
+            addSectionBox('SQL Injection Test Results', sqlLines)
+          }
+          
+          // Parameters Tested
+          if (report.parameters_tested && report.parameters_tested.length > 0) {
+            const paramLines = report.parameters_tested.slice(0, 30).map((param, idx) => ({
+              text: `${idx + 1}. ${param}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+            }))
+            if (report.parameters_tested.length > 30) {
+              paramLines.push({ text: `... and ${report.parameters_tested.length - 30} more parameters`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            }
+            addSectionBox('Parameters Tested', paramLines, 15)
+          }
+          
+          // HTTP Errors
+          if (report.http_errors && report.http_errors.length > 0) {
+            const errorLines = report.http_errors.map((error, idx) => ({
+              text: `HTTP ${error.code || 'Unknown'}: ${error.description || 'No description'} - ${error.count || 0} times`, 
+              fontSize: 10, 
+              fontStyle: 'normal', 
+              color: [249, 115, 22] 
+            }))
+            if (errorLines.length > 0) {
+              addSectionBox('HTTP Errors Detected', errorLines, 15)
+              addSectionBox('Protection Detection Note', [
+                { text: 'These errors typically indicate server-side protection such as WAF or IP blocking.', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+              ])
+            }
+          }
+          
+          // Protection Detection
+          if (report.protection_detected) {
+            addSectionBox('Protection Mechanisms Detected', [
+              { text: 'The server appears to be protected by WAF (Web Application Firewall) or similar security mechanisms. This may have interfered with the SQL injection testing.', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            ])
+          }
+          
+          // Database Information
+          if (report.database_info && report.database_info.dbms) {
+            const dbLines = [
+              { text: `Database Type: ${report.database_info.dbms}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] }
+            ]
+            if (report.database_info.version) dbLines.push({ text: `Version: ${report.database_info.version}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+            if (report.database_info.databases && report.database_info.databases.length > 0) {
+              dbLines.push({ text: `Accessible Databases: ${report.database_info.databases.join(', ')}`, fontSize: 10, fontStyle: 'normal', color: [239, 68, 68] })
+            }
+            if (dbLines.length > 0) {
+              addSectionBox('Database Information', dbLines)
+            }
+          }
+          
+          // Raw Output
+          if (report.raw_output) {
+            const rawLines = doc.splitTextToSize(report.raw_output.substring(0, 2000), pageWidth - 2 * margin - 25)
+            const displayRawLines = rawLines.slice(0, 40).map(line => ({
+              text: line, fontSize: 8, fontStyle: 'normal', color: [80, 80, 80]
+            }))
+            if (report.raw_output.length > 2000 || rawLines.length > 40) {
+              displayRawLines.push({ text: `... (output truncated, showing first 2000 characters)`, fontSize: 8, fontStyle: 'italic', color: [120, 120, 120] })
+            }
+            addSectionBox('Raw Scan Output', displayRawLines, 10)
+          }
+        }
+        
+        // Enhanced Findings Section
+        if (result.findings && result.findings.length > 0) {
+          const findingLines = []
+          result.findings.forEach((finding, idx) => {
+            const findingType = finding.type || 'info'
+            const findingMessage = finding.message || 'No message available'
+            const findingDetails = finding.details ? (typeof finding.details === 'object' ? JSON.stringify(finding.details, null, 2) : String(finding.details)) : ''
+            const findingColor = findingType === 'critical' ? [239, 68, 68] : findingType === 'high' ? [249, 115, 22] : 
+                               findingType === 'medium' ? [234, 179, 8] : findingType === 'low' ? [59, 130, 246] : [34, 197, 94]
+            findingLines.push({ text: `${idx + 1}. [${findingType.toUpperCase()}] ${findingMessage}`, fontSize: 11, fontStyle: 'bold', color: findingColor })
+            if (findingDetails) {
+              const detailsText = findingDetails.length > 300 ? findingDetails.substring(0, 300) + '...' : findingDetails
+              findingLines.push({ text: `   Details: ${detailsText}`, fontSize: 9, fontStyle: 'normal', color: [80, 80, 80], indent: 5 })
+            }
+          })
+          addSectionBox('Findings & Recommendations', findingLines, 20)
+        }
+        
+        // Enhanced Issues from Report
+        if (report.issues && report.issues.length > 0) {
+          const issueLines = report.issues.map((issue, idx) => {
+            const issueText = typeof issue === 'object' ? JSON.stringify(issue, null, 2) : String(issue)
+            const displayText = issueText.length > 250 ? issueText.substring(0, 250) + '...' : issueText
+            return { text: `${idx + 1}. ${displayText}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+          })
+          addSectionBox('Issues', issueLines, 15)
+        }
+        
+        // Enhanced Recommendations Section
+        const allRecommendations = [
+          ...(result.recommendations || []),
+          ...(report.recommendations || [])
+        ]
+        if (allRecommendations.length > 0) {
+          const recLines = allRecommendations.map((rec, idx) => ({
+            text: `${idx + 1}. ${rec}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+          }))
+          addSectionBox('Recommendations', recLines, 15)
+        }
+        
+        // Enhanced Raw Output Section
+        if (report.rawOutput || report.raw_output) {
+          const rawText = report.rawOutput || report.raw_output || ''
+          const rawLines = doc.splitTextToSize(rawText.substring(0, 3000), pageWidth - 2 * margin - 25)
+          const displayRawLines = rawLines.slice(0, 50).map(line => ({
+            text: line, fontSize: 8, fontStyle: 'normal', color: [80, 80, 80]
+          }))
+          if (rawText.length > 3000 || rawLines.length > 50) {
+            displayRawLines.push({ text: `... (output truncated, showing first 3000 characters of ${rawText.length} total)`, fontSize: 8, fontStyle: 'italic', color: [120, 120, 120] })
+          }
+          addSectionBox('Raw Scan Output', displayRawLines, 10)
+        }
       }
-
-      const doc = await exporter.generatePDF(pdfData, (data) => ({
-        title: `${testName} Report`,
-        subtitle: 'Security Assessment Results',
-        scanInfo: {
-          target: data.target,
-          scanType: data.scanType,
-          startTime: data.startTime,
-          endTime: data.endTime,
-          duration: data.duration
-        },
-        summary: data.summary,
-        findings: data.findings,
-        recommendations: data.recommendations,
-        content: data.cleanResults
-      }))
-
-      // Save PDF
-      const fileName = `${testId}-scan-${targetUrl.replace(/[^a-z0-9]/gi, '-')}-${Date.now()}.pdf`
+      
+      // Update all footers with correct page numbers
+      updateAllFooters()
+      
+      const fileName = `Security_Scan_${testId}_${new Date().toISOString().split('T')[0]}.pdf`
       doc.save(fileName)
-      showSuccess('PDF report exported successfully!')
+      showSuccess(`PDF report generated: ${fileName}`)
     } catch (error) {
       console.error('PDF generation error:', error)
       showError('Failed to generate PDF report')
@@ -492,22 +1329,38 @@ const ComprehensiveSecurityScanner = () => {
     }
   }
 
+  // Initialize selected scans with all scans when component mounts
+  useEffect(() => {
+    if (selectedScans.size === 1 && selectedScans.has('all-scans')) {
+      const initial = new Set(['all-scans'])
+      securityTests.forEach(test => initial.add(test.id))
+      setSelectedScans(initial)
+    }
+  }, []) // Only run once on mount
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    if (logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
+    }
+  }, [logs])
+
   // Check for stored password and tools on component mount
   useEffect(() => {
     const checkInitialState = async () => {
       try {
         console.log('[COMPREHENSIVE-SCANNER] Checking initial state...')
-
+        
         // Check if we have stored WSL password
         if (window.cyberGuard && window.cyberGuard.getStoredRootPassword) {
           const storedPassword = await window.cyberGuard.getStoredRootPassword()
-
+          
           if (storedPassword) {
             console.log('🔐 [COMPREHENSIVE-SCANNER] Found stored password, checking tools...')
-
+            
             // Check which tools are missing
             const toolCheck = await window.cyberGuard.checkRequiredToolsOnly?.(storedPassword)
-
+            
             if (toolCheck && toolCheck.success) {
               console.log('✅ [COMPREHENSIVE-SCANNER] All tools are ready!')
               showSuccess('All security tools are ready! You can start scanning.')
@@ -548,7 +1401,7 @@ const ComprehensiveSecurityScanner = () => {
       }
     }
   }, [isScanning])
-
+  
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -560,7 +1413,7 @@ const ComprehensiveSecurityScanner = () => {
 
   // Track which scans have already sent notifications (global tracking)
   const notifiedScansRef = useRef(new Set())
-
+  
   // Use a more unique key to prevent duplicates across different scan runs
   const getNotificationKey = useCallback((testId, testName) => {
     return `overview-${testId}-${testName}-${Date.now()}`
@@ -569,15 +1422,15 @@ const ComprehensiveSecurityScanner = () => {
   // Helper function to send notification for a completed scan
   const sendScanNotification = useCallback((testId, testName) => {
     const scanKey = `${testId}-${testName}`
-
+    
     // Only send notification once per scan
     if (notifiedScansRef.current.has(scanKey)) {
       console.log(`[NOTIFICATION] Skipping duplicate notification for ${testName}`)
       return
     }
-
+    
     notifiedScansRef.current.add(scanKey)
-
+    
     // Send desktop push notification for individual scan completion
     if (window.cyberGuard?.showNotification) {
       try {
@@ -588,7 +1441,7 @@ const ComprehensiveSecurityScanner = () => {
           viewId: 'overview',
           scanId: `overview-${testId}`
         })
-
+        
         if (notificationPromise && typeof notificationPromise.then === 'function') {
           notificationPromise.then(() => {
             console.log(`[NOTIFICATION] ✅ Notification sent successfully for ${testName}`)
@@ -640,26 +1493,29 @@ const ComprehensiveSecurityScanner = () => {
       console.log('✅ [SCAN-COMPLETION] All scans completed - finalizing...')
       console.log('✅ [SCAN-COMPLETION] Scans to check:', scansToCheck.length)
       console.log('✅ [SCAN-COMPLETION] isScanning:', isScanning, 'backgroundScanning:', backgroundScanning)
-
+      
       // Prevent duplicate completion messages
       if (completionTriggeredRef.current) {
         console.log('⚠️ [SCAN-COMPLETION] Completion already triggered, skipping...')
         return
       }
       completionTriggeredRef.current = true
-
+      
       // All scans are done
       setCurrentTest(null)
       const endTime = Date.now()
       setScanTiming(prev => ({ ...prev, endTime }))
       setScanEndTime(endTime)
-
-      // Get final results and update timing
+      setIsScanning(false)
+      setBackgroundScanning(false)
+      
       const completedCount = scansToCheck.filter(test => {
         const result = scanResults[test.id] || newScanResults[test.id]
         return result && result.status === 'completed'
       }).length
-
+      
+      console.log('✅ [SCAN-COMPLETION] Completed count:', completedCount, 'of', scansToCheck.length)
+      
       // Complete overview scan
       if (overviewScanIdRef.current) {
         console.log('✅ [SCAN-COMPLETION] Completing overview scan:', overviewScanIdRef.current)
@@ -669,30 +1525,27 @@ const ComprehensiveSecurityScanner = () => {
         })
         overviewScanIdRef.current = null
       }
-
+      
       // Send desktop push notification when all scans complete (only once)
       const allScansCompleteKey = 'overview-all-scans-complete'
       if (!notifiedScansRef.current.has(allScansCompleteKey)) {
         console.log('📢 [SCAN-COMPLETION] Sending notification...')
         notifiedScansRef.current.add(allScansCompleteKey)
-
+        
         if (window.cyberGuard?.showNotification) {
           try {
             // Determine notification message based on number of scans
             let notificationBody
-            const totalScans = scansToCheck.length
-            const successfulScans = completedCount
-
-            if (successfulScans === totalScans) {
-              notificationBody = `All ${totalScans} security scans completed successfully!`
-            } else if (successfulScans > 0) {
-              notificationBody = `${successfulScans} of ${totalScans} security scans completed. Check results for details.`
+            if (scansToCheck.length === 1) {
+              const scanName = scansToCheck[0].name
+              notificationBody = `In Overview Scan, ${scanName} has been completed successfully.`
             } else {
-              notificationBody = `${totalScans} security scans completed. Check results for details.`
+              notificationBody = 'All Scans in Overview Tab has been completed successfully.'
             }
-
+            
+            console.log('📢 [SCAN-COMPLETION] Notification body:', notificationBody)
             window.cyberGuard.showNotification({
-              title: 'Security Scan Complete',
+              title: 'Overview Scan Completed',
               body: notificationBody,
               viewId: 'overview',
               scanId: 'overview-all-complete'
@@ -713,7 +1566,7 @@ const ComprehensiveSecurityScanner = () => {
       } else {
         console.log('📢 [SCAN-COMPLETION] Notification already sent, skipping duplicate')
       }
-
+      
       // Reset notification tracking for next scan (only individual scan notifications, not the all-complete one)
       // Keep the all-complete key to prevent duplicate notifications
       const allCompleteKey = 'overview-all-scans-complete'
@@ -742,23 +1595,21 @@ const ComprehensiveSecurityScanner = () => {
         startScan()
       } else if (!targetUrl.trim()) {
         console.log('⚠️ [COMPREHENSIVE-SCANNER] Auto-scan triggered but no target URL set')
-      } else {
-        console.log('⚠️ [COMPREHENSIVE-SCANNER] Auto-scan triggered but scanning already in progress')
+        showError('Please enter a target URL first')
+      } else if (isScanning) {
+        console.log('⚠️ [COMPREHENSIVE-SCANNER] Auto-scan triggered but scan already running')
       }
     }
 
-    if (window.cyberGuard && window.cyberGuard.on) {
-      window.cyberGuard.on('auto-scan', handleAutoScan)
-      console.log('✅ [COMPREHENSIVE-SCANNER] Auto-scan listener registered')
+    // Listen for auto-scan events from main process
+    if (window.cyberGuard && window.cyberGuard.onScanAutoStart) {
+      window.cyberGuard.onScanAutoStart(handleAutoScan)
     }
 
     return () => {
-      if (window.cyberGuard && window.cyberGuard.off) {
-        window.cyberGuard.off('auto-scan', handleAutoScan)
-        console.log('🧹 [COMPREHENSIVE-SCANNER] Auto-scan listener cleaned up')
-      }
+      // Cleanup listener
     }
-  }, [targetUrl, isScanning, startScan])
+  }, [targetUrl, isScanning])
 
   // Dropdown position state
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0, openUpward: false })
@@ -773,10 +1624,10 @@ const ComprehensiveSecurityScanner = () => {
       // Calculate max dropdown height based on 80vh
       const maxDropdownHeight = Math.min(window.innerHeight * 0.8, 600) // 80vh but cap at 600px
       const minDropdownHeight = 300 // Minimum height to show
-
+      
       // Decide opening direction based on available space
       const openUpward = spaceBelow < minDropdownHeight && spaceAbove > spaceBelow
-
+      
       // Calculate top position to ensure dropdown fits in viewport
       let topPos
       if (openUpward) {
@@ -784,18 +1635,33 @@ const ComprehensiveSecurityScanner = () => {
         topPos = Math.max(8, rect.top + window.scrollY - maxDropdownHeight - 8)
       } else {
         // Open downward - position below the button
-        topPos = rect.bottom + window.scrollY + 8
+        const maxBottom = window.innerHeight + window.scrollY - 8
+        const calculatedTop = rect.bottom + window.scrollY + 8
+        topPos = Math.min(calculatedTop, maxBottom - maxDropdownHeight)
       }
-
-      // Calculate right position to align dropdown with button
-      const rightPos = Math.max(8, window.innerWidth - rect.right - window.scrollX)
-
+      
       setDropdownPosition({
         top: topPos,
-        right: rightPos,
-        openUpward,
-        maxHeight: maxDropdownHeight
+        right: window.innerWidth - rect.right + window.scrollX,
+        openUpward
       })
+    }
+  }, [showScanSelection])
+
+  // Click outside handler for scan selection dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (scanSelectionRef.current && !scanSelectionRef.current.contains(event.target)) {
+        setShowScanSelection(false)
+      }
+    }
+
+    if (showScanSelection) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [showScanSelection])
 
@@ -803,14 +1669,6106 @@ const ComprehensiveSecurityScanner = () => {
   const formatTime = (ms) => {
     const seconds = Math.floor(ms / 1000)
     const minutes = Math.floor(seconds / 60)
-    const hours = Math.floor(minutes / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
 
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m ${seconds % 60}s`
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`
+  // Format date time helper
+  const formatDateTime = (date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).format(date)
+  }
+
+  // Parse wafw00f output to JSON
+  const parseWafw00f = (stdout = '') => {
+    const stripAnsi = (s = '') => (s || '').replace(/\x1b\[[0-9;]*m/g, '')
+    const clean = stripAnsi(stdout)
+    const result = {
+      tool: 'wafw00f',
+      detected: false,
+      wafType: null,
+      wafVendor: null,
+      wafInfo: null,
+      reason: null,
+      responseCode: null,
+      numberOfRequests: null,
+      raw: clean
+    }
+
+    // Pattern 1: Specific WAF detected (e.g., "is behind Cloudflare (Cloudflare Inc.) WAF")
+    const wafDetectedPattern = /is behind (.+?)(?:\s*\(([^)]+)\))?\s*WAF/i
+    const detectedMatch = clean.match(wafDetectedPattern)
+    
+    if (detectedMatch) {
+      result.detected = true
+      result.wafType = stripAnsi(detectedMatch[1]?.trim() || '') || null
+      result.wafVendor = stripAnsi(detectedMatch[2]?.trim() || detectedMatch[1]?.trim() || '') || null
+      result.wafInfo = `The site is behind ${result.wafType}${result.wafVendor && result.wafVendor !== result.wafType ? ` (${result.wafVendor})` : ''} WAF`
+    }
+    
+    // Pattern 2: Generic detection
+    const genericPattern = /seems to be behind (?:a )?WAF|behind (?:a )?WAF or|Generic Detection results/i
+    if (!result.detected && genericPattern.test(clean)) {
+      result.detected = true
+      result.wafType = 'Generic/Unknown'
+      result.wafInfo = 'The site seems to be behind a WAF or some sort of security solution'
+    }
+    
+    // Extract reason for generic detection
+    const reasonMatch = clean.match(/Reason:\s*(.+?)(?:\n|$)/i)
+    if (reasonMatch) {
+      result.reason = stripAnsi(reasonMatch[1]?.trim() || '') || null
+      
+      // Try to extract response codes from reason
+      const responseCodeMatch = result.reason.match(/response code (?:is|to) "?(\d+)"?/i)
+      if (responseCodeMatch) {
+        result.responseCode = responseCodeMatch[1]
+      }
+    }
+    
+    // Extract number of requests
+    const requestsMatch = clean.match(/Number of requests:\s*(\d+)/i)
+    if (requestsMatch) {
+      result.numberOfRequests = parseInt(requestsMatch[1], 10)
+    }
+    
+    // Extract target URL if present
+    const targetMatch = clean.match(/Checking (.+)/i)
+    if (targetMatch) {
+      result.target = stripAnsi(targetMatch[1]?.trim() || '') || null
+    }
+    
+    return result
+  }
+
+  // Run WAF Detection scan
+  const runWAFDetection = async () => {
+    try {
+      setCurrentTest({ id: 'waf-detection', name: 'WAF (Firewall) Detection' })
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 10 }))
+      
+      // Check if wafw00f is installed
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: 'Checking for wafw00f tool...',
+        testId: 'waf-detection',
+        type: 'info'
+      }])
+      
+      const checkCmd = 'command -v wafw00f >/dev/null 2>&1 && echo OK || echo MISSING'
+      let checkRes = null
+      
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        checkRes = await window.cyberGuard.runAsRoot({ command: checkCmd, requireConfirm: false })
+      }
+      
+      const isInstalled = checkRes?.stdout?.includes('OK')
+      
+      if (!isInstalled) {
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: '📦 wafw00f not found, installing...',
+          testId: 'waf-detection',
+          type: 'info'
+        }])
+        
+        setTestProgress(prev => ({ ...prev, 'waf-detection': 20 }))
+        
+        // Install wafw00f via pip
+        const pipCmd = 'export DEBIAN_FRONTEND=noninteractive; pip3 install wafw00f 2>&1 || pip install wafw00f 2>&1'
+        if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+          await window.cyberGuard.runAsRoot({ command: pipCmd, requireConfirm: false })
+        }
+        
+        setTestProgress(prev => ({ ...prev, 'waf-detection': 40 }))
+      }
+      
+      // Run wafw00f
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `Running wafw00f on ${targetUrl}...`,
+        testId: 'waf-detection',
+        type: 'info'
+      }])
+      
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 50 }))
+      
+      // Command: wafw00f ${targetUrl}
+      const wafCmd = `wafw00f ${targetUrl}`
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `Executing command: ${wafCmd}`,
+        testId: 'waf-detection',
+        type: 'info'
+      }])
+      let wafResult = null
+      
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        wafResult = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(wafCmd), requireConfirm: false })
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 80 }))
+      
+      // Parse results
+      const parsedResults = parseWafw00f(wafResult?.stdout || '')
+      
+      const wafReport = {
+        testId: 'waf-detection',
+        testName: 'WAF (Firewall) Detection',
+        category: 'Web Security',
+        severity: 'high',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: parsedResults.detected ? [
+          {
+            type: 'info',
+            message: `WAF Detected: ${parsedResults.wafType || 'Generic/Unknown'}`,
+            details: parsedResults.wafInfo || 'WAF detected but type could not be identified'
+          }
+        ] : [
+          {
+            type: 'info',
+            message: 'No WAF Detected',
+            details: 'No Web Application Firewall detected. The target appears to be unprotected or using an undetected WAF solution.'
+          }
+        ],
+        recommendations: parsedResults.detected ? [
+          'Verify WAF configuration is appropriate for your security needs',
+          'Ensure WAF rules are properly tuned',
+          'Monitor WAF logs for false positives'
+        ] : [
+          'Consider implementing a Web Application Firewall for additional protection',
+          'Review your current security posture',
+          'Implement security headers and other protection mechanisms'
+        ],
+          report: {
+            scanType: 'WAF (Firewall) Detection',
+            target: targetUrl,
+            command: wafCmd,
+            summary: {
+              wafDetected: parsedResults.detected,
+              wafType: parsedResults.wafType,
+              wafVendor: parsedResults.wafVendor,
+              numberOfRequests: parsedResults.numberOfRequests,
+              responseCode: parsedResults.responseCode
+            },
+            details: parsedResults,
+            rawOutput: parsedResults.raw || wafResult?.stdout || ''
+          }
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 100 }))
+      setScanResults(prev => ({ ...prev, 'waf-detection': wafReport }))
+      setNewScanResults(prev => ({ ...prev, 'waf-detection': wafReport }))
+      setCompletedTests(prev => new Set([...prev, 'waf-detection']))
+      
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `WAF Detection completed - ${parsedResults.detected ? `WAF Detected: ${parsedResults.wafType || 'Generic/Unknown'}` : 'No WAF Detected'}`,
+        testId: 'waf-detection',
+        type: 'success'
+      }])
+      
+    } catch (error) {
+      console.error('WAF Detection error:', error)
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `WAF Detection failed: ${error.message}`,
+        testId: 'waf-detection',
+        type: 'error'
+      }])
+      
+      setScanResults(prev => ({
+        ...prev,
+        'waf-detection': {
+          testId: 'waf-detection',
+          testName: 'WAF (Firewall) Detection',
+          category: 'Web Security',
+          severity: 'high',
+          status: 'failed',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          findings: [],
+          recommendations: [],
+          report: { summary: {}, details: {}, rawOutput: '' }
+        }
+      }))
+      setCompletedTests(prev => new Set([...prev, 'waf-detection']))
+    } finally {
+      setTestProgress(prev => ({ ...prev, 'waf-detection': 100 }))
+    }
+  }
+
+  // Parse the concatenated raw outputs from file upload test into structured JSON per schema
+  const parseFileUploadRawToJson = (raw = '', target = '') => {
+    const nowIso = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+    const result = {
+      meta: {
+        parser_version: '1.0',
+        generated_at_utc: nowIso,
+        target: target || null,
+        tester_host: null,
+        tester_ip: null
+      },
+      commands: [],
+      aggregate_findings: {
+        upload_allowed: null,
+        evidence: [],
+        severity: 'unknown',
+        confidence: 'low',
+        rationale: 'Insufficient data'
+      },
+      recommendations: [
+        'Validate file content-type and magic bytes server-side',
+        'Store uploads outside webroot and serve via controlled handler',
+        'Block executable extensions and enforce allowlist',
+        'Set X-Content-Type-Options: nosniff and Content-Disposition: attachment',
+        'Restrict direct access to upload paths; require auth where needed'
+      ],
+      raw_outputs_attached: true
+    }
+
+    if (!raw || typeof raw !== 'string') return result
+
+    // Split by our emitted markers ===FILE:filename===
+    const parts = raw.split(/\n===FILE:(.+?)===\n/)
+    // parts structure: [prefix, filename1, content1, filename2, content2, ...]
+    for (let i = 1; i < parts.length; i += 2) {
+      const label = (parts[i] || '').trim()
+      const content = (parts[i + 1] || '')
+      const id = `cmd-${(i + 1) / 2}`
+
+      // Extract command if present (look for curl commands)
+      const cmdMatch = content.match(/(curl\s+[^\n]+)/i) || content.match(/POST\s+([^\s]+)/i)
+      let command = cmdMatch ? cmdMatch[1] : null
+      // Also try to extract from the output itself
+      if (!command && label) {
+        if (label.includes('upload')) command = 'curl -v -F file upload'
+        if (label.includes('head')) command = 'curl -I retrieval check'
+        if (label.includes('get')) command = 'curl retrieval check'
+        if (label.includes('etcpasswd')) command = 'curl -F file=/etc/passwd upload'
+      }
+      
+      // Extract HTTP status code - handle both < HTTP/2 200 and HTTP/2 200 formats
+      const statusMatch = content.match(/<\s*HTTP\/[0-9.]+\s+(\d{3})/m) || 
+                         content.match(/^HTTP\/[0-9.]+\s+(\d{3})/m) ||
+                         content.match(/HTTP\/2\s+(\d{3})/m)
+      const status_code = statusMatch ? parseInt(statusMatch[1], 10) : null
+
+      // Parse response headers from curl verbose blocks
+      // Handle both < header: value and header: value formats
+      const headers = {}
+      const headerLines = content.match(/^<\s*([^:]+):\s*(.+)$/mg) || 
+                         content.match(/^([a-zA-Z0-9\-]+):\s*(.+)$/gm)
+      if (headerLines) {
+        headerLines.forEach(l => {
+          const cleanLine = l.replace(/^<\s*/, '')
+          const m = cleanLine.match(/^([^:]+):\s*(.*)$/)
+          if (m) {
+            const key = m[1].trim().split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()).join('-')
+            headers[key] = m[2].trim()
+          }
+        })
+      }
+      const response_headers = Object.keys(headers).length > 0 ? headers : null
+
+      // TLS cert block parsing (subject/issuer/dates)
+      let tls_cert = null
+      if (/^subject=/m.test(content) || /^issuer=/m.test(content)) {
+        const subject = (content.match(/^subject=\s*(.+)$/m) || [])[1] || null
+        const issuer = (content.match(/^issuer=\s*(.+)$/m) || [])[1] || null
+        const not_before = (content.match(/^notBefore=\s*(.+)$/m) || [])[1] || null
+        const not_after = (content.match(/^notAfter=\s*(.+)$/m) || [])[1] || null
+        tls_cert = { subject, issuer, not_before, not_after }
+      }
+
+      // Tester IP if present
+      if (!result.meta.tester_ip) {
+        const ip = (content.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/) || [])[1]
+        if (ip) result.meta.tester_ip = ip
+      }
+
+      // Observations
+      const observations = []
+      if (/\* Connected to /i.test(content)) observations.push('connection established')
+      if (/\bHTTP\/[0-9.]+\s+2\d\d\b/.test(content)) {
+        observations.push(`HTTP ${status_code} response`)
+        if (status_code === 200) observations.push('upload succeeded or file accessible')
+      }
+      if (/\bHTTP\/[0-9.]+\s+403\b/.test(content)) observations.push('upload blocked with 403 Forbidden')
+      if (/\bHTTP\/[0-9.]+\s+404\b/.test(content)) observations.push('path returned 404 Not Found')
+      if (/\bHTTP\/[0-9.]+\s+500\b/.test(content)) observations.push('server error (500)')
+      if (/SSL certificate verify ok/i.test(content)) observations.push('TLS certificate verified')
+      if (/cloudflare/i.test(content)) observations.push('Cloudflare detected')
+      if (/server:\s*cloudflare/i.test(content)) observations.push('server behind Cloudflare')
+      if (/content-type:\s*text\/html/i.test(content)) observations.push('response is HTML')
+      if (/curl:\s*\(\d+\)/.test(content)) observations.push('curl reported an error')
+      if (!observations.length && status_code) {
+        observations.push(`HTTP status code: ${status_code}`)
+      }
+
+      result.commands.push({
+        id,
+        raw_label: label || null,
+        command: command || null,
+        start_time: null,
+        end_time: null,
+        stdout_stderr: content,
+        status_code: status_code || null,
+        response_headers,
+        tls_cert,
+        errors: (content.match(/^curl:\s*\(\d+\)\s*.*$/mg) || []).map(s => s.trim()),
+        observations
+      })
+    }
+
+    // Aggregate logic
+    const findCmd = (pred) => result.commands.find(pred)
+    const findUploadCmds = () => result.commands.filter(c => 
+      (c.command && /curl\s+-v?\s+-F/.test(c.command)) || 
+      (c.raw_label && /upload/.test(c.raw_label))
+    )
+    const findGetCmds = () => result.commands.filter(c =>
+      (c.command && /curl\s+(?:-I\s+)?https?:\/\//.test(c.command) && !/curl\s+-F/.test(c.command)) ||
+      (c.raw_label && (/head|get/.test(c.raw_label)))
+    )
+    
+    const uploadCmds = findUploadCmds()
+    const getCmds = findGetCmds()
+    
+    const any2xxUpload = uploadCmds.some(c => c.status_code && c.status_code >= 200 && c.status_code < 300)
+    const anyGet200 = getCmds.some(c => c.status_code === 200)
+    
+    let upload_allowed = null
+    if (any2xxUpload && anyGet200) {
+      upload_allowed = true
+    } else if (any2xxUpload && !anyGet200) {
+      upload_allowed = true // Upload succeeded but retrieval may have failed - still counts as allowed
+    } else if (result.commands.length && uploadCmds.length > 0 && 
+               uploadCmds.every(c => c.status_code && c.status_code >= 400)) {
+      upload_allowed = false
+    } else if (result.commands.length === 0) {
+      upload_allowed = null
+    }
+    
+    result.aggregate_findings.upload_allowed = upload_allowed
+
+    // Evidence and severity/confidence
+    result.commands.forEach(c => {
+      if (c.status_code) {
+        const statusLine = c.stdout_stderr.match(/<\s*HTTP\/[0-9.]+\s+\d{3}.*/) || 
+                          c.stdout_stderr.match(/HTTP\/[0-9.]+\s+\d{3}.*/) || 
+                          [`HTTP/${c.status_code}`]
+        result.aggregate_findings.evidence.push(`${c.id}: '${statusLine[0].trim()}'`)
+      }
+    })
+    
+    if (upload_allowed === true) {
+      result.aggregate_findings.severity = 'high'
+      result.aggregate_findings.confidence = anyGet200 ? 'high' : 'medium'
+      result.aggregate_findings.rationale = anyGet200 
+        ? 'Upload attempt returned 2xx and a subsequent GET returned 200 for a candidate path, indicating files can be uploaded and retrieved.'
+        : 'Upload attempt returned 2xx status, indicating file upload was accepted. However, file retrieval test did not return 200.'
+    } else if (upload_allowed === false) {
+      result.aggregate_findings.severity = 'none'
+      result.aggregate_findings.confidence = 'high'
+      result.aggregate_findings.rationale = 'All observed upload requests returned 4xx/5xx status codes, indicating uploads are blocked or denied.'
     } else {
-      return `${seconds}s`
+      result.aggregate_findings.severity = 'unknown'
+      result.aggregate_findings.confidence = 'low'
+      result.aggregate_findings.rationale = 'Outputs did not provide sufficient evidence to conclude whether uploads were accepted. May need manual review.'
+    }
+    return result
+  }
+
+  // Run File Upload Vulnerability Check
+  const runFileUploadCheck = async () => {
+    try {
+      setCurrentTest({ id: 'file-upload-check', name: 'File Upload Vulnerability Check' })
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 5 }))
+
+      console.log('🚀 [FILE-UPLOAD] Starting File Upload Vulnerability Check')
+      console.log('🎯 [FILE-UPLOAD] Target URL:', targetUrl)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Starting File Upload Vulnerability Check...', testId: 'file-upload-check', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Target URL: ${targetUrl}`, testId: 'file-upload-check', type: 'info' }])
+
+      // Construct upload URL - if target includes /admin, use ${target}/upload, otherwise append /admin/upload
+      let uploadUrl = targetUrl.trim().replace(/\/$/, '') // Remove trailing slash
+      if (uploadUrl.includes('/admin')) {
+        uploadUrl = uploadUrl + '/upload'
+      } else {
+        uploadUrl = uploadUrl + '/admin/upload'
+      }
+      
+      // Construct uploads path for retrieval test
+      let uploadsUrl = targetUrl.trim().replace(/\/$/, '') // Remove trailing slash
+      if (uploadsUrl.includes('/admin')) {
+        uploadsUrl = uploadsUrl + '/uploads/harmless.php.txt'
+      } else {
+        uploadsUrl = uploadsUrl + '/admin/uploads/harmless.php.txt'
+      }
+
+      console.log('🔗 [FILE-UPLOAD] Upload URL:', uploadUrl)
+      console.log('🔗 [FILE-UPLOAD] Uploads URL:', uploadsUrl)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🔗 Upload URL: ${uploadUrl}`, testId: 'file-upload-check', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `🔗 Uploads path: ${uploadsUrl}`, testId: 'file-upload-check', type: 'info' }])
+
+      // Define commands to execute sequentially (one by one)
+      const commandSets = [
+        { label: 'curl_upload_test.txt', cmd: `curl -v -F "file=@test.txt" "${uploadUrl}" 2>&1` },
+        { label: 'curl_upload_harmless.txt', cmd: `echo "TEST" > harmless.php.txt && curl -v -F "file=@harmless.php.txt" "${uploadUrl}" 2>&1` },
+        { label: 'curl_head_candidate.txt', cmd: `curl -I "${uploadsUrl}" 2>&1` },
+        { label: 'curl_upload_etcpasswd.txt', cmd: `curl -v -F "file=@/etc/passwd" "${uploadUrl}" 2>&1` }
+      ]
+
+      // Log each command
+      console.log('📋 [FILE-UPLOAD] Commands to execute:')
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: '📋 Commands to execute:', testId: 'file-upload-check', type: 'info' }])
+      
+      commandSets.forEach((cmdSet, idx) => {
+        console.log(`  ${idx + 1}. ${cmdSet.cmd}`)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `  ${idx + 1}. ${cmdSet.cmd}`, testId: 'file-upload-check', type: 'info' }])
+      })
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Executing commands sequentially in Kali Linux...', testId: 'file-upload-check', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 15 }))
+      console.log('[FILE-UPLOAD] Executing commands sequentially in Kali Linux...')
+
+      // Prepare test.txt file first
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify('echo "SIMPLE" > test.txt'), requireConfirm: false })
+      }
+
+      // Execute each command sequentially and collect results
+      let raw = ''
+      if (window.cyberGuard && window.cyberGuard.runAsRoot) {
+        console.log('⚙️ [FILE-UPLOAD] Running commands sequentially via WSL...')
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Running commands sequentially via WSL...', testId: 'file-upload-check', type: 'info' }])
+        
+        for (let i = 0; i < commandSets.length; i++) {
+          const cmdSet = commandSets[i]
+          console.log(`▶️ [FILE-UPLOAD] Executing set ${i + 1}/${commandSets.length}: ${cmdSet.cmd}`)
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `Executing set ${i + 1}/${commandSets.length}: ${cmdSet.cmd}`, testId: 'file-upload-check', type: 'info' }])
+          
+          const execRes = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(cmdSet.cmd), requireConfirm: false })
+          const output = (execRes?.stdout || '') + (execRes?.stderr || '')
+          
+          raw += `===FILE:${cmdSet.label}===\n${output}\n`
+          
+          console.log(`✅ [FILE-UPLOAD] Set ${i + 1} completed - ${output.length} bytes`)
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `Set ${i + 1} completed - Raw output:\n${output.substring(0, 1000)}${output.length > 1000 ? '...' : ''}`, testId: 'file-upload-check', type: 'success' }])
+          
+          setTestProgress(prev => ({ ...prev, 'file-upload-check': 15 + (i + 1) * 15 }))
+        }
+      } else {
+        console.error('❌ [FILE-UPLOAD] cyberGuard.runAsRoot not available')
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Error: WSL command execution not available', testId: 'file-upload-check', type: 'error' }])
+      }
+
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 60 }))
+      
+      // Log raw results
+      const rawError = ''
+      
+      console.log('📥 [FILE-UPLOAD] Raw stdout length:', raw.length)
+      console.log('📥 [FILE-UPLOAD] Raw stderr length:', rawError.length)
+      
+      if (raw) {
+        console.log('📥 [FILE-UPLOAD] Raw stdout (full):', raw)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `Received ${raw.length} bytes of output from Kali`, testId: 'file-upload-check', type: 'info' }])
+        
+        // Log the full raw output in chunks if it's too long
+        if (raw.length <= 5000) {
+          // If output is small enough, show it all
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `Raw output from Kali:\n${raw}`, testId: 'file-upload-check', type: 'info' }])
+        } else {
+          // If output is large, show first chunk, then log message about full output
+          const preview = raw.substring(0, 2000)
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `Raw output preview (first 2000 chars):\n${preview}\n\n... (showing ${raw.length - 2000} more bytes - full output saved in report)`, testId: 'file-upload-check', type: 'info' }])
+        }
+      } else {
+        console.warn('⚠️ [FILE-UPLOAD] No stdout received')
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Warning: No output received from Kali', testId: 'file-upload-check', type: 'warning' }])
+      }
+      
+      if (rawError) {
+        console.log('📥 [FILE-UPLOAD] Raw stderr:', rawError)
+        if (rawError.length <= 500) {
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `Stderr:\n${rawError}`, testId: 'file-upload-check', type: 'warning' }])
+        } else {
+          setLogs(prev => [...prev, { timestamp: Date.now(), message: `Stderr (first 500 chars):\n${rawError.substring(0, 500)}...`, testId: 'file-upload-check', type: 'warning' }])
+        }
+      }
+
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 70 }))
+      console.log('[FILE-UPLOAD] Parsing raw output...')
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Parsing raw output to JSON...', testId: 'file-upload-check', type: 'info' }])
+      
+      const parsed = parseFileUploadRawToJson(raw, uploadUrl)
+      
+      console.log('✅ [FILE-UPLOAD] Parsed JSON:', JSON.stringify(parsed, null, 2))
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Parsed ${parsed.commands?.length || 0} commands`, testId: 'file-upload-check', type: 'success' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Upload Allowed: ${parsed.aggregate_findings?.upload_allowed === true ? 'Yes' : parsed.aggregate_findings?.upload_allowed === false ? 'No' : 'Unknown'}`, testId: 'file-upload-check', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Severity: ${parsed.aggregate_findings?.severity || 'unknown'}`, testId: 'file-upload-check', type: 'info' }])
+
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 80 }))
+      console.log('📝 [FILE-UPLOAD] Creating report...')
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: 'Creating scan report...', testId: 'file-upload-check', type: 'info' }])
+
+      const report = {
+        testId: 'file-upload-check',
+        testName: 'File Upload Vulnerability Check',
+        category: 'Web Security',
+        severity: 'high',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: [
+          {
+            type: parsed.aggregate_findings.severity === 'critical' ? 'critical' : parsed.aggregate_findings.severity === 'high' ? 'high' : parsed.aggregate_findings.severity,
+            message: parsed.aggregate_findings.upload_allowed === true ? 'Upload appears allowed and retrievable' : parsed.aggregate_findings.upload_allowed === false ? 'Uploads blocked or not retrievable' : 'Unable to determine upload behavior',
+            details: parsed.aggregate_findings.rationale
+          }
+        ],
+        recommendations: parsed.recommendations || [],
+        report: {
+          scanType: 'File Upload Vulnerability Check',
+          target: targetUrl,
+          command: commandSets.map(cs => cs.cmd).join('\n'),
+          json: parsed // keep the structured JSON (not shown as raw in UI)
+        }
+      }
+
+      console.log('✅ [FILE-UPLOAD] Report created successfully')
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 90 }))
+      
+      setScanResults(prev => ({ ...prev, 'file-upload-check': report }))
+      setNewScanResults(prev => ({ ...prev, 'file-upload-check': report }))
+      setCompletedTests(prev => new Set([...(prev || new Set()), 'file-upload-check']))
+      
+      console.log('✅ [FILE-UPLOAD] File Upload Vulnerability Check completed successfully!')
+      console.log('📊 [FILE-UPLOAD] Summary:', {
+        upload_allowed: parsed.aggregate_findings?.upload_allowed,
+        severity: parsed.aggregate_findings?.severity,
+        commands_executed: parsed.commands?.length || 0
+      })
+      
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 100 }))
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: 'File Upload Vulnerability Check completed successfully!', testId: 'file-upload-check', type: 'success' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Final Summary - Upload Allowed: ${parsed.aggregate_findings?.upload_allowed === true ? 'Yes' : parsed.aggregate_findings?.upload_allowed === false ? 'No' : 'Unknown'}, Severity: ${parsed.aggregate_findings?.severity || 'unknown'}, Commands: ${parsed.commands?.length || 0}`, testId: 'file-upload-check', type: 'success' }])
+    } catch (e) {
+      console.error('❌ [FILE-UPLOAD] Error during File Upload Vulnerability Check:', e)
+      console.error('❌ [FILE-UPLOAD] Error message:', e.message)
+      console.error('❌ [FILE-UPLOAD] Error stack:', e.stack)
+      
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${e.message}`, testId: 'file-upload-check', type: 'error' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `File Upload Vulnerability Check failed`, testId: 'file-upload-check', type: 'error' }])
+      
+      setScanResults(prev => ({
+        ...prev,
+        'file-upload-check': {
+          testId: 'file-upload-check',
+          testName: 'File Upload Vulnerability Check',
+          category: 'Web Security',
+          severity: 'high',
+          status: 'failed',
+          timestamp: new Date().toISOString(),
+          error: e.message,
+          findings: [],
+          recommendations: [],
+          report: { scanType: 'File Upload Vulnerability Check', target: targetUrl }
+        }
+      }))
+      setCompletedTests(prev => new Set([...(prev || new Set()), 'file-upload-check']))
+      setTestProgress(prev => ({ ...prev, 'file-upload-check': 100 }))
+    }
+  }
+
+  // Helper: run a single WSL command and return stdout+stderr
+  const runWSL = async (label, cmd) => {
+    console.log(`▶️ [${label.toUpperCase()}] Command: ${cmd}`)
+    // Log command separately with full details
+    setLogs(prev => [...prev, { 
+      timestamp: Date.now(), 
+      message: `▶️ ${label}: ${cmd}`, 
+      testId: label, 
+      type: 'info',
+      command: cmd,
+      output: null
+    }])
+    const res = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(cmd), requireConfirm: false })
+    const output = (res?.stdout || '') + (res?.stderr ? `\n${res.stderr}` : '')
+    console.log(`✅ [${label.toUpperCase()}] Completed - Output length: ${output.length} bytes`)
+    if (output && output.length > 0) {
+      console.log(`📊 [${label.toUpperCase()}] Output:\n${output.substring(0, 500)}${output.length > 500 ? '...' : ''}`)
+    }
+    // Log output separately
+    setLogs(prev => [...prev, { 
+      timestamp: Date.now(), 
+      message: `${label} completed (${output.length} bytes)`, 
+      testId: label, 
+      type: 'success',
+      command: null,
+      output: output
+    }])
+    return output
+  }
+
+  // Helper: run command and return stdout/stderr separately (useful for JSON parsing)
+  const runWSLSeparated = async (label, cmd) => {
+    console.log(`▶️ [${label.toUpperCase()}] Command: ${cmd}`)
+    // Log command separately with full details
+    setLogs(prev => [...prev, { 
+      timestamp: Date.now(), 
+      message: `▶️ ${label}: ${cmd}`, 
+      testId: label, 
+      type: 'info',
+      command: cmd,
+      output: null
+    }])
+    const res = await window.cyberGuard.runAsRoot({ command: 'bash -lc ' + JSON.stringify(cmd), requireConfirm: false })
+    const stdout = res?.stdout || ''
+    const stderr = res?.stderr || ''
+    const combinedOutput = stdout + (stderr ? `\n${stderr}` : '')
+    console.log(`✅ [${label.toUpperCase()}] Completed - stdout: ${stdout.length} bytes, stderr: ${stderr.length} bytes`)
+    if (stdout && stdout.length > 0) {
+      console.log(`📊 [${label.toUpperCase()}] Stdout:\n${stdout.substring(0, 500)}${stdout.length > 500 ? '...' : ''}`)
+    }
+    if (stderr && stderr.length > 0) {
+      console.log(`⚠️ [${label.toUpperCase()}] Stderr:\n${stderr.substring(0, 500)}${stderr.length > 500 ? '...' : ''}`)
+    }
+    // Log output separately
+    setLogs(prev => [...prev, { 
+      timestamp: Date.now(), 
+      message: `${label} completed (stdout: ${stdout.length} bytes, stderr: ${stderr.length} bytes)`, 
+      testId: label, 
+      type: 'success',
+      command: null,
+      output: combinedOutput
+    }])
+    return { stdout, stderr }
+  }
+
+  // Parse helper per requested JSON format
+  const buildSimpleJson = ({ test_name, severity, status, evidence, recommendation }) => ({ test_name, severity, status, evidence, recommendation })
+
+  const runOpenRedirectCheck = async (targetBase) => {
+    const url = `${targetBase.replace(/\/$/, '')}/?redirect=http://evil.com`
+    const out = await runWSL('open-redirect-check', `curl -I ${JSON.stringify(url)}`)
+    const vulnerable = /\bLocation:\s*http:\/\/evil\.com/i.test(out)
+    return buildSimpleJson({
+      test_name: 'Open Redirect Check',
+      severity: 'High',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: vulnerable ? (out.match(/Location:[^\n]*/i)?.[0] || 'Location: http://evil.com') : 'No unvalidated Location header observed',
+      recommendation: 'Restrict allowed redirect URLs to internal whitelisted domains.'
+    })
+  }
+
+  const runCorsPolicyValidation = async (targetBase) => {
+    const url = targetBase
+    const command = `curl -I -H "Origin: http://evil.com" ${JSON.stringify(url)} | grep -i "access-control-allow-origin" || true`
+    const out = await runWSL('cors-policy-validation', command)
+    
+    // Clean up the output - remove curl progress indicators and other noise
+    let cleanedOutput = out.trim()
+    // Remove curl progress lines (lines starting with %)
+    cleanedOutput = cleanedOutput.split('\n')
+      .filter(line => !line.trim().startsWith('%') && !line.trim().startsWith('Total') && !line.trim().startsWith('Dload') && !line.trim().startsWith('Upload') && !line.trim().startsWith('Speed') && !line.trim().startsWith('Time') && !line.trim().startsWith('--:--'))
+      .filter(line => line.trim().length > 0)
+      .join('\n')
+    
+    const vulnerable = /access-control-allow-origin:\s*\*/i.test(cleanedOutput)
+    const hasCorsHeader = /access-control-allow-origin:/i.test(cleanedOutput)
+    
+    let evidence = cleanedOutput || 'No ACAO header returned'
+    if (!hasCorsHeader) {
+      evidence = 'No Access-Control-Allow-Origin header found in response'
+    } else if (vulnerable) {
+      evidence = 'Access-Control-Allow-Origin header is set to wildcard (*) - allowing all origins'
+    } else {
+      const originMatch = cleanedOutput.match(/access-control-allow-origin:\s*([^\r\n]+)/i)
+      if (originMatch) {
+        evidence = `Access-Control-Allow-Origin: ${originMatch[1].trim()}`
+      }
+    }
+    
+    return buildSimpleJson({
+      test_name: 'CORS Policy Validation',
+      severity: vulnerable ? 'Critical' : 'Info',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: evidence,
+      recommendation: vulnerable ? 'Restrict CORS to trusted domains only and avoid use of wildcard *.' : 'CORS configuration appears secure. Continue monitoring for proper configuration.',
+      command: command,
+      rawOutput: cleanedOutput
+    })
+  }
+
+  const runHostHeaderInjection = async (targetBase) => {
+    const out = await runWSL('host-header-injection', `curl -I -H "Host: attacker.com" ${JSON.stringify(targetBase)}`)
+    const vulnerable = /attacker\.com/i.test(out)
+    return buildSimpleJson({
+      test_name: 'Host Trust Verification',
+      severity: 'High',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: vulnerable ? 'attacker.com appeared in response' : 'Host header not reflected/used',
+      recommendation: 'Enforce host header validation at server or reverse proxy layer.'
+    })
+  }
+
+  const runHttpMethodsCheck = async (targetBase) => {
+    const out = await runWSL('http-methods-check', `curl -X OPTIONS -I ${JSON.stringify(targetBase)}`)
+    const vulnerable = /Allow:\s*.*(PUT|DELETE|TRACE)/i.test(out)
+    return buildSimpleJson({
+      test_name: 'HTTP Allowed Methods Check',
+      severity: 'Critical',
+      status: vulnerable ? 'Vulnerable' : 'Safe',
+      evidence: (out.match(/Allow:[^\n]*/i)?.[0] || '').trim(),
+      recommendation: 'Disable unsafe methods at server and web application firewall level.'
+    })
+  }
+
+  const runCTLogSubdomainDiscovery = async (targetBase) => {
+    try {
+      setCurrentTest({ id: 'ct-log-subdomain-discovery', name: 'Certificate Transparency (CT) Log Subdomain Discovery' })
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 10 }))
+      
+      // Extract domain from URL
+      let domain = targetBase
+      try {
+        const urlObj = new URL(targetBase.startsWith('http') ? targetBase : `https://${targetBase}`)
+        domain = urlObj.hostname.replace(/^www\./, '')
+      } catch {
+        domain = targetBase.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+      }
+
+      console.log(`[CT-LOG] Querying crt.sh for domain: ${domain}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Querying Certificate Transparency logs for: ${domain}`, testId: 'ct-log-subdomain-discovery', type: 'info' }])
+
+      // Use exact command format with single quotes to avoid bash quote issues
+      // curl -s "https://crt.sh/?q=%25.{domain}&output=json" | jq .
+      const cmd = `curl -s 'https://crt.sh/?q=%25.${domain}&output=json' | jq .`
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 30 }))
+      const { stdout, stderr } = await runWSLSeparated('ct-log-subdomain-discovery', cmd)
+
+      console.log(`📥 [CT-LOG] stdout length: ${stdout.length}, stderr length: ${stderr.length}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Received ${stdout.length} bytes from crt.sh (via jq)`, testId: 'ct-log-subdomain-discovery', type: 'info' }])
+      if (stderr) {
+        console.log(`⚠️ [CT-LOG] stderr from jq/curl:`, stderr)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `stderr: ${stderr.substring(0, 500)}${stderr.length > 500 ? '...' : ''}`, testId: 'ct-log-subdomain-discovery', type: 'warning' }])
+      }
+
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 50 }))
+      
+      let certs = []
+      try {
+        // Parse JSON array
+        const trimmed = stdout.trim()
+        if (/^</.test(trimmed)) {
+          throw new Error('Received HTML instead of JSON (possible rate limit)')
+        }
+        if (trimmed) {
+          certs = JSON.parse(trimmed)
+          if (!Array.isArray(certs)) {
+            certs = [certs]
+          }
+        }
+      } catch (parseErr) {
+        console.error(`❌ [CT-LOG] JSON parse error:`, parseErr)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `Failed to parse JSON: ${parseErr.message}`, testId: 'ct-log-subdomain-discovery', type: 'warning' }])
+        setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 100 }))
+        const result = {
+          testId: 'ct-log-subdomain-discovery',
+          testName: 'Certificate Transparency (CT) Log Subdomain Discovery',
+          category: 'Reconnaissance',
+          severity: 'medium',
+          status: 'completed',
+          timestamp: new Date().toISOString(),
+          findings: [{
+            type: 'warning',
+            message: `Failed to parse certificate data from crt.sh${stderr ? ` (stderr: ${stderr.substring(0,120)})` : ''}`,
+            details: 'Verify domain name and crt.sh API availability'
+          }],
+          recommendations: ['Verify domain name and crt.sh API availability', 'Check network connectivity'],
+          report: {
+            scanType: 'Certificate Transparency (CT) Log Subdomain Discovery',
+            target: targetBase,
+            summary: {
+              test_name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+              severity: 'Medium',
+              status: 'Completed',
+              evidence: `Failed to parse certificate data from crt.sh${stderr ? ` (stderr: ${stderr.substring(0,120)})` : ''}`,
+              recommendation: 'Verify domain name and crt.sh API availability',
+              certificates: [],
+              unique_subdomains: []
+            },
+            command: cmd,
+            certificates: [],
+            unique_subdomains: []
+          }
+        }
+        setScanResults(prev => ({ ...prev, 'ct-log-subdomain-discovery': result }))
+        setNewScanResults(prev => ({ ...prev, 'ct-log-subdomain-discovery': result }))
+        setCompletedTests(prev => new Set([...prev, 'ct-log-subdomain-discovery']))
+        return result
+      }
+
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 70 }))
+      
+      console.log(`✅ [CT-LOG] Parsed ${certs.length} certificates`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Parsed ${certs.length} certificates`, testId: 'ct-log-subdomain-discovery', type: 'success' }])
+
+      // Extract unique subdomains from name_value (can contain multiple separated by \n)
+      // Also deduplicate certificates to avoid showing the same certificate multiple times
+      const uniqueSubdomains = new Set()
+      const seenCertificates = new Set()
+      const processedCerts = []
+      
+      for (const cert of certs) {
+        const nameValue = cert.name_value || ''
+        const serialNumber = cert.serial_number || ''
+        
+        // Create a unique key for this certificate (serial_number + first name_value entry)
+        const firstSubdomain = nameValue.split('\n').find(s => s.trim()) || ''
+        const certKey = `${serialNumber}:${firstSubdomain.trim()}`
+        
+        // Skip if we've already processed this certificate
+        if (seenCertificates.has(certKey)) {
+          continue
+        }
+        seenCertificates.add(certKey)
+        
+        // Extract all subdomains from name_value
+        const subdomains = nameValue.split('\n').filter(s => s.trim())
+        subdomains.forEach(sub => uniqueSubdomains.add(sub.trim()))
+        
+        processedCerts.push({
+          name_value: nameValue,
+          serial_number: serialNumber || 'N/A',
+          entry_timestamp: cert.entry_timestamp || 'N/A',
+          not_before: cert.not_before || 'N/A',
+          not_after: cert.not_after || 'N/A'
+        })
+      }
+
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 90 }))
+      
+      console.log(`📊 [CT-LOG] Found ${uniqueSubdomains.size} unique subdomains`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Found ${uniqueSubdomains.size} unique subdomains across ${processedCerts.length} certificates`, testId: 'ct-log-subdomain-discovery', type: 'success' }])
+
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 100 }))
+      
+      const result = {
+        testId: 'ct-log-subdomain-discovery',
+        testName: 'Certificate Transparency (CT) Log Subdomain Discovery',
+        category: 'Reconnaissance',
+        severity: 'medium',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: [{
+          type: 'info',
+          message: `Discovered ${uniqueSubdomains.size} unique subdomains from ${processedCerts.length} certificates`,
+          details: `CT Log Subdomain Discovery completed successfully`
+        }],
+        recommendations: ['Audit all discovered subdomains and ensure they are properly secured', 'Monitor for unauthorized subdomain certificates'],
+        report: {
+          scanType: 'Certificate Transparency (CT) Log Subdomain Discovery',
+          target: targetBase,
+          summary: {
+            test_name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+            severity: 'Medium',
+            status: 'Completed',
+            evidence: `Discovered ${uniqueSubdomains.size} unique subdomains from ${processedCerts.length} certificates`,
+            recommendation: 'Audit all discovered subdomains and ensure they are properly secured',
+            certificates: processedCerts,
+            unique_subdomains: Array.from(uniqueSubdomains).sort()
+          },
+          command: cmd,
+          certificates: processedCerts,
+          unique_subdomains: Array.from(uniqueSubdomains).sort()
+        }
+      }
+      
+      setScanResults(prev => ({ ...prev, 'ct-log-subdomain-discovery': result }))
+      setNewScanResults(prev => ({ ...prev, 'ct-log-subdomain-discovery': result }))
+      setCompletedTests(prev => new Set([...prev, 'ct-log-subdomain-discovery']))
+      
+      return result
+    } catch (error) {
+      console.error(`❌ [CT-LOG] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'ct-log-subdomain-discovery', type: 'error' }])
+      setTestProgress(prev => ({ ...prev, 'ct-log-subdomain-discovery': 100 }))
+      
+      const result = {
+        testId: 'ct-log-subdomain-discovery',
+        testName: 'Certificate Transparency (CT) Log Subdomain Discovery',
+        category: 'Reconnaissance',
+        severity: 'medium',
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        findings: [{
+          type: 'error',
+          message: `Error: ${error.message}`,
+          details: 'Verify network connectivity and crt.sh API availability'
+        }],
+        recommendations: ['Verify network connectivity and crt.sh API availability', 'Check domain name format'],
+        report: {
+          scanType: 'Certificate Transparency (CT) Log Subdomain Discovery',
+          target: targetBase,
+          summary: {
+            test_name: 'Certificate Transparency (CT) Log Subdomain Discovery',
+            severity: 'Medium',
+            status: 'Failed',
+            evidence: `Error: ${error.message}`,
+            recommendation: 'Verify network connectivity and crt.sh API availability',
+            certificates: [],
+            unique_subdomains: []
+          },
+          certificates: [],
+          unique_subdomains: []
+        }
+      }
+      
+      setScanResults(prev => ({ ...prev, 'ct-log-subdomain-discovery': result }))
+      setNewScanResults(prev => ({ ...prev, 'ct-log-subdomain-discovery': result }))
+      setCompletedTests(prev => new Set([...prev, 'ct-log-subdomain-discovery']))
+      
+      return result
+    }
+  }
+
+  // Run XSS Test
+  const runXSSTest = async (targetBase) => {
+    try {
+      setCurrentTest({ id: 'xss-test', name: 'Cross-Site Scripting (XSS) Testing' })
+      setTestProgress(prev => ({ ...prev, 'xss-test': 10 }))
+      
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      console.log(`🔍 [XSS] Starting XSS test for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting XSS test for: ${targetUrl}`, testId: 'xss-test', type: 'info' }])
+      
+      // Command: dalfox url "${targetUrl}" --fast-scan --skip-headless --timeout 5 --worker 50 --format json
+      const cmd = `dalfox url "${targetUrl}" --fast-scan --skip-headless --timeout 5 --worker 50 --format json`
+      
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Executing command: ${cmd}`, testId: 'xss-test', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'xss-test': 30 }))
+      
+      const { stdout, stderr } = await runWSLSeparated('xss-test', cmd)
+      
+      setTestProgress(prev => ({ ...prev, 'xss-test': 60 }))
+      
+      // Parse dalfox JSON output
+      let vulnerabilities = []
+      let vulnerabilitiesFound = 0
+      let reflectedParams = []
+      
+      try {
+        if (stdout.trim()) {
+          const lines = stdout.trim().split('\n')
+          for (const line of lines) {
+            if (line.trim()) {
+              try {
+                const vuln = JSON.parse(line)
+                if (vuln.type && vuln.payload) {
+                  vulnerabilities.push(vuln)
+                  vulnerabilitiesFound++
+                  if (vuln.param) {
+                    reflectedParams.push(vuln.param)
+                  }
+                }
+              } catch (e) {
+                // Skip non-JSON lines
+              }
+            }
+          }
+        }
+      } catch (parseErr) {
+        console.error(`❌ [XSS] Parse error:`, parseErr)
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'xss-test': 90 }))
+      
+      const result = {
+        testId: 'xss-test',
+        testName: 'Cross-Site Scripting (XSS) Testing',
+        category: 'Web Security',
+        severity: vulnerabilitiesFound > 0 ? 'high' : 'medium',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: vulnerabilitiesFound > 0 ? [
+          {
+            type: 'critical',
+            message: `Found ${vulnerabilitiesFound} XSS vulnerability/vulnerabilities`,
+            details: vulnerabilities.map(v => `${v.type}: ${v.payload}`).join(', ')
+          }
+        ] : [
+          {
+            type: 'info',
+            message: 'No XSS vulnerabilities found',
+            details: 'XSS test completed successfully'
+          }
+        ],
+        recommendations: vulnerabilitiesFound > 0 ? [
+          'Implement proper input validation and output encoding',
+          'Use Content Security Policy (CSP) headers',
+          'Sanitize user input before rendering'
+        ] : [
+          'Continue to monitor for XSS vulnerabilities',
+          'Implement Content Security Policy (CSP) headers as defense in depth'
+        ],
+        report: {
+          scanType: 'Cross-Site Scripting (XSS) Testing',
+          target: targetUrl,
+          command: cmd,
+          summary: {
+            vulnerabilities_found: vulnerabilitiesFound,
+            reflected_parameters: [...new Set(reflectedParams)],
+            status: vulnerabilitiesFound > 0 ? 'VULNERABLE' : 'SAFE'
+          },
+          vulnerabilities: vulnerabilities,
+          rawOutput: stdout + (stderr ? `\n${stderr}` : '')
+        }
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'xss-test': 100 }))
+      setScanResults(prev => ({ ...prev, 'xss-test': result }))
+      setNewScanResults(prev => ({ ...prev, 'xss-test': result }))
+      setCompletedTests(prev => new Set([...prev, 'xss-test']))
+      
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `XSS test completed - Found ${vulnerabilitiesFound} vulnerability/vulnerabilities`, testId: 'xss-test', type: vulnerabilitiesFound > 0 ? 'error' : 'success' }])
+      
+      return result
+    } catch (error) {
+      console.error(`❌ [XSS] Error:`, error)
+      setTestProgress(prev => ({ ...prev, 'xss-test': 100 }))
+      
+      const result = {
+        testId: 'xss-test',
+        testName: 'Cross-Site Scripting (XSS) Testing',
+        category: 'Web Security',
+        severity: 'medium',
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        findings: [{
+          type: 'error',
+          message: `XSS test failed: ${error.message}`,
+          details: 'Verify dalfox is installed and target URL is accessible'
+        }],
+        recommendations: ['Verify dalfox is installed: pip3 install dalfox', 'Check network connectivity'],
+        report: {
+          scanType: 'Cross-Site Scripting (XSS) Testing',
+          target: targetBase,
+          command: `dalfox url "${targetBase}" --fast-scan --skip-headless --timeout 5 --worker 50 --format json`,
+          summary: { status: 'FAILED' },
+          rawOutput: ''
+        }
+      }
+      
+      setScanResults(prev => ({ ...prev, 'xss-test': result }))
+      setNewScanResults(prev => ({ ...prev, 'xss-test': result }))
+      setCompletedTests(prev => new Set([...prev, 'xss-test']))
+      
+      return result
+    }
+  }
+
+  // Run CSRF Test
+  const runCSRFTest = async (targetBase) => {
+    try {
+      setCurrentTest({ id: 'csrf-test', name: 'Cross-Site Request Forgery (CSRF) Testing' })
+      setTestProgress(prev => ({ ...prev, 'csrf-test': 10 }))
+      
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      console.log(`🔍 [CSRF] Starting CSRF test for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting CSRF test for: ${targetUrl}`, testId: 'csrf-test', type: 'info' }])
+      
+      // Command: curl -X POST -H "Origin: http://evil.com" -H "Content-Type: application/x-www-form-urlencoded" -d "test=1" "${targetUrl}"
+      const cmd = `curl -X POST -H "Origin: http://evil.com" -H "Content-Type: application/x-www-form-urlencoded" -d "test=1" "${targetUrl}"`
+      
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Executing command: ${cmd}`, testId: 'csrf-test', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'csrf-test': 30 }))
+      
+      const out = await runWSL('csrf-test', cmd)
+      
+      setTestProgress(prev => ({ ...prev, 'csrf-test': 60 }))
+      
+      // Analyze response for CSRF protection
+      const hasOriginCheck = /access-control-allow-origin/i.test(out) || /access-control-allow-credentials/i.test(out)
+      const hasRefererCheck = /referer/i.test(out.toLowerCase())
+      const hasCSRFToken = /csrf|token|_token|authenticity_token/i.test(out)
+      const vulnerable = !hasOriginCheck && !hasRefererCheck && !hasCSRFToken
+      
+      setTestProgress(prev => ({ ...prev, 'csrf-test': 90 }))
+      
+      const result = {
+        testId: 'csrf-test',
+        testName: 'Cross-Site Request Forgery (CSRF) Testing',
+        category: 'Web Security',
+        severity: vulnerable ? 'high' : 'medium',
+        status: 'completed',
+        timestamp: new Date().toISOString(),
+        findings: vulnerable ? [
+          {
+            type: 'high',
+            message: 'Potential CSRF vulnerability detected',
+            details: 'Server accepted POST request without proper CSRF protection mechanisms'
+          }
+        ] : [
+          {
+            type: 'info',
+            message: 'CSRF protection mechanisms detected',
+            details: 'Server appears to have CSRF protection in place'
+          }
+        ],
+        recommendations: vulnerable ? [
+          'Implement CSRF tokens for all state-changing operations',
+          'Validate Origin and Referer headers',
+          'Use SameSite cookie attribute'
+        ] : [
+          'Continue monitoring CSRF protection',
+          'Ensure all state-changing operations are protected'
+        ],
+        report: {
+          scanType: 'Cross-Site Request Forgery (CSRF) Testing',
+          target: targetUrl,
+          command: cmd,
+          csrfVulnerability: vulnerable ? 'Potential Vulnerability' : 'Protected',
+          summary: {
+            status: vulnerable ? 'VULNERABLE' : 'PROTECTED',
+            hasOriginCheck,
+            hasRefererCheck,
+            hasCSRFToken
+          },
+          rawOutput: out
+        }
+      }
+      
+      setTestProgress(prev => ({ ...prev, 'csrf-test': 100 }))
+      setScanResults(prev => ({ ...prev, 'csrf-test': result }))
+      setNewScanResults(prev => ({ ...prev, 'csrf-test': result }))
+      setCompletedTests(prev => new Set([...prev, 'csrf-test']))
+      
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `CSRF test completed - ${vulnerable ? 'Potential vulnerability detected' : 'Protected'}`, testId: 'csrf-test', type: vulnerable ? 'error' : 'success' }])
+      
+      return result
+    } catch (error) {
+      console.error(`❌ [CSRF] Error:`, error)
+      setTestProgress(prev => ({ ...prev, 'csrf-test': 100 }))
+      
+      const result = {
+        testId: 'csrf-test',
+        testName: 'Cross-Site Request Forgery (CSRF) Testing',
+        category: 'Web Security',
+        severity: 'medium',
+        status: 'failed',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        findings: [{
+          type: 'error',
+          message: `CSRF test failed: ${error.message}`,
+          details: 'Verify target URL is accessible'
+        }],
+        recommendations: ['Check network connectivity', 'Verify target URL format'],
+        report: {
+          scanType: 'Cross-Site Request Forgery (CSRF) Testing',
+          target: targetBase,
+          command: `curl -X POST -H "Origin: http://evil.com" -H "Content-Type: application/x-www-form-urlencoded" -d "test=1" "${targetBase}"`,
+          csrfVulnerability: 'Unknown',
+          summary: { status: 'FAILED' },
+          rawOutput: ''
+        }
+      }
+      
+      setScanResults(prev => ({ ...prev, 'csrf-test': result }))
+      setNewScanResults(prev => ({ ...prev, 'csrf-test': result }))
+      setCompletedTests(prev => new Set([...prev, 'csrf-test']))
+      
+      return result
+    }
+  }
+
+  // Helper function to strip ANSI escape codes
+  const stripAnsiCodes = (text) => {
+    if (!text || typeof text !== 'string') return text
+    // Remove ANSI escape codes: \x1b[...m, [1m, [33m, [0m, etc.
+    return text.replace(/\x1b\[[0-9;]*m/g, '').replace(/\[[0-9;]*m/g, '').replace(/\[\d+[m[]?/g, '').trim()
+  }
+
+  const runQuickFingerprint = async (targetBase) => {
+    try {
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      const now = new Date().toISOString()
+      
+      console.log(`[QUICK-FINGERPRINT] Starting whatweb fingerprint for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting Quick Fingerprint scan for: ${targetUrl}`, testId: 'quick-fingerprint', type: 'info' }])
+
+      let result = {
+        test_name: 'whatweb-fingerprint',
+        target_url: targetUrl,
+        timestamp: now,
+        status_code: null,
+        title: null,
+        ip: null,
+        country: null,
+        summary: null,
+        plugins: [],
+        http_headers: {},
+        raw_output: null,
+        severity_hint: 'Informational',
+        recommendation: '',
+        notes: ''
+      }
+
+      // Use whatweb -v command as specified
+      console.log(`📝 [QUICK-FINGERPRINT] Running whatweb -v...`)
+      const cmd = `whatweb -v ${targetUrl}`
+      
+      // Log the kali command before execution
+      setLogs(prev => [...prev, { 
+        timestamp: Date.now(), 
+        message: `Quick Fingerprint Commands (Kali Linux):`, 
+        testId: 'quick-fingerprint', 
+        type: 'info' 
+      }])
+      setLogs(prev => [...prev, { 
+        timestamp: Date.now(), 
+        message: `  • Web Fingerprint: whatweb -v ${targetUrl}`, 
+        testId: 'quick-fingerprint', 
+        type: 'info' 
+      }])
+      
+      const { stdout: out, stderr: err } = await runWSLSeparated('quick-fingerprint', cmd)
+      const verboseOutput = out + (err ? `\n${err}` : '')
+        
+      if (verboseOutput) {
+        // Parse verbose output
+        const lines = verboseOutput.split('\n')
+        
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim()
+          
+          // Status
+          const statusMatch = line.match(/^Status\s*:\s*(.+)$/i)
+          if (statusMatch) {
+            const statusText = stripAnsiCodes(statusMatch[1])
+            const statusNum = parseInt(statusText.match(/\d+/)?.[0] || '0', 10)
+            result.status_code = statusNum || null
+          }
+          
+          // Title
+          const titleMatch = line.match(/^Title\s*:\s*(.+)$/i)
+          if (titleMatch) result.title = stripAnsiCodes(titleMatch[1])
+          
+          // IP
+          const ipMatch = line.match(/^IP\s*:\s*(.+)$/i)
+          if (ipMatch) result.ip = stripAnsiCodes(ipMatch[1])
+          
+          // Country
+          const countryMatch = line.match(/^Country\s*:\s*(.+)$/i)
+          if (countryMatch) result.country = stripAnsiCodes(countryMatch[1])
+          
+          // Summary
+          const summaryMatch = line.match(/^Summary\s*:\s*(.+)$/i)
+          if (summaryMatch) result.summary = stripAnsiCodes(summaryMatch[1])
+          
+          // Detected Plugins section
+          if (line.match(/^Detected Plugins:/i)) {
+            let pluginName = null
+            let pluginDesc = []
+            i++
+            
+            while (i < lines.length) {
+              const pluginLine = lines[i].trim()
+              if (!pluginLine) {
+                if (pluginName) {
+                  result.plugins.push({
+                    name: stripAnsiCodes(pluginName),
+                    description: stripAnsiCodes(pluginDesc.join(' ').trim()) || `Detected ${stripAnsiCodes(pluginName)}`
+                  })
+                  pluginName = null
+                  pluginDesc = []
+                }
+                i++
+                continue
+              }
+              
+              const pluginNameMatch = pluginLine.match(/^\[\s*(.+?)\s*\]/)
+              if (pluginNameMatch) {
+                if (pluginName) {
+                  result.plugins.push({
+                    name: stripAnsiCodes(pluginName),
+                    description: stripAnsiCodes(pluginDesc.join(' ').trim()) || `Detected ${stripAnsiCodes(pluginName)}`
+                  })
+                }
+                pluginName = stripAnsiCodes(pluginNameMatch[1])
+                pluginDesc = []
+              } else if (pluginName) {
+                pluginDesc.push(stripAnsiCodes(pluginLine))
+              }
+              
+                // Check if we hit HTTP Headers section
+              if (pluginLine.match(/^HTTP Headers:/i)) {
+                if (pluginName) {
+                  result.plugins.push({
+                    name: stripAnsiCodes(pluginName),
+                    description: stripAnsiCodes(pluginDesc.join(' ').trim()) || `Detected ${stripAnsiCodes(pluginName)}`
+                  })
+                }
+                break
+              }
+              
+              i++
+            }
+            
+            // Process HTTP Headers
+            if (i < lines.length && lines[i].trim().match(/^HTTP Headers:/i)) {
+              i++
+              while (i < lines.length) {
+                const headerLine = lines[i].trim()
+                if (!headerLine) break
+                
+                const headerMatch = headerLine.match(/^([^:]+):\s*(.+)$/)
+                if (headerMatch) {
+                  const headerName = stripAnsiCodes(headerMatch[1].trim())
+                  const headerValue = stripAnsiCodes(headerMatch[2].trim())
+                  result.http_headers[headerName] = headerValue
+                }
+                i++
+              }
+            }
+            break
+          }
+        }
+        
+        result.raw_output = verboseOutput
+      } else {
+        result.raw_output = `Command failed. stdout: ${out || 'empty'}, stderr: ${err || 'empty'}`
+      }
+
+      // Compute severity_hint and recommendations
+      const recommendations = []
+      
+      if (!result.http_headers['Strict-Transport-Security'] && !result.http_headers['strict-transport-security']) {
+        recommendations.push('Enable HSTS')
+        if (result.severity_hint === 'Informational') result.severity_hint = 'Medium'
+      }
+      
+      if (!result.http_headers['Content-Security-Policy'] && !result.http_headers['content-security-policy']) {
+        recommendations.push('Add a strict Content-Security-Policy')
+        if (result.severity_hint === 'Informational') result.severity_hint = 'Medium'
+      }
+      
+      // Check for outdated CMS (simplified check)
+      const cmsPlugins = result.plugins.filter(p => 
+        /wordpress|joomla|drupal|magento/i.test(p.name)
+      )
+      if (cmsPlugins.length > 0) {
+        // Note: In a real implementation, you'd check versions. For now, just note it.
+        recommendations.push('Ensure CMS and plugins are updated to latest versions')
+        if (result.severity_hint === 'Informational') result.severity_hint = 'High'
+      }
+      
+      result.recommendation = recommendations.join('. ') || 'Review detected technologies and ensure security headers are properly configured.'
+      
+      console.log(`✅ [QUICK-FINGERPRINT] Completed fingerprint scan`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Quick Fingerprint completed: ${result.plugins.length} plugins detected`, testId: 'quick-fingerprint', type: 'success' }])
+      
+      return result
+    } catch (error) {
+      console.error(`❌ [QUICK-FINGERPRINT] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'quick-fingerprint', type: 'error' }])
+      
+      return {
+        test_name: 'whatweb-fingerprint',
+        target_url: targetBase,
+        timestamp: new Date().toISOString(),
+        status_code: null,
+        title: null,
+        ip: null,
+        country: null,
+        summary: null,
+        plugins: [],
+        http_headers: {},
+        raw_output: `Error: ${error.message}`,
+        severity_hint: 'Informational',
+        recommendation: 'Verify whatweb is installed and target URL is accessible',
+        notes: error.message
+      }
+    }
+  }
+
+  // SSL/TLS Analysis
+  const runSslTlsAnalysis = async (targetBase) => {
+    try {
+      // Clean the input - remove any spaces and URL encoding
+      const cleanedInput = targetBase.trim().replace(/%20/g, ' ').trim()
+      const targetUrl = cleanedInput.startsWith('http') ? cleanedInput : `https://${cleanedInput}`
+      let domain = targetUrl
+      try {
+        const urlObj = new URL(targetUrl)
+        domain = urlObj.hostname
+      } catch {
+        domain = targetUrl.replace(/^https?:\/\//, '').split('/')[0].split('?')[0].split('#')[0]
+      }
+      
+      // Clean domain - remove any spaces, URL encoding, and ensure it's valid
+      domain = domain.trim().replace(/%20/g, '').replace(/\s+/g, '').toLowerCase()
+      
+      // Ensure domain is not empty
+      if (!domain || domain.length === 0) {
+        throw new Error('Invalid domain extracted from URL')
+      }
+
+      console.log(`[SSL-TLS] Starting SSL/TLS Analysis for: ${targetUrl} (domain: ${domain})`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting SSL/TLS Analysis for: ${targetUrl}`, testId: 'ssl-tls-analysis', type: 'info' }])
+
+      // Extract domain for SSL commands
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `SSL/TLS Analysis Commands (Kali Linux):`, testId: 'ssl-tls-analysis', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Certificate Extraction: openssl s_client -connect ${domain}:443 -servername ${domain} </dev/null 2>/dev/null | openssl x509 -outform PEM > cert.pem`, testId: 'ssl-tls-analysis', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Certificate JSON: cat cert.pem | jc --x509-cert`, testId: 'ssl-tls-analysis', type: 'info' }])
+
+      // Step 1: Extract certificate to PEM file - use domain for both connect and servername
+      const cmd1 = `openssl s_client -connect ${domain}:443 -servername ${domain} </dev/null 2>/dev/null | openssl x509 -outform PEM > cert.pem`
+      const { stdout: stdout1, stderr: stderr1 } = await runWSLSeparated('ssl-tls-analysis', cmd1)
+      
+      // Step 2: Convert PEM to JSON using jc
+      const cmd2 = `cat cert.pem | jc --x509-cert`
+      const { stdout: stdout2, stderr: stderr2 } = await runWSLSeparated('ssl-tls-analysis', cmd2)
+      
+      const jsonOutput = stdout2.trim()
+      let certificateData = null
+      
+      // Parse JSON output from jc
+      try {
+        if (jsonOutput && jsonOutput !== '[]' && jsonOutput.startsWith('[')) {
+          const parsed = JSON.parse(jsonOutput)
+          certificateData = Array.isArray(parsed) ? parsed[0] : parsed
+        } else if (jsonOutput && jsonOutput.startsWith('{')) {
+          certificateData = JSON.parse(jsonOutput)
+        }
+      } catch (parseError) {
+        console.error('Failed to parse certificate JSON:', parseError)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `Warning: Failed to parse certificate JSON. Raw output: ${jsonOutput.substring(0, 200)}`, testId: 'ssl-tls-analysis', type: 'warning' }])
+      }
+
+      const sslResult = {
+        scanType: 'SSL/TLS Analysis',
+        target: domain,
+        supportedProtocols: [],
+        cipherStrength: 'Unknown',
+        deprecatedProtocols: [],
+        weakCiphers: [],
+        certificateInfo: {
+          issuer: 'Unknown',
+          validFrom: null,
+          validTo: null,
+          status: 'Unknown',
+          subject: null,
+          serialNumber: null,
+          version: null,
+          signatureAlgorithm: null,
+          publicKeyAlgorithm: null,
+          publicKeyBits: null,
+          validityNotBefore: null,
+          validityNotAfter: null,
+          issuerDN: null,
+          subjectDN: null,
+          issuerFull: null,
+          subjectFull: null
+        },
+        summary: 'SSL/TLS analysis completed',
+        rawOutput: jsonOutput,
+        certificateJson: certificateData
+      }
+
+      // Extract information from JSON certificate data
+      if (certificateData) {
+        // Handle nested structure (tbs_certificate) or flat structure
+        const tbsCert = certificateData.tbs_certificate || certificateData
+        const rootSignature = certificateData.signature_algorithm || tbsCert.signature
+        
+        // Issuer information - extract all fields
+        const issuer = tbsCert.issuer || certificateData.issuer
+        if (issuer) {
+          if (typeof issuer === 'string') {
+            sslResult.certificateInfo.issuer = issuer
+          } else if (typeof issuer === 'object') {
+            // Build issuer string from all available fields
+            const issuerParts = []
+            if (issuer.common_name) issuerParts.push(`CN=${issuer.common_name}`)
+            if (issuer.organization_name || issuer.organization) issuerParts.push(`O=${issuer.organization_name || issuer.organization}`)
+            if (issuer.organizational_unit_name || issuer.organizational_unit) issuerParts.push(`OU=${issuer.organizational_unit_name || issuer.organizational_unit}`)
+            if (issuer.locality_name || issuer.locality) issuerParts.push(`L=${issuer.locality_name || issuer.locality}`)
+            if (issuer.state_or_province_name || issuer.state) issuerParts.push(`ST=${issuer.state_or_province_name || issuer.state}`)
+            if (issuer.country_name || issuer.country) issuerParts.push(`C=${issuer.country_name || issuer.country}`)
+            if (issuer.email_address || issuer.email) issuerParts.push(`E=${issuer.email_address || issuer.email}`)
+            
+            sslResult.certificateInfo.issuer = issuerParts.length > 0 
+              ? issuerParts.join(', ') 
+              : (issuer.common_name || JSON.stringify(issuer))
+            
+            // Store full issuer object for detailed display
+            sslResult.certificateInfo.issuerFull = issuer
+          }
+        }
+        
+        // Subject information - extract all fields
+        const subject = tbsCert.subject || certificateData.subject
+        if (subject) {
+          if (typeof subject === 'string') {
+            sslResult.certificateInfo.subject = subject
+          } else if (typeof subject === 'object') {
+            // Build subject string from all available fields
+            const subjectParts = []
+            if (subject.common_name) subjectParts.push(`CN=${subject.common_name}`)
+            if (subject.organization_name || subject.organization) subjectParts.push(`O=${subject.organization_name || subject.organization}`)
+            if (subject.organizational_unit_name || subject.organizational_unit) subjectParts.push(`OU=${subject.organizational_unit_name || subject.organizational_unit}`)
+            if (subject.locality_name || subject.locality) subjectParts.push(`L=${subject.locality_name || subject.locality}`)
+            if (subject.state_or_province_name || subject.state) subjectParts.push(`ST=${subject.state_or_province_name || subject.state}`)
+            if (subject.country_name || subject.country) subjectParts.push(`C=${subject.country_name || subject.country}`)
+            if (subject.email_address || subject.email) subjectParts.push(`E=${subject.email_address || subject.email}`)
+            
+            sslResult.certificateInfo.subject = subjectParts.length > 0 
+              ? subjectParts.join(', ') 
+              : (subject.common_name || JSON.stringify(subject))
+            
+            // Store full subject object for detailed display
+            sslResult.certificateInfo.subjectFull = subject
+          }
+        }
+        
+        // Serial number
+        const serialNumber = tbsCert.serial_number || certificateData.serial_number || tbsCert.serial_number_str || certificateData.serial_number_str
+        if (serialNumber) {
+          sslResult.certificateInfo.serialNumber = serialNumber
+        }
+        
+        // Version
+        const version = tbsCert.version || certificateData.version
+        if (version) {
+          sslResult.certificateInfo.version = version
+        }
+        
+        // Signature algorithm - check root level first, then tbs_certificate
+        if (rootSignature) {
+          if (typeof rootSignature === 'object') {
+            sslResult.certificateInfo.signatureAlgorithm = rootSignature.algorithm || JSON.stringify(rootSignature)
+          } else {
+            sslResult.certificateInfo.signatureAlgorithm = rootSignature
+          }
+        } else if (tbsCert.signature_algorithm || certificateData.signature_algorithm) {
+          const sigAlg = tbsCert.signature_algorithm || certificateData.signature_algorithm
+          if (typeof sigAlg === 'object') {
+            sslResult.certificateInfo.signatureAlgorithm = sigAlg.algorithm || JSON.stringify(sigAlg)
+          } else {
+            sslResult.certificateInfo.signatureAlgorithm = sigAlg
+          }
+        }
+        
+        // Public key information
+        const publicKeyInfo = tbsCert.subject_public_key_info || certificateData.public_key || certificateData.subject_public_key_info
+        if (publicKeyInfo) {
+          const algorithm = publicKeyInfo.algorithm || (publicKeyInfo.algorithm && publicKeyInfo.algorithm.algorithm ? publicKeyInfo.algorithm : null)
+          if (algorithm) {
+            if (typeof algorithm === 'object') {
+              sslResult.certificateInfo.publicKeyAlgorithm = algorithm.algorithm || JSON.stringify(algorithm)
+            } else {
+              sslResult.certificateInfo.publicKeyAlgorithm = algorithm
+            }
+          }
+          // Try to get bits from public_key or calculate from modulus
+          if (publicKeyInfo.public_key) {
+            if (publicKeyInfo.public_key.modulus) {
+              // Estimate bits from modulus length (hex string, each 2 chars = 1 byte, 8 bits per byte)
+              const modulusHex = publicKeyInfo.public_key.modulus.replace(/:/g, '').replace(/\s/g, '')
+              sslResult.certificateInfo.publicKeyBits = modulusHex.length * 4 // Each hex char = 4 bits
+            }
+          }
+          if (publicKeyInfo.bits) {
+            sslResult.certificateInfo.publicKeyBits = publicKeyInfo.bits
+          }
+        }
+        
+        // Validity dates - check for ISO format first, then timestamp
+        const validity = tbsCert.validity || certificateData.validity
+        if (validity) {
+          if (validity.not_before_iso) {
+            sslResult.certificateInfo.validityNotBefore = validity.not_before_iso
+            sslResult.certificateInfo.validFrom = validity.not_before_iso
+          } else if (validity.not_before) {
+            // Convert timestamp to ISO string
+            const date = new Date(validity.not_before * 1000)
+            sslResult.certificateInfo.validityNotBefore = date.toISOString()
+            sslResult.certificateInfo.validFrom = date.toISOString()
+          }
+          
+          if (validity.not_after_iso) {
+            sslResult.certificateInfo.validityNotAfter = validity.not_after_iso
+            sslResult.certificateInfo.validTo = validity.not_after_iso
+            
+            // Check if certificate is expired
+            const notAfter = new Date(validity.not_after_iso)
+            const now = new Date()
+            sslResult.certificateInfo.status = notAfter < now ? 'Expired' : 'Valid'
+          } else if (validity.not_after) {
+            // Convert timestamp to ISO string
+            const date = new Date(validity.not_after * 1000)
+            sslResult.certificateInfo.validityNotAfter = date.toISOString()
+            sslResult.certificateInfo.validTo = date.toISOString()
+            
+            // Check if certificate is expired
+            const notAfter = new Date(validity.not_after * 1000)
+            const now = new Date()
+            sslResult.certificateInfo.status = notAfter < now ? 'Expired' : 'Valid'
+          }
+        } else {
+          // Fallback to old format
+          if (certificateData.validity_not_before) {
+            sslResult.certificateInfo.validityNotBefore = certificateData.validity_not_before
+            sslResult.certificateInfo.validFrom = certificateData.validity_not_before
+          }
+          if (certificateData.validity_not_after) {
+            sslResult.certificateInfo.validityNotAfter = certificateData.validity_not_after
+            sslResult.certificateInfo.validTo = certificateData.validity_not_after
+            
+            // Check if certificate is expired
+            const notAfter = new Date(certificateData.validity_not_after)
+            const now = new Date()
+            sslResult.certificateInfo.status = notAfter < now ? 'Expired' : 'Valid'
+          }
+        }
+        
+        // Issuer DN and Subject DN
+        if (certificateData.issuer_dn) {
+          sslResult.certificateInfo.issuerDN = certificateData.issuer_dn
+        }
+        if (certificateData.subject_dn) {
+          sslResult.certificateInfo.subjectDN = certificateData.subject_dn
+        }
+        
+        // Extract extensions for additional info (subject alternative names)
+        const extensions = tbsCert.extensions || certificateData.extensions
+        if (extensions && Array.isArray(extensions)) {
+          // Find subject_alt_name extension
+          const sanExtension = extensions.find(ext => 
+            ext.extn_id === 'subject_alt_name' || 
+            ext.extn_id === 'subjectAltName' ||
+            ext.oid === '2.5.29.17'
+          )
+          if (sanExtension && sanExtension.extn_value) {
+            if (Array.isArray(sanExtension.extn_value)) {
+              sslResult.subjectAlternativeNames = sanExtension.extn_value
+            } else {
+              sslResult.subjectAlternativeNames = [sanExtension.extn_value]
+            }
+          }
+        } else if (certificateData.extensions && certificateData.extensions.subject_alt_name) {
+          sslResult.subjectAlternativeNames = certificateData.extensions.subject_alt_name
+        }
+      }
+
+      console.log(`✅ [SSL-TLS] SSL/TLS Analysis completed`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `SSL/TLS Analysis completed - Certificate parsed successfully`, testId: 'ssl-tls-analysis', type: 'success' }])
+      
+      return sslResult
+    } catch (error) {
+      console.error(`❌ [SSL-TLS] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'ssl-tls-analysis', type: 'error' }])
+      return {
+        scanType: 'SSL/TLS Analysis',
+        target: targetBase,
+        error: error.message,
+        summary: `SSL/TLS analysis failed: ${error.message}`
+      }
+    }
+  }
+
+  // Security Headers Analysis
+  const runSecurityHeaders = async (targetBase) => {
+    try {
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      
+      console.log(`[SECURITY-HEADERS] Starting Security Headers Analysis for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting Security Headers Analysis for: ${targetUrl}`, testId: 'security-headers', type: 'info' }])
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Security Headers Analysis Commands (Kali Linux):`, testId: 'security-headers', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Headers Check: curl -I -L ${targetUrl} 2>/dev/null | awk...`, testId: 'security-headers', type: 'info' }])
+
+      const cmd = `curl -I -L ${targetUrl} 2>/dev/null | awk 'BEGIN {print "{"} /^[^:]+:/ {gsub("\\r",""); split($0,a,": "); printf "\\"%s\\": \\"%s\\",\\n", a[1], a[2]} END {print "}"}' | sed '$ s/,$//'`
+      const { stdout, stderr } = await runWSLSeparated('security-headers', cmd)
+      const jsonOutput = stdout.trim()
+      
+      let headersJson = {}
+      try {
+        if (jsonOutput && jsonOutput.startsWith('{')) {
+          headersJson = JSON.parse(jsonOutput)
+        }
+      } catch (parseError) {
+        console.error('Failed to parse headers JSON:', parseError)
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `Warning: Failed to parse headers JSON. Raw output: ${jsonOutput.substring(0, 200)}`, testId: 'security-headers', type: 'warning' }])
+        
+        // Fallback: parse headers manually if JSON parsing fails
+        const output = stdout + (stderr ? `\n${stderr}` : '')
+        const lines = output.split('\n')
+        lines.forEach(line => {
+          if (line.includes(':')) {
+            const [key, ...valueParts] = line.split(':')
+            const value = valueParts.join(':').trim()
+            const keyLower = key.trim().toLowerCase()
+            headersJson[keyLower] = value
+          }
+        })
+      }
+
+      const headersResult = {
+        scanType: 'Security Headers',
+        target: targetUrl,
+        headersFound: headersJson,
+        missingHeaders: [],
+        summary: 'Security headers analysis completed',
+        command: cmd,
+        rawOutput: jsonOutput,
+        headersJson: headersJson
+      }
+
+      const requiredHeaders = [
+        'strict-transport-security',
+        'content-security-policy',
+        'x-frame-options',
+        'x-content-type-options',
+        'x-xss-protection',
+        'referrer-policy',
+        'permissions-policy'
+      ]
+
+      // Check for missing headers (case-insensitive)
+      const foundHeadersLower = Object.keys(headersJson).map(h => h.toLowerCase())
+      requiredHeaders.forEach(header => {
+        if (!foundHeadersLower.includes(header.toLowerCase())) {
+          headersResult.missingHeaders.push(header)
+        }
+      })
+
+      console.log(`✅ [SECURITY-HEADERS] Security Headers Analysis completed - Missing: ${headersResult.missingHeaders.length}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Security Headers Analysis completed - Found: ${Object.keys(headersJson).length}, Missing: ${headersResult.missingHeaders.length}`, testId: 'security-headers', type: 'success' }])
+      
+      return headersResult
+    } catch (error) {
+      console.error(`❌ [SECURITY-HEADERS] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'security-headers', type: 'error' }])
+      return {
+        scanType: 'Security Headers',
+        target: targetBase,
+        error: error.message,
+        summary: `Security headers analysis failed: ${error.message}`
+      }
+    }
+  }
+
+  // DNS Resolution & Analysis
+  const runDnsResolution = async (targetBase) => {
+    try {
+      let domain = targetBase
+      try {
+        const urlObj = new URL(targetBase.startsWith('http') ? targetBase : `https://${targetBase}`)
+        domain = urlObj.hostname.replace(/^www\./, '')
+      } catch {
+        domain = targetBase.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+      }
+
+      console.log(`[DNS-RESOLUTION] Starting DNS Resolution & Analysis for: ${domain}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting DNS Resolution & Analysis for: ${domain}`, testId: 'dns-resolution', type: 'info' }])
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `DNS Resolution & Analysis Commands (Kali Linux):`, testId: 'dns-resolution', type: 'info' }])
+      
+      const scanStartTime = new Date().toISOString()
+      const commandSteps = []
+      
+      const dnsResult = {
+        scanType: 'DNS Resolution & Analysis',
+        target: domain,
+        digAny: [],
+        digRecords: [],
+        reverseDns: null,
+        dnsrecon: null,
+        dnsenum: null,
+        summary: 'DNS resolution & analysis completed',
+        rawOutput: '',
+        scanMetadata: {
+          startTime: scanStartTime,
+          endTime: null,
+          durationSeconds: 0,
+          steps: [],
+          artifacts: [],
+          warnings: [],
+          summaryText: ''
+        }
+      }
+
+      // Command 1: dig domain ANY | jc --dig --pretty
+      const step1Start = Date.now()
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Basic DNS Lookup: dig ${domain} ANY | jc --dig --pretty`, testId: 'dns-resolution', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'dns-resolution': 10 }))
+      const cmd1 = `dig ${domain} ANY | jc --dig --pretty`
+      const { stdout: stdout1, stderr: stderr1 } = await runWSLSeparated('dns-resolution', cmd1)
+      const json1 = stdout1.trim()
+      
+      commandSteps.push({
+        id: 'dig-any',
+        timestamp: new Date(step1Start).toISOString(),
+        name: 'Basic DNS Lookup (ANY)',
+        command: cmd1,
+        description: 'Retrieve all DNS record types for comprehensive domain analysis',
+        stdoutBytes: stdout1.length,
+        stderrBytes: stderr1 ? stderr1.length : 0,
+        status: stderr1 && stderr1.length > 0 ? 'warning' : 'completed',
+        artifactPaths: [],
+        stdoutSnippet: stdout1.substring(0, 200)
+      })
+      
+      if (json1 && json1 !== '[]' && json1 !== '') {
+        try {
+          const parsed1 = JSON.parse(json1)
+          dnsResult.digAny = Array.isArray(parsed1) ? parsed1 : [parsed1]
+        } catch (e) {
+          console.error('Failed to parse dig ANY JSON:', e)
+        }
+      } else {
+        dnsResult.digAny = []
+        setLogs(prev => [...prev, { timestamp: Date.now(), message: `Warning: Server appears unreachable (empty result)`, testId: 'dns-resolution', type: 'warning' }])
+      }
+
+      // Command 2: dig +noall +answer domain A MX TXT NS SOA | jc --dig
+      const step2Start = Date.now()
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Detailed DNS Records: dig +noall +answer ${domain} A MX TXT NS SOA | jc --dig`, testId: 'dns-resolution', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'dns-resolution': 30 }))
+      const cmd2 = `dig +noall +answer ${domain} A MX TXT NS SOA | jc --dig`
+      const { stdout: stdout2, stderr: stderr2 } = await runWSLSeparated('dns-resolution', cmd2)
+      const json2 = stdout2.trim()
+      
+      commandSteps.push({
+        id: 'dig-records',
+        timestamp: new Date(step2Start).toISOString(),
+        name: 'Detailed DNS Records',
+        command: cmd2,
+        description: 'Extract specific record types (A, MX, TXT, NS, SOA) for security analysis',
+        stdoutBytes: stdout2.length,
+        stderrBytes: stderr2 ? stderr2.length : 0,
+        status: stderr2 && stderr2.length > 0 ? 'warning' : 'completed',
+        artifactPaths: [],
+        stdoutSnippet: stdout2.substring(0, 200)
+      })
+      
+      if (json2 && json2 !== '[]' && json2 !== '') {
+        try {
+          const parsed2 = JSON.parse(json2)
+          dnsResult.digRecords = Array.isArray(parsed2) ? parsed2 : [parsed2]
+        } catch (e) {
+          console.error('Failed to parse dig records JSON:', e)
+        }
+      }
+
+      // Command 3: dig -x $(dig +short domain) +short
+      const step3Start = Date.now()
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Reverse DNS: dig -x $(dig +short ${domain}) +short`, testId: 'dns-resolution', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'dns-resolution': 50 }))
+      const cmd3 = `dig -x $(dig +short ${domain}) +short`
+      const { stdout: stdout3, stderr: stderr3 } = await runWSLSeparated('dns-resolution', cmd3)
+      dnsResult.reverseDns = stdout3.trim() || null
+      
+      commandSteps.push({
+        id: 'reverse-dns',
+        timestamp: new Date(step3Start).toISOString(),
+        name: 'Reverse DNS Lookup',
+        command: cmd3,
+        description: 'Perform reverse DNS lookup to identify hostnames associated with IP addresses',
+        stdoutBytes: stdout3.length,
+        stderrBytes: stderr3 ? stderr3.length : 0,
+        status: stderr3 && stderr3.length > 0 ? 'warning' : 'completed',
+        artifactPaths: [],
+        stdoutSnippet: stdout3.substring(0, 200)
+      })
+
+      // Commands 4-5: dnsrecon
+      const step4Start = Date.now()
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • DNS Reconnaissance: dnsrecon -d ${domain} -j dnsrecon_output.json`, testId: 'dns-resolution', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'dns-resolution': 70 }))
+      const cmd4 = `dnsrecon -d ${domain} -j dnsrecon_output.json`
+      const { stdout: stdout4, stderr: stderr4 } = await runWSLSeparated('dns-resolution', cmd4)
+      
+      commandSteps.push({
+        id: 'dnsrecon-scan',
+        timestamp: new Date(step4Start).toISOString(),
+        name: 'DNS Reconnaissance',
+        command: cmd4,
+        description: 'Perform comprehensive DNS reconnaissance to discover subdomains and records',
+        stdoutBytes: stdout4.length,
+        stderrBytes: stderr4 ? stderr4.length : 0,
+        status: stderr4 && stderr4.length > 0 ? 'warning' : 'completed',
+        artifactPaths: ['dnsrecon_output.json'],
+        stdoutSnippet: stdout4.substring(0, 200)
+      })
+      
+      const cmd5 = `cat dnsrecon_output.json`
+      const { stdout: stdout5, stderr: stderr5 } = await runWSLSeparated('dns-resolution', cmd5)
+      const json5 = stdout5.trim()
+      
+      commandSteps.push({
+        id: 'dnsrecon-read',
+        timestamp: new Date(Date.now()).toISOString(),
+        name: 'Read DNS Recon Output',
+        command: cmd5,
+        description: 'Read the dnsrecon JSON output file',
+        stdoutBytes: stdout5.length,
+        stderrBytes: stderr5 ? stderr5.length : 0,
+        status: stderr5 && stderr5.length > 0 ? 'warning' : 'completed',
+        artifactPaths: ['dnsrecon_output.json'],
+        stdoutSnippet: json5.substring(0, 200)
+      })
+      
+      if (json5 && json5 !== '[]' && json5 !== '') {
+        try {
+          dnsResult.dnsrecon = JSON.parse(json5)
+        } catch (e) {
+          console.error('Failed to parse dnsrecon JSON:', e)
+          dnsResult.dnsrecon = { raw: json5 }
+        }
+      }
+
+      // Commands 6-8: dnsenum
+      const step6Start = Date.now()
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • DNS Enumeration: Creating wordlist and running dnsenum`, testId: 'dns-resolution', type: 'info' }])
+      setTestProgress(prev => ({ ...prev, 'dns-resolution': 85 }))
+      const cmd6 = `echo -e "www\\nmail\\nftp\\nblog" > custom_wordlist.txt`
+      const { stdout: stdout6, stderr: stderr6 } = await runWSLSeparated('dns-resolution', cmd6)
+      
+      commandSteps.push({
+        id: 'create-wordlist',
+        timestamp: new Date(step6Start).toISOString(),
+        name: 'Create Wordlist',
+        command: cmd6,
+        description: 'Create custom wordlist for DNS enumeration',
+        stdoutBytes: stdout6.length,
+        stderrBytes: stderr6 ? stderr6.length : 0,
+        status: stderr6 && stderr6.length > 0 ? 'warning' : 'completed',
+        artifactPaths: ['custom_wordlist.txt'],
+        stdoutSnippet: stdout6.substring(0, 200)
+      })
+      
+      const cmd7 = `dnsenum --threads 10 --noreverse -t 5 -p 5 -f custom_wordlist.txt ${domain} -o dnsenum_output.xml`
+      const { stdout: stdout7, stderr: stderr7 } = await runWSLSeparated('dns-resolution', cmd7)
+      
+      commandSteps.push({
+        id: 'dnsenum-scan',
+        timestamp: new Date(Date.now()).toISOString(),
+        name: 'DNS Enumeration',
+        command: cmd7,
+        description: 'Perform DNS enumeration to discover subdomains using brute force',
+        stdoutBytes: stdout7.length,
+        stderrBytes: stderr7 ? stderr7.length : 0,
+        status: stderr7 && stderr7.length > 0 ? 'warning' : 'completed',
+        artifactPaths: ['dnsenum_output.xml'],
+        stdoutSnippet: stdout7.substring(0, 200)
+      })
+      
+      const cmd8 = `cat dnsenum_output.xml`
+      const { stdout: stdout8, stderr: stderr8 } = await runWSLSeparated('dns-resolution', cmd8)
+      const xmlOutput = stdout8.trim()
+      
+      commandSteps.push({
+        id: 'dnsenum-read',
+        timestamp: new Date(Date.now()).toISOString(),
+        name: 'Read DNS Enum Output',
+        command: cmd8,
+        description: 'Read the dnsenum XML output file',
+        stdoutBytes: stdout8.length,
+        stderrBytes: stderr8 ? stderr8.length : 0,
+        status: stderr8 && stderr8.length > 0 ? 'warning' : 'completed',
+        artifactPaths: ['dnsenum_output.xml'],
+        stdoutSnippet: xmlOutput.substring(0, 200)
+      })
+      
+      // Convert XML to JSON
+      if (xmlOutput) {
+        try {
+          // Simple XML to JSON conversion for dnsenum output
+          const xmlToJson = (xmlString) => {
+            const result = { hosts: [], subdomains: [] }
+            const hostMatches = xmlString.match(/<host hostname="([^"]+)" ip="([^"]+)"[^>]*>/g)
+            if (hostMatches) {
+              hostMatches.forEach(match => {
+                const hostnameMatch = match.match(/hostname="([^"]+)"/)
+                const ipMatch = match.match(/ip="([^"]+)"/)
+                if (hostnameMatch && ipMatch) {
+                  result.hosts.push({
+                    hostname: hostnameMatch[1],
+                    ip: ipMatch[1]
+                  })
+                  if (hostnameMatch[1] !== domain && hostnameMatch[1].endsWith(domain)) {
+                    result.subdomains.push(hostnameMatch[1])
+                  }
+                }
+              })
+            }
+            return result
+          }
+          dnsResult.dnsenum = xmlToJson(xmlOutput)
+        } catch (e) {
+          console.error('Failed to convert dnsenum XML to JSON:', e)
+          dnsResult.dnsenum = { raw: xmlOutput }
+        }
+      }
+
+      setTestProgress(prev => ({ ...prev, 'dns-resolution': 100 }))
+      console.log(`✅ [DNS-RESOLUTION] DNS Resolution & Analysis completed`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `DNS Resolution & Analysis completed successfully`, testId: 'dns-resolution', type: 'success' }])
+      
+      // Calculate scan metadata
+      const scanEndTime = new Date().toISOString()
+      const durationMs = Date.now() - new Date(scanStartTime).getTime()
+      const durationSeconds = Math.floor(durationMs / 1000)
+      
+      // Collect warnings
+      const warnings = []
+      commandSteps.forEach(step => {
+        if (step.stderrBytes > 0) {
+          warnings.push(`${step.name} produced ${step.stderrBytes} bytes of stderr output`)
+        }
+        if (step.status === 'warning') {
+          warnings.push(`${step.name} completed with warnings`)
+        }
+      })
+      
+      // Collect artifacts
+      const artifacts = []
+      const artifactMap = new Map()
+      commandSteps.forEach(step => {
+        step.artifactPaths.forEach(path => {
+          if (!artifactMap.has(path)) {
+            artifactMap.set(path, {
+              path,
+              type: path.endsWith('.json') ? 'json' : path.endsWith('.xml') ? 'xml' : path.endsWith('.txt') ? 'text' : 'unknown',
+              sizeBytes: 0 // Will be estimated from stdout if available
+            })
+          }
+        })
+      })
+      artifacts.push(...Array.from(artifactMap.values()))
+      
+      // Update artifact sizes from command outputs
+      const dnsreconArtifact = artifacts.find(a => a.path === 'dnsrecon_output.json')
+      if (dnsreconArtifact && stdout5) dnsreconArtifact.sizeBytes = stdout5.length
+      
+      const dnsenumArtifact = artifacts.find(a => a.path === 'dnsenum_output.xml')
+      if (dnsenumArtifact && xmlOutput) dnsenumArtifact.sizeBytes = xmlOutput.length
+      
+      const wordlistArtifact = artifacts.find(a => a.path === 'custom_wordlist.txt')
+      if (wordlistArtifact) wordlistArtifact.sizeBytes = 20 // Approximate
+      
+      // Create summary text
+      const summaryText = `DNS Resolution & Analysis completed successfully in ${durationSeconds} seconds. ${commandSteps.length} commands executed. ${warnings.length > 0 ? `${warnings.length} warning(s) detected.` : 'No warnings.'}`
+      
+      dnsResult.scanMetadata = {
+        startTime: scanStartTime,
+        endTime: scanEndTime,
+        durationSeconds,
+        steps: commandSteps,
+        artifacts,
+        warnings,
+        summaryText
+      }
+      
+      return dnsResult
+    } catch (error) {
+      console.error(`❌ [DNS-RESOLUTION] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'dns-resolution', type: 'error' }])
+      return {
+        scanType: 'DNS Resolution & Analysis',
+        target: targetBase,
+        error: error.message,
+        summary: `DNS resolution & analysis failed: ${error.message}`
+      }
+    }
+  }
+
+  // CMS Detection
+  const runCmsDetection = async (targetBase) => {
+    try {
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      
+      console.log(`[CMS-DETECTION] Starting CMS Detection for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting CMS Detection for: ${targetUrl}`, testId: 'cms-detection', type: 'info' }])
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `CMS Detection Commands (Kali Linux):`, testId: 'cms-detection', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • CMS Fingerprint: wig -a -t 10 -q -w /dev/null ${targetUrl}`, testId: 'cms-detection', type: 'info' }])
+
+      const cmd = `wig -a -t 10 -q -w /dev/null ${targetUrl}`
+      const { stdout, stderr } = await runWSLSeparated('cms-detection', cmd)
+      const output = stdout + (stderr ? `\n${stderr}` : '')
+
+      const cmsResult = {
+        scanType: 'CMS Detection',
+        target: targetUrl,
+        status: '200 OK',
+        server: 'Unknown',
+        cms: null,
+        framework: null,
+        summary: 'CMS detection completed',
+        command: cmd,
+        rawOutput: output,
+        parsedData: {}
+      }
+
+      // Parse wig output - wig provides structured text output
+      // Look for CMS/technology information in the output
+      const lines = output.split('\n')
+      const detectedTechnologies = []
+      const detectedCMS = []
+      const detectedServers = []
+      const detectedPlugins = []
+      
+      lines.forEach(line => {
+        const trimmedLine = line.trim()
+        
+        // Look for CMS detection patterns
+        if (/WordPress|WP|wp-content|wp-admin/i.test(trimmedLine)) {
+          const versionMatch = trimmedLine.match(/(?:WordPress|WP)[\/\s]?([0-9.]+)/i)
+          if (versionMatch) {
+            detectedCMS.push({ name: 'WordPress', version: versionMatch[1] })
+          } else if (!detectedCMS.some(c => c.name === 'WordPress')) {
+            detectedCMS.push({ name: 'WordPress', version: 'Unknown' })
+          }
+        }
+        
+        if (/Joomla|joomla/i.test(trimmedLine) && !detectedCMS.some(c => c.name === 'Joomla')) {
+          const versionMatch = trimmedLine.match(/Joomla[\/\s]?([0-9.]+)/i)
+          detectedCMS.push({ name: 'Joomla', version: versionMatch ? versionMatch[1] : 'Unknown' })
+        }
+        
+        if (/Drupal|drupal/i.test(trimmedLine) && !detectedCMS.some(c => c.name === 'Drupal')) {
+          const versionMatch = trimmedLine.match(/Drupal[\/\s]?([0-9.]+)/i)
+          detectedCMS.push({ name: 'Drupal', version: versionMatch ? versionMatch[1] : 'Unknown' })
+        }
+        
+        // Look for server information
+        if (/nginx/i.test(trimmedLine) && !detectedServers.some(s => s.includes('nginx'))) {
+          detectedServers.push('nginx')
+        }
+        if (/Apache/i.test(trimmedLine) && !detectedServers.some(s => s.includes('Apache'))) {
+          const versionMatch = trimmedLine.match(/Apache[\/\s]?([0-9.]+)/i)
+          detectedServers.push(versionMatch ? `Apache ${versionMatch[1]}` : 'Apache')
+        }
+        if (/IIS|Microsoft-IIS/i.test(trimmedLine) && !detectedServers.some(s => s.includes('IIS'))) {
+          detectedServers.push('Microsoft IIS')
+        }
+        
+        // Look for technologies and frameworks
+        if (/PHP|php/i.test(trimmedLine)) {
+          const versionMatch = trimmedLine.match(/PHP[\/\s]?([0-9.]+)/i)
+          if (!detectedTechnologies.some(t => t.name === 'PHP')) {
+            detectedTechnologies.push({ name: 'PHP', version: versionMatch ? versionMatch[1] : 'Unknown' })
+          }
+        }
+        
+        // Extract plugin information if available
+        if (/plugin|Plugin|PLUGIN/i.test(trimmedLine) && !trimmedLine.includes('WordPress')) {
+          const pluginMatch = trimmedLine.match(/([A-Za-z0-9-]+)\s+(?:plugin|Plugin)/i)
+          if (pluginMatch) {
+            detectedPlugins.push(pluginMatch[1])
+          }
+        }
+      })
+
+      // Set CMS result
+      if (detectedCMS.length > 0) {
+        cmsResult.cms = detectedCMS[0].name
+        cmsResult.framework = detectedCMS[0].version
+      }
+
+      // Set server
+      if (detectedServers.length > 0) {
+        cmsResult.server = detectedServers[0]
+      }
+
+      // Store parsed data
+      cmsResult.parsedData = {
+        cms: detectedCMS,
+        servers: detectedServers,
+        technologies: detectedTechnologies,
+        plugins: detectedPlugins
+      }
+
+      console.log(`✅ [CMS-DETECTION] CMS Detection completed - CMS: ${cmsResult.cms || 'None'}, Server: ${cmsResult.server || 'Unknown'}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `CMS Detection completed - CMS: ${cmsResult.cms || 'None'}, Server: ${cmsResult.server || 'Unknown'}`, testId: 'cms-detection', type: 'success' }])
+      
+      return cmsResult
+    } catch (error) {
+      console.error(`❌ [CMS-DETECTION] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'cms-detection', type: 'error' }])
+      return {
+        scanType: 'CMS Detection',
+        target: targetBase,
+        error: error.message,
+        summary: `CMS detection failed: ${error.message}`
+      }
+    }
+  }
+
+  // Subdomain Enumeration
+  const runSubdomainEnumeration = async (targetBase) => {
+    try {
+      let domain = targetBase
+      try {
+        const urlObj = new URL(targetBase.startsWith('http') ? targetBase : `https://${targetBase}`)
+        domain = urlObj.hostname.replace(/^www\./, '')
+      } catch {
+        domain = targetBase.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+      }
+
+      console.log(`[SUBDOMAIN] Starting Subdomain Enumeration for: ${domain}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting Subdomain Enumeration for: ${domain}`, testId: 'subdomain-enumeration', type: 'info' }])
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Subdomain Enumeration Commands (Kali Linux):`, testId: 'subdomain-enumeration', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Subdomain Enumeration: amass enum -d ${domain} -json amass_subdomains.json`, testId: 'subdomain-enumeration', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Reading Results: cat amass_subdomains.json`, testId: 'subdomain-enumeration', type: 'info' }])
+
+      // Step 1: Run amass enum
+      const cmd1 = `amass enum -d ${domain} -json amass_subdomains.json`
+      await runWSLSeparated('subdomain-enumeration', cmd1)
+      
+      // Step 2: Read the JSON output
+      const cmd2 = `cat amass_subdomains.json`
+      const { stdout, stderr } = await runWSLSeparated('subdomain-enumeration', cmd2)
+      const jsonOutput = stdout.trim()
+
+      const subdomainResult = {
+        scanType: 'Subdomain Enumeration',
+        target: domain,
+        subdomainsFound: [],
+        count: 0,
+        summary: 'Subdomain enumeration completed',
+        command: cmd1,
+        rawOutput: jsonOutput,
+        amassData: []
+      }
+
+      // Parse amass JSON output (one JSON object per line)
+      if (jsonOutput) {
+        const lines = jsonOutput.split('\n').filter(line => line.trim())
+        const subdomainSet = new Set()
+        const amassEntries = []
+        
+        lines.forEach(line => {
+          try {
+            const entry = JSON.parse(line)
+            amassEntries.push(entry)
+            
+            // Extract subdomain from entry
+            if (entry.name) {
+              const subdomain = entry.name.trim()
+              if (subdomain.includes(domain) && !subdomainSet.has(subdomain)) {
+                subdomainSet.add(subdomain)
+              }
+            }
+          } catch (parseError) {
+            // Skip invalid JSON lines
+            console.warn('Failed to parse amass JSON line:', line)
+          }
+        })
+
+        subdomainResult.amassData = amassEntries
+        subdomainResult.subdomainsFound = Array.from(subdomainSet).sort()
+        subdomainResult.count = subdomainResult.subdomainsFound.length
+      }
+
+      console.log(`✅ [SUBDOMAIN] Subdomain Enumeration completed - Found: ${subdomainResult.count}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Subdomain Enumeration completed - Found: ${subdomainResult.count} subdomain(s)`, testId: 'subdomain-enumeration', type: 'success' }])
+      
+      return subdomainResult
+    } catch (error) {
+      console.error(`❌ [SUBDOMAIN] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'subdomain-enumeration', type: 'error' }])
+      return {
+        scanType: 'Subdomain Enumeration',
+        target: targetBase,
+        error: error.message,
+        summary: `Subdomain enumeration failed: ${error.message}`
+      }
+    }
+  }
+
+  // Port Scanning
+  const runPortScanning = async (targetBase) => {
+    try {
+      let domain = targetBase
+      try {
+        const urlObj = new URL(targetBase.startsWith('http') ? targetBase : `https://${targetBase}`)
+        domain = urlObj.hostname
+      } catch {
+        domain = targetBase.replace(/^https?:\/\//, '').split('/')[0]
+      }
+
+      console.log(`[PORT-SCAN] Starting Port Scanning for: ${domain}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting Port Scanning for: ${domain}`, testId: 'port-scanning', type: 'info' }])
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Port Scanning Commands (Kali Linux):`, testId: 'port-scanning', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • Top Ports Scan: nmap -sV --top-ports 100 ${domain}`, testId: 'port-scanning', type: 'info' }])
+
+      const cmd = `timeout 120 nmap -sV --top-ports 100 ${domain} 2>/dev/null || echo "nmap scan failed or timed out"`
+      const { stdout, stderr } = await runWSLSeparated('port-scanning', cmd)
+      const output = stdout + (stderr ? `\n${stderr}` : '')
+
+      const portResult = {
+        scanType: 'Port Scanning',
+        target: domain,
+        openPorts: [],
+        totalOpen: 0,
+        summary: 'Port scanning completed',
+        command: cmd // Store the actual command used
+      }
+
+      // Parse nmap output for open ports
+      const lines = output.split('\n')
+      lines.forEach(line => {
+        // Look for lines like: 443/tcp open https nginx
+        const portMatch = line.match(/(\d+)\/(tcp|udp)\s+(open|open\|filtered)\s+([^\s]+)\s*(.*)/i)
+        if (portMatch) {
+          const port = parseInt(portMatch[1])
+          const protocol = portMatch[2]
+          const state = portMatch[3]
+          const service = portMatch[4]
+          const version = portMatch[5] ? portMatch[5].trim() : ''
+          
+          portResult.openPorts.push({
+            port,
+            protocol,
+            state,
+            service,
+            version
+          })
+        }
+      })
+
+      portResult.totalOpen = portResult.openPorts.length
+
+      console.log(`✅ [PORT-SCAN] Port Scanning completed - Found: ${portResult.totalOpen} open port(s)`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Port Scanning completed - Found: ${portResult.totalOpen} open port(s)`, testId: 'port-scanning', type: 'success' }])
+      
+      return portResult
+    } catch (error) {
+      console.error(`❌ [PORT-SCAN] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'port-scanning', type: 'error' }])
+      return {
+        scanType: 'Port Scanning',
+        target: targetBase,
+        error: error.message,
+        summary: `Port scanning failed: ${error.message}`
+      }
+    }
+  }
+
+  // SQL Injection Test
+  const runSqlInjectionTest = async (targetBase) => {
+    try {
+      const targetUrl = targetBase.startsWith('http') ? targetBase : `https://${targetBase}`
+      
+      console.log(`[SQL-INJECTION] Starting SQL Injection Test for: ${targetUrl}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Starting SQL Injection Test for: ${targetUrl}`, testId: 'sql-injection-test', type: 'info' }])
+
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `SQL Injection Test Commands (Kali Linux):`, testId: 'sql-injection-test', type: 'info' }])
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `  • SQL Injection Test: sqlmap -u ${targetUrl} --batch --level=1 --risk=1 --dbs`, testId: 'sql-injection-test', type: 'info' }])
+
+      // Use a simpler sqlmap command for basic testing
+      const cmd = `timeout 300 sqlmap -u ${targetUrl} --batch --level=1 --risk=1 --dbs 2>/dev/null || echo "sqlmap test completed or timed out"`
+      const { stdout, stderr } = await runWSLSeparated('sql-injection-test', cmd)
+      const output = stdout + (stderr ? `\n${stderr}` : '')
+
+      const sqlResult = {
+        scanType: 'SQL Injection Test',
+        target: targetUrl,
+        vulnerable: false,
+        databasesFound: [],
+        summary: 'SQL injection test completed',
+        command: cmd // Store the actual command used
+      }
+
+      // Parse sqlmap output
+      if (output.includes('vulnerable') || output.includes('injection') || output.includes('payload')) {
+        sqlResult.vulnerable = true
+      }
+
+      // Extract database names
+      const dbMatches = output.match(/available databases \[([\d]+)\]:\s*([^\n]+)/i)
+      if (dbMatches) {
+        const dbList = dbMatches[2].split(/[,\s]+/).filter(db => db.trim())
+        sqlResult.databasesFound = dbList
+      }
+
+      console.log(`✅ [SQL-INJECTION] SQL Injection Test completed - Vulnerable: ${sqlResult.vulnerable}`)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `SQL Injection Test completed - Vulnerable: ${sqlResult.vulnerable ? 'Yes' : 'No'}`, testId: 'sql-injection-test', type: 'success' }])
+      
+      return sqlResult
+    } catch (error) {
+      console.error(`❌ [SQL-INJECTION] Error:`, error)
+      setLogs(prev => [...prev, { timestamp: Date.now(), message: `Error: ${error.message}`, testId: 'sql-injection-test', type: 'error' }])
+      return {
+        scanType: 'SQL Injection Test',
+        target: targetBase,
+        error: error.message,
+        summary: `SQL injection test failed: ${error.message}`
+      }
+    }
+  }
+
+  // Execute the 5 additional security scans using Electron IPC
+  const executeAdditionalScans = async () => {
+    console.log('🔧 Executing additional security scans via Electron IPC...')
+    
+    try {
+      // Use Electron's IPC to communicate with the main process for additional scans
+      if (window.cyberGuard && window.cyberGuard.startAdditionalScans) {
+        console.log('🔧 Starting additional scans via cyberGuard IPC...')
+        
+        const domain = targetUrl.replace(/^https?:\/\//, '').split('/')[0]
+        
+        // Set up progress tracking for additional scans
+        const progressHandler = (progress) => {
+          console.log('📊 [ADDITIONAL-SCANS-PROGRESS] Received progress:', progress)
+          
+          if (progress.message) {
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: progress.message,
+              testId: progress.testId || 'additional-scans',
+              type: progress.type || 'info'
+            }])
+          }
+          
+          // Update current test for additional scans
+          if (progress.testId && progress.testId !== currentTest?.id) {
+            setCurrentTest({
+              id: progress.testId,
+              name: progress.testName || progress.testId,
+              progress: 0
+            })
+          }
+          
+          // Update test progress
+          if (progress.testId) {
+            setTestProgress(prev => ({
+              ...prev,
+              [progress.testId]: progress.progress || 0
+            }))
+          }
+        }
+        
+        // Set up completion handler
+        const completionHandler = (results) => {
+          console.log('🔧 [ADDITIONAL-SCANS] Received completion results:', results)
+          
+          if (results && results.tests) {
+            // Process each scan result
+            const processedResults = {}
+            
+            // Process each test result
+            Object.entries(results.tests).forEach(([testId, testResult]) => {
+              if (testId !== 'dns-resolution') { // Skip DNS as it's already processed
+                processedResults[testId] = {
+                  testId: testId,
+                  testName: testResult.testName || testId.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                  category: testResult.category || 'Security',
+                  severity: testResult.severity || 'medium',
+                  status: testResult.status || 'completed',
+                  timestamp: new Date().toISOString(),
+                  findings: testResult.findings || [
+                    { 
+                      type: testResult.status === 'failed' ? 'error' : 'info', 
+                      message: testResult.status === 'failed' ? `${testId} failed` : `${testId} completed`, 
+                      details: testResult.summary || (testResult.status === 'failed' ? 'Scan failed' : 'Scan completed successfully')
+                    }
+                  ],
+                  recommendations: testResult.recommendations || [],
+                  report: testResult.report || { summary: testResult.summary || 'Scan completed' }
+                }
+              }
+            })
+            
+            // Update state with new scan results
+            setNewScanResults(processedResults)
+            
+            // Update completed tests
+            setCompletedTests(prev => {
+              const newSet = new Set(prev)
+              Object.keys(processedResults).forEach(testId => {
+                newSet.add(testId)
+              })
+              return newSet
+            })
+            
+            // Add completion log with error details if any
+            const hasErrors = Object.values(processedResults).some(result => result.status === 'failed');
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: hasErrors 
+                ? 'Additional security scans completed with some errors - check individual scan results for details'
+                : 'Additional security scans completed successfully!',
+              testId: 'additional-scans',
+              type: hasErrors ? 'warning' : 'success'
+            }])
+            
+            // Complete the scanning process
+            setCurrentTest(null)
+            const endTime = Date.now()
+            setScanTiming(prev => ({ ...prev, endTime }))
+            setScanEndTime(endTime)
+            setIsScanning(false)
+            setBackgroundScanning(false)
+            
+            console.log('✅ Additional scans completed successfully')
+          }
+        }
+        
+        // Set up IPC listeners
+        window.cyberGuard.onAdditionalProgress(progressHandler)
+        window.cyberGuard.onAdditionalComplete(completionHandler)
+        
+        // Start the additional scans
+        await window.cyberGuard.startAdditionalScans(domain)
+        
+      } else {
+        console.log('⚠️ cyberGuard.startAdditionalScans not available, using fallback simulation')
+        
+        const domain = targetUrl.replace(/^https?:\/\//, '').split('/')[0]
+        
+        // Fallback: Simulate the additional scans with demo data
+        setTimeout(() => {
+          const demoResults = {
+            'ssl-tls-analysis': {
+              testId: 'ssl-tls-analysis',
+              testName: 'SSL/TLS Analysis',
+              category: 'Infrastructure',
+              severity: 'high',
+              status: 'completed',
+              timestamp: new Date().toISOString(),
+              findings: [
+                { type: 'info', message: 'SSL/TLS analysis completed', details: 'TLS 1.2 and 1.3 supported, strong cipher configuration detected' }
+              ],
+              recommendations: [
+                'Review SSL/TLS configuration',
+                'Update to latest TLS versions',
+                'Remove weak cipher suites'
+              ],
+              report: {
+                scanType: 'SSL/TLS Analysis',
+                target: domain,
+                supportedProtocols: ['TLSv1.2', 'TLSv1.3'],
+                cipherStrength: 'A',
+                summary: 'Strong SSL/TLS configuration with modern protocols'
+              }
+            },
+            'security-headers': {
+              testId: 'security-headers',
+              testName: 'Security Headers',
+              category: 'Web Security',
+              severity: 'medium',
+              status: 'completed',
+              timestamp: new Date().toISOString(),
+              findings: [
+                { type: 'warning', message: 'Security headers analysis completed', details: 'Some security headers are missing' }
+              ],
+              recommendations: [
+                'Implement missing security headers',
+                'Configure Content Security Policy',
+                'Enable HSTS'
+              ],
+              report: {
+                scanType: 'Security Headers',
+                target: `https://${domain}`,
+                missingHeaders: ['Content-Security-Policy', 'X-Frame-Options'],
+                summary: 'Most security headers present, missing: Content-Security-Policy, X-Frame-Options'
+              }
+            },
+            'cms-detection': {
+              testId: 'cms-detection',
+              testName: 'CMS Detection',
+              category: 'Reconnaissance',
+              severity: 'medium',
+              status: 'completed',
+              timestamp: new Date().toISOString(),
+              findings: [
+                { type: 'info', message: 'CMS detection completed', details: 'No CMS detected, server: nginx' }
+              ],
+              recommendations: [
+                'Hide version information',
+                'Update CMS and plugins',
+                'Implement security headers'
+              ],
+              report: {
+                scanType: 'CMS Detection',
+                target: `https://${domain}`,
+                server: 'nginx',
+                cms: null,
+                summary: 'No CMS detected, server: nginx'
+              }
+            },
+            'subdomain-enumeration': {
+              testId: 'subdomain-enumeration',
+              testName: 'Subdomain Enumeration',
+              category: 'Reconnaissance',
+              severity: 'medium',
+              status: 'completed',
+              timestamp: new Date().toISOString(),
+              findings: [
+                { type: 'info', message: 'Subdomain enumeration completed', details: '3 subdomains identified: www, mail, api' }
+              ],
+              recommendations: [
+                'Audit discovered subdomains',
+                'Secure misconfigured subdomains',
+                'Implement subdomain monitoring'
+              ],
+              report: {
+                scanType: 'Subdomain Enumeration',
+                target: domain,
+                subdomainsFound: ['www', 'mail', 'api'],
+                count: 3,
+                summary: '3 subdomains identified: www, mail, api'
+              }
+            },
+            'port-scanning': {
+              testId: 'port-scanning',
+              testName: 'Port Scanning',
+              category: 'Infrastructure',
+              severity: 'high',
+              status: 'completed',
+              timestamp: new Date().toISOString(),
+              findings: [
+                { type: 'info', message: 'Port scanning completed', details: '4 open ports detected: 22/ssh, 80/http, 443/https, 3000/ppp' }
+              ],
+              recommendations: [
+                'Close unnecessary ports',
+                'Secure exposed services',
+                'Implement firewall rules'
+              ],
+              report: {
+                scanType: 'Port Scanning',
+                target: domain,
+                openPorts: [
+                  { port: 22, service: 'ssh', version: 'OpenSSH 8.4p1' },
+                  { port: 80, service: 'http', version: 'nginx' },
+                  { port: 443, service: 'https', version: 'nginx' },
+                  { port: 3000, service: 'ppp', version: 'Next.js (suspected)' }
+                ],
+                totalOpen: 4,
+                summary: '4 open ports detected: 22/ssh, 80/http, 443/https, 3000/ppp'
+              }
+            }
+          }
+          
+          // Update state with demo results
+          setNewScanResults(demoResults)
+          
+          // Update completed tests
+          setCompletedTests(prev => {
+            const newSet = new Set(prev)
+            Object.keys(demoResults).forEach(testId => {
+              newSet.add(testId)
+            })
+            return newSet
+          })
+          
+          // Add completion log
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: 'Additional security scans completed successfully! (Demo Mode)',
+            testId: 'additional-scans',
+            type: 'success'
+          }])
+          
+          // Complete the scanning process
+          setCurrentTest(null)
+          setScanTiming(prev => ({ ...prev, endTime: Date.now() }))
+          setIsScanning(false)
+          setBackgroundScanning(false)
+          
+          console.log('✅ Additional scans completed successfully (Demo Mode)')
+        }, 2000) // 2 second delay to simulate scan time
+      }
+      
+    } catch (error) {
+      console.error('❌ Additional scans failed:', error)
+      setLogs(prev => [...prev, {
+        timestamp: Date.now(),
+        message: `Additional scans failed: ${error.message}`,
+        testId: 'additional-scans',
+        type: 'error'
+      }])
+    }
+  }
+
+  // Open scan detail dialog
+  const openScanDetailDialog = (testId, result) => {
+    console.log('Opening scan detail dialog for:', testId, result)
+    console.log('Result type:', typeof result)
+    console.log('Result keys:', result ? Object.keys(result) : 'null')
+    console.log('Result report:', result?.report)
+    console.log('Result scanType:', result?.report?.scanType)
+    setSelectedScanResult({ testId, result })
+    setShowScanDetailDialog(true)
+    // Clear AI suggestions when opening a new scan dialog
+    setAiSuggestions(null)
+    setAiError(null)
+  }
+
+  // Fetch AI suggestions for the current scan
+  const fetchAISuggestions = async () => {
+    if (!selectedScanResult) return
+
+    setIsLoadingAI(true)
+    setAiError(null)
+    setAiSuggestions(null)
+
+    // Scroll to AI Suggestion section
+    setTimeout(() => {
+      if (aiSuggestionRef.current) {
+        aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 100)
+
+    try {
+      const { testId, result } = selectedScanResult
+      const test = securityTests.find(t => t.id === testId)
+      const scanName = test?.name || result?.testName || testId
+      
+      // Extract raw output from various possible locations
+      const report = result?.report || {}
+      let rawOutput = ''
+      
+      // Try different locations for raw output
+      if (report.rawOutput) {
+        rawOutput = report.rawOutput
+      } else if (report.raw_output) {
+        rawOutput = report.raw_output
+      } else if (report.rawCommandsOutput && Array.isArray(report.rawCommandsOutput)) {
+        // For DNS scans, combine all command outputs
+        rawOutput = report.rawCommandsOutput
+          .map(cmd => `Command: ${cmd.command || cmd.cmd || 'N/A'}\nOutput: ${cmd.output || ''}\n${cmd.stderr ? `Error: ${cmd.stderr}\n` : ''}`)
+          .join('\n\n---\n\n')
+      } else if (report.summary?.raw_output) {
+        rawOutput = report.summary.raw_output
+      } else if (result?.rawOutput) {
+        rawOutput = result.rawOutput
+      } else if (result?.raw_output) {
+        rawOutput = result.raw_output
+      }
+      
+      // Get target URL
+      const target = report.target || report.summary?.target_url || targetUrl
+      
+      // Call Grok API
+      const suggestions = await getAISuggestions(
+        testId,
+        scanName,
+        result,
+        rawOutput,
+        target
+      )
+      
+      setAiSuggestions(suggestions)
+      showSuccess('AI suggestions generated successfully!')
+      
+      // Scroll to AI Suggestion section after results are loaded
+      setTimeout(() => {
+        if (aiSuggestionRef.current) {
+          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+    } catch (error) {
+      console.error('Error fetching AI suggestions:', error)
+      setAiError(error.message || 'Failed to fetch AI suggestions. Please try again.')
+      showError(error.message || 'Failed to fetch AI suggestions. Please try again.')
+      
+      // Scroll to AI Suggestion section even on error
+      setTimeout(() => {
+        if (aiSuggestionRef.current) {
+          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+    } finally {
+      setIsLoadingAI(false)
+    }
+  }
+
+  // Wrapper function for DNS-specific AI suggestions
+  const fetchDnsAISuggestions = async (testId, scanName, report, target) => {
+    setIsLoadingAI(true)
+    setAiError(null)
+    setAiSuggestions(null)
+
+    // Scroll to AI Suggestion section
+    setTimeout(() => {
+      if (aiSuggestionRef.current && detailDialogScrollRef.current) {
+        aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }, 100)
+
+    try {
+      // Extract raw output from report
+      let rawOutput = ''
+      if (report.rawOutput) {
+        rawOutput = report.rawOutput
+      } else if (report.raw_output) {
+        rawOutput = report.raw_output
+      } else if (report.rawCommandsOutput && Array.isArray(report.rawCommandsOutput)) {
+        rawOutput = report.rawCommandsOutput
+          .map(cmd => `Command: ${cmd.command || cmd.cmd || 'N/A'}\nOutput: ${cmd.output || ''}\n${cmd.stderr ? `Error: ${cmd.stderr}\n` : ''}`)
+          .join('\n\n---\n\n')
+      } else if (report.summary?.raw_output) {
+        rawOutput = report.summary.raw_output
+      }
+
+      // Call Grok API
+      const suggestions = await getAISuggestions(
+        testId,
+        scanName,
+        { report },
+        rawOutput,
+        target
+      )
+
+      setAiSuggestions(suggestions)
+      showSuccess('AI suggestions generated successfully!')
+
+      // Scroll to AI Suggestion section after results are loaded
+      setTimeout(() => {
+        if (aiSuggestionRef.current && detailDialogScrollRef.current) {
+          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 500)
+    } catch (error) {
+      console.error('Error fetching AI suggestions:', error)
+      setAiError(error.message || 'Failed to fetch AI suggestions. Please try again.')
+      showError(error.message || 'Failed to fetch AI suggestions. Please try again.')
+
+      // Scroll to AI Suggestion section even on error
+      setTimeout(() => {
+        if (aiSuggestionRef.current && detailDialogScrollRef.current) {
+          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+    } finally {
+      setIsLoadingAI(false)
+    }
+  }
+
+  // Check tools before starting scan
+
+  // Generate comprehensive PDF Report with all scan data
+  const generatePDFReport = async () => {
+    console.log('📄 [PDF] Generating comprehensive security report...')
+    
+    // Check if this is a DNS-specific PDF generation
+    const isDnsReport = selectedDnsResult && selectedDnsResult.report
+    
+    if (isDnsReport) {
+      // Generate DNS-specific PDF
+      if (!selectedDnsResult.report) {
+        showError('No DNS scan results available to generate report')
+        return
+      }
+    } else {
+      // General comprehensive report
+      if ((!scanResults || Object.keys(scanResults).length === 0) && 
+          (!newScanResults || Object.keys(newScanResults).length === 0)) {
+        showError('No scan results available to generate report')
+        return
+      }
+    }
+
+    setIsExporting(true)
+    
+    try {
+      // Import jsPDF dynamically
+      const { jsPDF } = await import('jspdf')
+      
+      // Create new PDF document
+      const doc = new jsPDF()
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 15
+      const borderMargin = 10
+      const footerHeight = 20
+      let yPosition = margin + 10
+      
+      // Function to draw page border (only on each page, not around content)
+      const drawPageBorder = () => {
+        doc.setDrawColor(80, 80, 80)
+        doc.setLineWidth(0.8)
+        doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
+      }
+      
+      // Function to add footer with "Cyberix - A Webnox Product" and page number
+      const addFooter = () => {
+        const currentPage = doc.internal.getCurrentPageInfo().pageNumber
+        const totalPages = doc.internal.getNumberOfPages()
+        
+        // Footer line
+        doc.setDrawColor(200, 200, 200)
+        doc.setLineWidth(0.5)
+        doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
+        
+        // Footer text: "Cyberix - A Webnox Product"
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(100, 100, 100)
+        doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+        
+        // Page number
+        doc.setFontSize(9)
+        doc.setTextColor(100, 100, 100)
+        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+      }
+      
+      // Helper to update all page footers
+      const updateAllFooters = () => {
+        const totalPages = doc.internal.getNumberOfPages()
+        for (let i = 1; i <= totalPages; i++) {
+          doc.setPage(i)
+          drawPageBorder()
+          const currentPage = i
+          
+          // Footer line
+          doc.setDrawColor(200, 200, 200)
+          doc.setLineWidth(0.5)
+          doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
+          
+          // Footer text: "Cyberix - A Webnox Product"
+          doc.setFontSize(9)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(100, 100, 100)
+          doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+          
+          // Page number
+          doc.setFontSize(9)
+          doc.setTextColor(100, 100, 100)
+          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+        }
+      }
+      
+      // Draw border and footer on first page
+      drawPageBorder()
+      addFooter()
+      
+      // Helper function to add text with word wrap
+      const addText = (text, x, y, maxWidth = pageWidth - 40, fontSize = 12, fontStyle = 'normal', color = [0, 0, 0]) => {
+        doc.setFontSize(fontSize)
+        doc.setFont('helvetica', fontStyle)
+        doc.setTextColor(color[0], color[1], color[2])
+        const lines = doc.splitTextToSize(text || '', maxWidth)
+        doc.text(lines, x, y)
+        return y + (lines.length * (fontSize * 0.4)) + 5
+      }
+      
+      // Helper function to add new page if needed
+      const checkNewPage = (requiredSpace = 20) => {
+        // Account for footer space
+        const availableHeight = pageHeight - margin - footerHeight - 10
+        if (yPosition + requiredSpace > availableHeight) {
+          // Add footer to current page before adding new page
+          addFooter()
+          
+          doc.addPage()
+          drawPageBorder() // Draw border on new page
+          addFooter() // Add footer to new page
+          yPosition = margin + 10
+        }
+      }
+      
+      // Enhanced section box helper with professional styling
+      const addSectionBox = (title, contentLines = [], heightPadding = 15, backgroundColor = [250, 250, 250], borderColor = [180, 180, 180]) => {
+        checkNewPage(30)
+        
+        // Calculate approximate height
+        let estimatedHeight = 20 + heightPadding
+        contentLines.forEach(line => {
+          if (line.text) {
+            const lines = doc.splitTextToSize(line.text || '', pageWidth - 2 * margin - 25)
+            estimatedHeight += Math.max(8, lines.length * 6) + 4
+          }
+        })
+        
+        // Professional section box
+        doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2])
+        doc.setLineWidth(0.6)
+        doc.setFillColor(backgroundColor[0], backgroundColor[1], backgroundColor[2])
+        doc.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, estimatedHeight, 'FD')
+        
+        // Section title with professional background
+        doc.setFillColor(245, 245, 245)
+        doc.rect(margin + 6, yPosition - 4, pageWidth - 2 * margin - 12, 16, 'F')
+        
+        // Title text
+        doc.setTextColor(40, 40, 40)
+        doc.setFontSize(13)
+        doc.setFont('helvetica', 'bold')
+        doc.text(title, margin + 10, yPosition + 6)
+        
+        // Content lines
+        let currentY = yPosition + 18
+        contentLines.forEach(line => {
+          if (line.text) {
+            doc.setFontSize(line.fontSize || 10)
+            doc.setFont('helvetica', line.fontStyle || 'normal')
+            doc.setTextColor(line.color ? line.color[0] : 60, line.color ? line.color[1] : 60, line.color ? line.color[2] : 60)
+            const lines = doc.splitTextToSize(line.text, pageWidth - 2 * margin - 30)
+            lines.forEach((l, idx) => {
+              doc.text(l, margin + 10 + (line.indent || 0), currentY + (idx * 6))
+            })
+            currentY += Math.max(8, lines.length * 6) + 4
+          }
+        })
+        
+        yPosition = yPosition - 5 + estimatedHeight + 10
+      }
+      
+      // Enhanced Title Header
+      doc.setFillColor(59, 130, 246) // Blue
+      doc.setDrawColor(59, 130, 246)
+      doc.setLineWidth(0)
+      doc.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, 40, 'F')
+      doc.setTextColor(255, 255, 255)
+      doc.setFontSize(22)
+      doc.setFont('helvetica', 'bold')
+      
+      if (isDnsReport) {
+        doc.text('DNS Security Analysis - Comprehensive Report', pageWidth / 2, yPosition + 10, { align: 'center' })
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'normal')
+        doc.text('Detailed domain security assessment and vulnerability analysis', pageWidth / 2, yPosition + 22, { align: 'center' })
+      } else {
+        doc.text('Comprehensive Security Analysis Report', pageWidth / 2, yPosition + 10, { align: 'center' })
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'normal')
+        doc.text('Cyberix Security Scanner', pageWidth / 2, yPosition + 22, { align: 'center' })
+      }
+      yPosition += 50
+      
+      // Enhanced Scan Details Section
+      const targetInfo = isDnsReport ? (selectedDnsResult.report.target || targetUrl) : targetUrl
+      addSectionBox('Report Information', [
+        { text: `Target: ${targetInfo}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
+        { text: `Analysis Date: ${new Date().toLocaleString()}`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] },
+        { text: `Generated By: Cyberix Security Scanner`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] }
+      ])
+      
+      // If DNS report, generate DNS-specific content
+      if (isDnsReport) {
+        const report = selectedDnsResult.report
+        
+        // AI Suggestion Section
+        if (aiSuggestions) {
+          checkNewPage(40)
+          doc.setFontSize(16)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('AI Suggestion', margin + 10, yPosition)
+          yPosition += 5
+          
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          const aiLines = doc.splitTextToSize(aiSuggestions, pageWidth - 2 * margin - 20)
+          aiLines.forEach((line, idx) => {
+            checkNewPage(15)
+            doc.text(line, margin + 10, yPosition + (idx * 6))
+          })
+          yPosition += (aiLines.length * 6) + 15
+        }
+        
+        // DNS Security Score
+        if (report.security_score) {
+          addSectionBox('DNS Security Score', [
+            { text: `Score: ${report.security_score.score}/100`, fontSize: 12, fontStyle: 'bold', color: [30, 30, 30] },
+            { text: `Grade: ${report.security_score.grade}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] },
+            { text: report.security_score.description || '', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+          ])
+        }
+        
+        // Risk Summary
+        if (report.risk_summary) {
+          const riskLevel = report.risk_summary.overall_risk || 'Unknown'
+          const riskColor = riskLevel === 'Critical' ? [239, 68, 68] : riskLevel === 'High' ? [249, 115, 22] : 
+                           riskLevel === 'Medium' ? [234, 179, 8] : riskLevel === 'Low' ? [34, 197, 94] : [100, 100, 100]
+          const riskLines = [
+            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold', color: riskColor },
+            { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] },
+            { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+          ]
+          if (report.risk_summary.summary) {
+            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          }
+          addSectionBox('Risk Summary', riskLines)
+        }
+        
+        // Security Risk Assessment
+        if (report.summary) {
+          const assessmentLines = []
+          if (report.summary.subdomainsFound !== undefined) {
+            assessmentLines.push({ text: `Subdomain Hijacking: ${report.summary.subdomainsFound > 0 ? 'Medium Risk' : 'Low Risk'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          }
+          if (report.summary.zoneTransfer) {
+            const zoneColor = report.summary.zoneTransfer === 'blocked' ? [34, 197, 94] : [239, 68, 68]
+            assessmentLines.push({ text: `Zone Transfer: ${report.summary.zoneTransfer === 'blocked' ? 'Protected' : 'Vulnerable'}`, fontSize: 10, fontStyle: 'normal', color: zoneColor })
+          }
+          if (report.summary.spfRecord !== undefined) {
+            const spfColor = report.summary.spfRecord ? [34, 197, 94] : [239, 68, 68]
+            assessmentLines.push({ text: `SPF Protection: ${report.summary.spfRecord ? 'Configured' : 'Missing'}`, fontSize: 10, fontStyle: 'normal', color: spfColor })
+          }
+          if (report.summary.dmarcRecord !== undefined) {
+            const dmarcColor = report.summary.dmarcRecord ? [34, 197, 94] : [239, 68, 68]
+            assessmentLines.push({ text: `DMARC Policy: ${report.summary.dmarcRecord ? 'Configured' : 'Missing'}`, fontSize: 10, fontStyle: 'normal', color: dmarcColor })
+          }
+          if (report.summary.dnssec !== undefined) {
+            const dnssecColor = report.summary.dnssec ? [34, 197, 94] : [239, 68, 68]
+            assessmentLines.push({ text: `DNSSEC Status: ${report.summary.dnssec ? 'Enabled (Secure)' : 'Disabled (Vulnerable)'}`, fontSize: 10, fontStyle: 'normal', color: dnssecColor })
+          }
+          if (assessmentLines.length > 0) {
+            addSectionBox('Security Risk Assessment', assessmentLines)
+          }
+        }
+        
+        // DNS Scan Overview - Scan Metadata
+        if (report.scanMetadata) {
+          checkNewPage(40)
+          doc.setFontSize(16)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('DNS Scan — Overview', margin + 10, yPosition)
+          yPosition += 10
+          
+          // Summary
+          if (report.scanMetadata.summaryText) {
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            const summaryLines = doc.splitTextToSize(report.scanMetadata.summaryText, pageWidth - 2 * margin - 20)
+            summaryLines.forEach((line, idx) => {
+              checkNewPage(15)
+              doc.text(line, margin + 10, yPosition + (idx * 6))
+            })
+            yPosition += (summaryLines.length * 6) + 15
+          }
+          
+          // Timeline
+          if (report.scanMetadata.steps && report.scanMetadata.steps.length > 0) {
+            checkNewPage(30)
+            doc.setFontSize(14)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Scan Timeline', margin + 10, yPosition)
+            yPosition += 8
+            
+            doc.setFontSize(9)
+            doc.setFont('helvetica', 'normal')
+            report.scanMetadata.steps.forEach((step, idx) => {
+              checkNewPage(20)
+              const stepTime = new Date(step.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              const statusColor = step.status === 'completed' ? [34, 197, 94] : step.status === 'warning' ? [234, 179, 8] : [239, 68, 68]
+              doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+              doc.setFont('helvetica', 'bold')
+              doc.text(`[${stepTime}] ${step.name} - ${step.status}`, margin + 10, yPosition)
+              doc.setFont('helvetica', 'normal')
+              doc.setTextColor(60, 60, 60)
+              doc.text(`  Output: ${step.stdoutBytes}b${step.stderrBytes > 0 ? `, stderr: ${step.stderrBytes}b` : ''}`, margin + 15, yPosition + 6)
+              yPosition += 15
+            })
+            yPosition += 10
+          }
+          
+          // Command Execution Details Table
+          if (report.scanMetadata.steps && report.scanMetadata.steps.length > 0) {
+            checkNewPage(40)
+            doc.setFontSize(14)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Command Execution Details', margin + 10, yPosition)
+            yPosition += 8
+            
+            doc.setFontSize(8)
+            doc.setFont('helvetica', 'bold')
+            doc.setTextColor(70, 70, 70)
+            // Table header
+            doc.text('Step', margin + 10, yPosition)
+            doc.text('Description', margin + 50, yPosition)
+            doc.text('Output', margin + 130, yPosition)
+            doc.text('Status', margin + 160, yPosition)
+            yPosition += 8
+            
+            doc.setDrawColor(200, 200, 200)
+            doc.setLineWidth(0.3)
+            doc.line(margin + 10, yPosition - 2, pageWidth - margin - 10, yPosition - 2)
+            
+            doc.setFontSize(8)
+            doc.setFont('helvetica', 'normal')
+            report.scanMetadata.steps.forEach((step, idx) => {
+              checkNewPage(25)
+              doc.setTextColor(30, 30, 30)
+              const stepTime = new Date(step.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+              
+              // Step name with timestamp
+              const stepText = `${step.name}\n${stepTime}`
+              const stepLines = doc.splitTextToSize(stepText, 40)
+              stepLines.forEach((line, lidx) => {
+                doc.text(line, margin + 10, yPosition + (lidx * 5))
+              })
+              
+              // Description
+              const descLines = doc.splitTextToSize(step.description || '', 75)
+              descLines.forEach((line, lidx) => {
+                doc.text(line, margin + 50, yPosition + (lidx * 5))
+              })
+              
+              // Output
+              doc.text(`${step.stdoutBytes}b${step.stderrBytes > 0 ? `/${step.stderrBytes}b` : ''}`, margin + 130, yPosition)
+              
+              // Status
+              const statusColor = step.status === 'completed' ? [34, 197, 94] : step.status === 'warning' ? [234, 179, 8] : [239, 68, 68]
+              doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+              doc.setFont('helvetica', 'bold')
+              doc.text(step.status, margin + 160, yPosition)
+              doc.setFont('helvetica', 'normal')
+              doc.setTextColor(30, 30, 30)
+              
+              yPosition += Math.max(stepLines.length, descLines.length) * 5 + 8
+            })
+            yPosition += 10
+          }
+          
+          // Warnings
+          if (report.scanMetadata.warnings && report.scanMetadata.warnings.length > 0) {
+            checkNewPage(30)
+            doc.setFontSize(14)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Warnings & Noteworthy Findings', margin + 10, yPosition)
+            yPosition += 5
+            
+            doc.setFontSize(9)
+            doc.setFont('helvetica', 'normal')
+            doc.setTextColor(234, 179, 8)
+            report.scanMetadata.warnings.forEach((warning, idx) => {
+              checkNewPage(15)
+              doc.text(`• ${warning}`, margin + 15, yPosition)
+              yPosition += 8
+            })
+            yPosition += 10
+          }
+        }
+        
+        // DNS Records
+        if (report.records) {
+          const recordLines = []
+          Object.entries(report.records).forEach(([recordType, records]) => {
+            if (records && Array.isArray(records) && records.length > 0) {
+              recordLines.push({ text: `${recordType} Records (${records.length}):`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              records.slice(0, 10).forEach((record, idx) => {
+                const recordText = typeof record === 'object' ? JSON.stringify(record) : String(record)
+                recordLines.push({ text: `  ${idx + 1}. ${recordText}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 0 })
+              })
+              if (records.length > 10) {
+                recordLines.push({ text: `  ... and ${records.length - 10} more ${recordType} records`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100], indent: 0 })
+              }
+            }
+          })
+          if (recordLines.length > 0) {
+            addSectionBox('DNS Records', recordLines, 20)
+          }
+        }
+        
+        // DNSSEC Status
+        if (report.dnssec) {
+          const dnssecColor = report.dnssec.enabled ? [34, 197, 94] : [239, 68, 68]
+          const dnssecLines = [
+            { text: `Status: ${report.dnssec.enabled ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'bold', color: dnssecColor }
+          ]
+          if (report.dnssec.recommendation) {
+            dnssecLines.push({ text: report.dnssec.recommendation, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          }
+          addSectionBox('DNSSEC Status', dnssecLines)
+        }
+        
+        // Zone Transfer Status
+        if (report.zone_transfer) {
+          const zoneColor = report.zone_transfer.allowed ? [239, 68, 68] : [34, 197, 94]
+          addSectionBox('Zone Transfer Status', [
+            { text: `Status: ${report.zone_transfer.allowed ? 'Allowed (Security Risk)' : 'Blocked (Secure)'}`, fontSize: 11, fontStyle: 'bold', color: zoneColor }
+          ])
+        }
+        
+        // Subdomains
+        if (report.subdomains && report.subdomains.length > 0) {
+          const subdomainLines = report.subdomains.slice(0, 30).map((subdomain, idx) => ({
+            text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+          }))
+          if (report.subdomains.length > 30) {
+            subdomainLines.push({ text: `... and ${report.subdomains.length - 30} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+          }
+          addSectionBox('Discovered Subdomains', subdomainLines, 15)
+        }
+        
+        // Security Findings
+        if (report.findings && report.findings.length > 0) {
+          checkNewPage(30)
+          doc.setFontSize(16)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Security Findings', margin + 10, yPosition)
+          yPosition += 10
+          
+          report.findings.forEach((finding, idx) => {
+            checkNewPage(40)
+            const severityColor = finding.severity === 'Critical' ? [239, 68, 68] : 
+                                  finding.severity === 'High' ? [249, 115, 22] : 
+                                  finding.severity === 'Medium' ? [234, 179, 8] : [59, 130, 246]
+            
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'bold')
+            doc.setTextColor(severityColor[0], severityColor[1], severityColor[2])
+            yPosition = addText(`${finding.severity}: ${finding.issue}`, margin + 10, yPosition)
+            
+            doc.setFontSize(9)
+            doc.setFont('helvetica', 'normal')
+            doc.setTextColor(60, 60, 60)
+            if (finding.explanation) {
+              const explLines = doc.splitTextToSize(finding.explanation, pageWidth - 2 * margin - 20)
+              explLines.forEach((line, lidx) => {
+                doc.text(line, margin + 15, yPosition + (lidx * 5))
+              })
+              yPosition += (explLines.length * 5) + 5
+            }
+            if (finding.recommendation) {
+              doc.setFont('helvetica', 'bold')
+              doc.setTextColor(30, 30, 30)
+              doc.text('Recommendation:', margin + 15, yPosition)
+              doc.setFont('helvetica', 'normal')
+              const recLines = doc.splitTextToSize(finding.recommendation, pageWidth - 2 * margin - 25)
+              recLines.forEach((line, lidx) => {
+                doc.text(line, margin + 20, yPosition + 7 + (lidx * 5))
+              })
+              yPosition += (recLines.length * 5) + 12
+            }
+          })
+          yPosition += 10
+        }
+        
+        // DNS Scan Raw Results
+        if (report.digAny || report.digRecords || report.dnsrecon || report.dnsenum || report.reverseDns) {
+          checkNewPage(30)
+          doc.setFontSize(16)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('DNS Scan Raw Results', margin + 10, yPosition)
+          yPosition += 10
+          
+          doc.setFontSize(7)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(60, 60, 60)
+          
+          // Basic DNS Lookup (ANY)
+          if (report.digAny && report.digAny.length > 0) {
+            checkNewPage(20)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Basic DNS Lookup (ANY):', margin + 10, yPosition)
+            yPosition += 5
+            
+            doc.setFontSize(7)
+            doc.setFont('helvetica', 'normal')
+            const digAnyText = JSON.stringify(report.digAny, null, 2).substring(0, 1500)
+            const digAnyLines = doc.splitTextToSize(digAnyText, pageWidth - 2 * margin - 20)
+            digAnyLines.slice(0, 30).forEach((line, idx) => {
+              checkNewPage(8)
+              doc.text(line, margin + 10, yPosition + (idx * 4))
+            })
+            yPosition += (digAnyLines.length * 4) + 10
+          }
+          
+          // Detailed DNS Records
+          if (report.digRecords && report.digRecords.length > 0) {
+            checkNewPage(20)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Detailed DNS Records (A, MX, TXT, NS, SOA):', margin + 10, yPosition)
+            yPosition += 5
+            
+            doc.setFontSize(7)
+            doc.setFont('helvetica', 'normal')
+            const digRecordsText = JSON.stringify(report.digRecords, null, 2).substring(0, 1000)
+            const digRecordsLines = doc.splitTextToSize(digRecordsText, pageWidth - 2 * margin - 20)
+            digRecordsLines.slice(0, 25).forEach((line, idx) => {
+              checkNewPage(8)
+              doc.text(line, margin + 10, yPosition + (idx * 4))
+            })
+            yPosition += (digRecordsLines.length * 4) + 10
+          }
+          
+          // Reverse DNS
+          if (report.reverseDns) {
+            checkNewPage(15)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Reverse DNS:', margin + 10, yPosition)
+            yPosition += 5
+            
+            doc.setFontSize(7)
+            doc.setFont('helvetica', 'normal')
+            const reverseDnsLines = doc.splitTextToSize(String(report.reverseDns), pageWidth - 2 * margin - 20)
+            reverseDnsLines.slice(0, 10).forEach((line, idx) => {
+              checkNewPage(8)
+              doc.text(line, margin + 10, yPosition + (idx * 4))
+            })
+            yPosition += (reverseDnsLines.length * 4) + 10
+          }
+          
+          // DNS Reconnaissance
+          if (report.dnsrecon) {
+            checkNewPage(20)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('DNS Reconnaissance (dnsrecon):', margin + 10, yPosition)
+            yPosition += 5
+            
+            doc.setFontSize(7)
+            doc.setFont('helvetica', 'normal')
+            const dnsreconText = JSON.stringify(report.dnsrecon, null, 2).substring(0, 1500)
+            const dnsreconLines = doc.splitTextToSize(dnsreconText, pageWidth - 2 * margin - 20)
+            dnsreconLines.slice(0, 30).forEach((line, idx) => {
+              checkNewPage(8)
+              doc.text(line, margin + 10, yPosition + (idx * 4))
+            })
+            yPosition += (dnsreconLines.length * 4) + 10
+          }
+          
+          // DNS Enumeration
+          if (report.dnsenum) {
+            checkNewPage(20)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('DNS Enumeration (dnsenum):', margin + 10, yPosition)
+            yPosition += 5
+            
+            doc.setFontSize(7)
+            doc.setFont('helvetica', 'normal')
+            const dnsenumText = JSON.stringify(report.dnsenum, null, 2).substring(0, 1500)
+            const dnsenumLines = doc.splitTextToSize(dnsenumText, pageWidth - 2 * margin - 20)
+            dnsenumLines.slice(0, 30).forEach((line, idx) => {
+              checkNewPage(8)
+              doc.text(line, margin + 10, yPosition + (idx * 4))
+            })
+            yPosition += (dnsenumLines.length * 4) + 10
+          }
+        }
+        
+        // Raw Output
+        if (report.rawOutput) {
+          checkNewPage(30)
+          doc.setFontSize(14)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Raw Command Output', margin + 10, yPosition)
+          yPosition += 5
+          
+          doc.setFontSize(7)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(60, 60, 60)
+          const rawLines = doc.splitTextToSize(report.rawOutput.substring(0, 2000), pageWidth - 2 * margin - 20)
+          rawLines.slice(0, 40).forEach((line, idx) => {
+            checkNewPage(8)
+            doc.text(line, margin + 10, yPosition + (idx * 4))
+          })
+          if (report.rawOutput.length > 2000) {
+            yPosition += (40 * 4) + 5
+            doc.setFont('helvetica', 'italic')
+            doc.text(`... (output truncated, ${Math.floor(report.rawOutput.length / 1000)}KB total)`, margin + 10, yPosition)
+          }
+        }
+        
+        // Update all footers and save
+        updateAllFooters()
+        doc.save(`DNS_Security_Analysis_${targetInfo.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`)
+        setIsExporting(false)
+        showSuccess('DNS Security Analysis PDF report generated successfully!')
+        return
+      }
+      
+      // Enhanced Table of Contents (for general comprehensive report)
+      const tocLines = []
+      const scansForTOC = getScansToRun()
+      scansForTOC.forEach((test, idx) => {
+        tocLines.push({ text: `${idx + 1}. ${test.name}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+      })
+      addSectionBox('Table of Contents', tocLines, 10)
+      
+      // WAF Detection Section
+      const wafResult = scanResults['waf-detection'] || newScanResults['waf-detection']
+      if (wafResult?.report) {
+        checkNewPage(50)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('1. WAF (Firewall) Detection', 20, yPosition)
+        yPosition += 10
+        
+        doc.setFontSize(12)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Detection Summary', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        const wafDetected = wafResult.report.summary?.wafDetected || false
+        yPosition = addText(`WAF Detected: ${wafDetected ? 'Yes' : 'No'}`, 20, yPosition)
+        
+        if (wafDetected) {
+          if (wafResult.report.summary?.wafType) {
+            yPosition = addText(`WAF Type: ${wafResult.report.summary.wafType}`, 20, yPosition)
+          }
+          if (wafResult.report.summary?.wafVendor) {
+            yPosition = addText(`Vendor: ${wafResult.report.summary.wafVendor}`, 20, yPosition)
+          }
+          if (wafResult.report.summary?.numberOfRequests) {
+            yPosition = addText(`Number of Requests: ${wafResult.report.summary.numberOfRequests}`, 20, yPosition)
+          }
+          
+          if (wafResult.report.details?.wafInfo) {
+            yPosition += 5
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Detection Information:', 20, yPosition)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(wafResult.report.details.wafInfo, 25, yPosition)
+          }
+          
+          if (wafResult.report.details?.reason) {
+            yPosition += 5
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Detection Reason:', 20, yPosition)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(wafResult.report.details.reason, 25, yPosition)
+          }
+        } else {
+          yPosition = addText('No Web Application Firewall detected. The target appears to be unprotected or using an undetected WAF solution.', 20, yPosition)
+        }
+        
+        // Full JSON Report
+        if (wafResult.report.details) {
+          checkNewPage(40)
+          yPosition += 10
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Full JSON Report', 20, yPosition)
+          yPosition += 5
+          
+          doc.setFontSize(8)
+          doc.setFont('courier', 'normal')
+          const jsonText = JSON.stringify(wafResult.report.details, null, 2)
+          yPosition = addText(jsonText, 20, yPosition)
+        }
+        
+        // Raw Output
+        if (wafResult.report.rawOutput) {
+          checkNewPage(40)
+          yPosition += 15
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Raw wafw00f Output', 20, yPosition)
+          yPosition += 5
+          
+          doc.setFontSize(8)
+          doc.setFont('courier', 'normal')
+          yPosition = addText(wafResult.report.rawOutput, 20, yPosition)
+        }
+        
+        yPosition += 15
+      }
+      
+      const dnsResult = scanResults['dns-resolution']
+      const structuredData = dnsResult?.report?.structuredData
+      
+      // DNS Security Score
+      if (structuredData?.security_score) {
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('DNS Security Score', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText(`Score: ${structuredData.security_score.score}/100 (Grade: ${structuredData.security_score.grade})`, 20, yPosition)
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        yPosition = addText(structuredData.security_score.description, 20, yPosition)
+        yPosition += 15
+      }
+      
+      // Risk Summary
+      if (structuredData?.risk_summary) {
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Risk Summary', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        yPosition = addText(`Overall Risk: ${structuredData.risk_summary.overall_risk}`, 20, yPosition)
+        yPosition = addText(`Total Issues: ${structuredData.risk_summary.total_issues}`, 20, yPosition)
+        yPosition = addText(`Critical: ${structuredData.risk_summary.critical_issues} | High: ${structuredData.risk_summary.high_issues} | Medium: ${structuredData.risk_summary.medium_issues} | Low: ${structuredData.risk_summary.low_issues}`, 20, yPosition)
+        yPosition += 5
+        yPosition = addText(structuredData.risk_summary.summary, 20, yPosition)
+        yPosition += 15
+      }
+      
+      // DNS Records Section (Updated to match UI)
+      if (structuredData?.records) {
+        checkNewPage(30)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('DNS Records', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        // A Records
+        if (structuredData.records.A.length > 0) {
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('A Records (IPv4):', 20, yPosition)
+          doc.setFont('helvetica', 'normal')
+          structuredData.records.A.forEach(ip => {
+            yPosition = addText(`  ${structuredData.domain} → ${ip}`, 25, yPosition)
+          })
+          yPosition += 5
+        }
+        
+        // NS Records
+        if (structuredData.records.NS.length > 0) {
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('NS Records (Name Servers):', 20, yPosition)
+          doc.setFont('helvetica', 'normal')
+          structuredData.records.NS.forEach(ns => {
+            yPosition = addText(`  ${ns}`, 25, yPosition)
+          })
+          yPosition += 5
+        }
+        
+        // MX Records
+        if (structuredData.records.MX.length > 0) {
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('MX Records (Mail Servers):', 20, yPosition)
+          doc.setFont('helvetica', 'normal')
+          structuredData.records.MX.forEach(mx => {
+            yPosition = addText(`  ${mx}`, 25, yPosition)
+          })
+          yPosition += 5
+        }
+        
+        // SPF Records
+        if (structuredData.records.SPF.length > 0) {
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('SPF Records:', 20, yPosition)
+          doc.setFont('helvetica', 'normal')
+          structuredData.records.SPF.forEach(spf => {
+            yPosition = addText(`  ${spf}`, 25, yPosition)
+          })
+          yPosition += 5
+        }
+        
+        // DMARC Records
+        if (structuredData.records.DMARC.length > 0) {
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('DMARC Records:', 20, yPosition)
+          doc.setFont('helvetica', 'normal')
+          structuredData.records.DMARC.forEach(dmarc => {
+            yPosition = addText(`  ${dmarc}`, 25, yPosition)
+          })
+          yPosition += 10
+        }
+      }
+      
+      // Reverse DNS Section
+      if (structuredData?.reverse_dns) {
+        checkNewPage(20)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Reverse DNS (PTR)', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        if (structuredData.reverse_dns.available) {
+          yPosition = addText('Reverse DNS available', 20, yPosition)
+          yPosition = addText(`Hostname: ${structuredData.reverse_dns.hostname}`, 25, yPosition)
+        } else {
+          yPosition = addText('Reverse DNS lookup failed or timed out', 20, yPosition)
+          yPosition = addText(structuredData.reverse_dns.note || 'Reverse DNS (PTR) records could not be resolved.', 25, yPosition)
+        }
+        yPosition += 10
+      }
+      
+      // Scan Health Section
+      if (structuredData?.scan_health) {
+        checkNewPage(20)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Scan Health', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        yPosition = addText(`Status: ${structuredData.scan_health.status}`, 20, yPosition)
+        
+        if (structuredData.scan_health.notes.length > 0) {
+          yPosition = addText('Notes:', 20, yPosition)
+          structuredData.scan_health.notes.forEach(note => {
+            yPosition = addText(`• ${note}`, 25, yPosition)
+          })
+        }
+        yPosition += 10
+      }
+      
+      // Security Findings Section (Updated with categories)
+      if (structuredData?.findings && structuredData.findings.length > 0) {
+        checkNewPage(30)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Security Findings', 20, yPosition)
+        yPosition += 5
+        
+        // Group findings by category
+        const groupedFindings = structuredData.findings.reduce((acc, finding) => {
+          const category = finding.category || 'Other';
+          if (!acc[category]) acc[category] = [];
+          acc[category].push(finding);
+          return acc;
+        }, {});
+        
+        const categoryIcons = {
+          'Email Security': '',
+          'DNS Integrity': '',
+          'Availability & Resilience': '',
+          'Other': ''
+        };
+        
+        Object.entries(groupedFindings).forEach(([category, findings]) => {
+          checkNewPage(20)
+          
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText(`${category}`, 20, yPosition)
+          yPosition += 3
+          
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          
+          findings.forEach(finding => {
+            checkNewPage(15)
+            
+            // Finding header with severity
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText(`${finding.severity.toUpperCase()}: ${finding.issue}`, 25, yPosition)
+            
+            // Details
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`Details: ${finding.details}`, 30, yPosition)
+            
+            // Recommendation
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Recommendation:', 30, yPosition)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(finding.recommendation || 'Review and implement appropriate security measures.', 35, yPosition)
+            yPosition += 5
+          })
+          yPosition += 5
+        })
+      }
+      
+      // Subdomains Section
+      if (structuredData?.subdomains && structuredData.subdomains.length > 0) {
+        checkNewPage(20)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Discovered Subdomains', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        structuredData.subdomains.forEach(subdomain => {
+          yPosition = addText(`• ${subdomain}`, 25, yPosition)
+        })
+        yPosition += 10
+      }
+      
+      // Executive Summary Section
+      if (structuredData?.security_score && structuredData?.risk_summary) {
+        checkNewPage(30)
+        
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Executive Summary', 20, yPosition)
+        yPosition += 5
+        
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        
+        // Security Score Summary
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('DNS Security Assessment:', 20, yPosition)
+        doc.setFont('helvetica', 'normal')
+        yPosition = addText(`Security Score: ${structuredData.security_score.score}/100 (Grade: ${structuredData.security_score.grade})`, 25, yPosition)
+        yPosition = addText(structuredData.security_score.description, 25, yPosition)
+        yPosition += 5
+        
+        // Risk Summary
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Risk Assessment:', 20, yPosition)
+        doc.setFont('helvetica', 'normal')
+        yPosition = addText(`Overall Risk: ${structuredData.risk_summary.overall_risk}`, 25, yPosition)
+        yPosition = addText(`Total Issues: ${structuredData.risk_summary.total_issues} (Critical: ${structuredData.risk_summary.critical_issues}, High: ${structuredData.risk_summary.high_issues}, Medium: ${structuredData.risk_summary.medium_issues}, Low: ${structuredData.risk_summary.low_issues})`, 25, yPosition)
+        yPosition = addText(structuredData.risk_summary.summary, 25, yPosition)
+        yPosition += 10
+        
+        // Key Recommendations
+        if (dnsResult.recommendations && dnsResult.recommendations.length > 0) {
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Key Recommendations:', 20, yPosition)
+          doc.setFont('helvetica', 'normal')
+          
+          dnsResult.recommendations.slice(0, 5).forEach(recommendation => {
+            checkNewPage(10)
+            yPosition = addText(`• ${recommendation}`, 25, yPosition)
+          })
+          
+          if (dnsResult.recommendations.length > 5) {
+            yPosition = addText(`... and ${dnsResult.recommendations.length - 5} more recommendations`, 25, yPosition)
+          }
+          yPosition += 10
+        }
+      }
+      
+      // Add new scan sections
+      const allResults = { ...scanResults, ...newScanResults }
+      
+      // Helper function to add scan section with all detailed content
+      const addScanSection = (scanNumber, scanName, testId, result) => {
+        if (!result) return yPosition
+        
+        const report = result.report || {}
+        checkNewPage(40)
+        
+        // Section Header
+        doc.setFontSize(16)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText(`${scanNumber}. ${scanName}`, 20, yPosition)
+        yPosition += 10
+        
+        // Scan Summary
+        doc.setDrawColor(200, 200, 200)
+        doc.setLineWidth(0.5)
+        doc.rect(20, yPosition - 10, pageWidth - 40, 40)
+        doc.setFontSize(12)
+        doc.setFont('helvetica', 'bold')
+        yPosition = addText('Scan Summary', 25, yPosition)
+        doc.setFontSize(10)
+        doc.setFont('helvetica', 'normal')
+        yPosition = addText(`Status: ${result.status || 'N/A'}`, 25, yPosition)
+        yPosition = addText(`Findings: ${result.findings?.length || 0}`, 25, yPosition)
+        yPosition = addText(`Recommendations: ${result.recommendations?.length || report.recommendations?.length || 0}`, 25, yPosition)
+        yPosition = addText(`Severity: ${result.severity || 'N/A'}`, 25, yPosition)
+        yPosition += 10
+        
+        // Risk Assessment
+        if (report.riskLevel || report.risk_summary) {
+          checkNewPage(30)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 25)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Risk Assessment', 25, yPosition)
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          if (report.risk_summary?.overall_risk) {
+            yPosition = addText(`Overall Risk: ${report.risk_summary.overall_risk}`, 25, yPosition)
+          } else if (report.riskLevel) {
+            yPosition = addText(`Risk Level: ${report.riskLevel}`, 25, yPosition)
+          }
+          yPosition += 10
+        }
+        
+        // Scan Details
+        if (report.target || report.scanType) {
+          checkNewPage(30)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 25)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Scan Details', 25, yPosition)
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          if (report.target) yPosition = addText(`Target: ${report.target}`, 25, yPosition)
+          if (report.scanType) yPosition = addText(`Scan Type: ${report.scanType}`, 25, yPosition)
+          yPosition += 10
+        }
+        
+        // Scan-specific content (same as generateScanPDF logic)
+        if (testId === 'ssl-tls-analysis' || report.scanType === 'SSL/TLS Analysis') {
+          if (report.supportedProtocols) {
+            checkNewPage(40)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('SSL/TLS Configuration', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`Supported Protocols: ${report.supportedProtocols.join(', ')}`, 25, yPosition)
+            if (report.cipherStrength) {
+              yPosition = addText(`Cipher Strength: ${report.cipherStrength}`, 25, yPosition)
+            }
+            if (report.certificateInfo) {
+              if (report.certificateInfo.issuer) {
+                yPosition = addText(`Certificate Issuer: ${report.certificateInfo.issuer}`, 25, yPosition)
+              }
+              if (report.certificateInfo.validTo) {
+                yPosition = addText(`Valid Until: ${report.certificateInfo.validTo}`, 25, yPosition)
+              }
+            }
+            yPosition += 10
+          }
+        }
+        
+        if (testId === 'security-headers' || report.scanType === 'Security Headers') {
+          if (report.headersFound || report.missingHeaders) {
+            checkNewPage(50)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Security Headers', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            if (report.headersFound) {
+              yPosition = addText('Headers Found:', 25, yPosition)
+              Object.entries(report.headersFound).forEach(([key, value]) => {
+                checkNewPage(15)
+                yPosition = addText(`${key}: ${value}`, 30, yPosition)
+              })
+            }
+            if (report.missingHeaders && report.missingHeaders.length > 0) {
+              checkNewPage(30)
+              yPosition = addText('Missing Headers:', 25, yPosition)
+              report.missingHeaders.forEach((header) => {
+                checkNewPage(15)
+                yPosition = addText(`- ${header}`, 30, yPosition)
+              })
+            }
+            yPosition += 10
+          }
+        }
+        
+        if (testId === 'port-scanning' || report.scanType === 'Port Scanning') {
+          if (report.openPorts && report.openPorts.length > 0) {
+            checkNewPage(50)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Open Ports', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            report.openPorts.slice(0, 20).forEach((port, idx) => {
+              const portInfo = `Port: ${port.port}, Service: ${port.service || 'N/A'}, Version: ${port.version || 'N/A'}`
+              checkNewPage(15)
+              yPosition = addText(`${idx + 1}. ${portInfo}`, 25, yPosition)
+            })
+            if (report.openPorts.length > 20) {
+              yPosition = addText(`... and ${report.openPorts.length - 20} more ports`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        if (testId === 'subdomain-enumeration' || report.scanType === 'Subdomain Enumeration') {
+          if (report.subdomainsFound && report.subdomainsFound.length > 0) {
+            checkNewPage(50)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Discovered Subdomains', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            report.subdomainsFound.slice(0, 30).forEach((subdomain, idx) => {
+              checkNewPage(15)
+              yPosition = addText(`${idx + 1}. ${subdomain}`, 25, yPosition)
+            })
+            if (report.subdomainsFound.length > 30) {
+              yPosition = addText(`... and ${report.subdomainsFound.length - 30} more`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        // Open Redirect Check
+        if (testId === 'open-redirect-check' || report.scanType === 'Open Redirect Check') {
+          if (report.summary) {
+            checkNewPage(40)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Open Redirect Check Results', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`🔍 We checked your site for unvalidated redirects by sending a request with a malicious redirect parameter`, 25, yPosition)
+            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
+            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Potential vulnerability detected' : '✅ SUCCESS - No unvalidated redirects found'}`, 25, yPosition)
+            doc.setTextColor(60, 60, 60)
+            doc.setFont('helvetica', 'normal')
+            if (report.summary.evidence) {
+              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        // Host Trust Verification
+        if (testId === 'host-header-injection' || report.scanType === 'Host Trust Verification') {
+          if (report.summary) {
+            checkNewPage(40)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Host Trust Verification Results', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`🔍 We created a defensive attack against your site by sending a request with a malicious Host header`, 25, yPosition)
+            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
+            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Potential host header injection vulnerability detected' : '✅ SUCCESS - Host header properly validated'}`, 25, yPosition)
+            doc.setTextColor(60, 60, 60)
+            doc.setFont('helvetica', 'normal')
+            if (report.summary.evidence) {
+              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        // HTTP Allowed Methods Check
+        if (testId === 'http-methods-check' || report.scanType === 'HTTP Allowed Methods Check') {
+          if (report.summary) {
+            checkNewPage(40)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('HTTP Allowed Methods Check Results', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`🔍 We checked your site for dangerous HTTP methods by sending an OPTIONS request`, 25, yPosition)
+            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
+            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Dangerous HTTP methods enabled' : '✅ SUCCESS - Only safe HTTP methods enabled'}`, 25, yPosition)
+            doc.setTextColor(60, 60, 60)
+            doc.setFont('helvetica', 'normal')
+            if (report.summary.evidence) {
+              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        // CORS Policy Validation
+        if (testId === 'cors-policy-validation' || report.scanType === 'CORS Policy Validation') {
+          if (report.summary) {
+            checkNewPage(40)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('CORS Policy Validation Results', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`🔍 We created a defensive attack against your site by sending a request with a malicious Origin header`, 25, yPosition)
+            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
+            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Insecure CORS policy detected' : '✅ SUCCESS - CORS policy is secure'}`, 25, yPosition)
+            doc.setTextColor(60, 60, 60)
+            doc.setFont('helvetica', 'normal')
+            if (report.summary.evidence) {
+              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        // CT Log Subdomain Discovery
+        if (testId === 'ct-log-subdomain-discovery' || report.scanType === 'Certificate Transparency (CT) Log Subdomain Discovery') {
+          if (report.summary) {
+            checkNewPage(50)
+            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText('Certificate Transparency (CT) Log Subdomain Discovery', 25, yPosition)
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'normal')
+            if (report.summary.evidence) {
+              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+            }
+            if (report.unique_subdomains && report.unique_subdomains.length > 0) {
+              checkNewPage(30)
+              yPosition = addText(`Discovered Subdomains (${report.unique_subdomains.length}):`, 25, yPosition)
+              report.unique_subdomains.slice(0, 30).forEach((subdomain, idx) => {
+                checkNewPage(15)
+                yPosition = addText(`${idx + 1}. ${subdomain}`, 30, yPosition)
+              })
+              if (report.unique_subdomains.length > 30) {
+                yPosition = addText(`... and ${report.unique_subdomains.length - 30} more`, 30, yPosition)
+              }
+            }
+            if (report.certificates && report.certificates.length > 0) {
+              checkNewPage(20)
+              yPosition = addText(`Certificates Found: ${report.certificates.length}`, 25, yPosition)
+            }
+            yPosition += 10
+          }
+        }
+        
+        // Command Display
+        if (report.command) {
+          checkNewPage(40)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 30)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Command Executed', 25, yPosition)
+          doc.setFontSize(8)
+          doc.setFont('courier', 'normal')
+          doc.setTextColor(60, 60, 60)
+          const cmdLines = doc.splitTextToSize(report.command, pageWidth - 2 * margin - 40)
+          cmdLines.forEach((line, idx) => {
+            checkNewPage(10)
+            doc.text(line, 25, yPosition + (idx * 4))
+          })
+          yPosition += (cmdLines.length * 4) + 10
+        }
+        
+        // Findings Section
+        if (result.findings && result.findings.length > 0) {
+          checkNewPage(60)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 50)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Findings & Recommendations', 25, yPosition)
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          result.findings.forEach((finding, idx) => {
+            checkNewPage(40)
+            const findingType = finding.type || 'info'
+            const findingMessage = finding.message || 'No message available'
+            const findingDetails = finding.details ? (typeof finding.details === 'object' ? JSON.stringify(finding.details, null, 2) : String(finding.details)) : ''
+            doc.setFont('helvetica', 'bold')
+            yPosition = addText(`${idx + 1}. [${findingType.toUpperCase()}] ${findingMessage}`, 25, yPosition)
+            if (findingDetails) {
+              doc.setFont('helvetica', 'normal')
+              yPosition = addText(`   Details: ${findingDetails.substring(0, 200)}${findingDetails.length > 200 ? '...' : ''}`, 30, yPosition)
+            }
+          })
+          yPosition += 10
+        }
+        
+        // Issues from Report
+        if (report.issues && report.issues.length > 0) {
+          checkNewPage(50)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 40)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Issues', 25, yPosition)
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          report.issues.forEach((issue, idx) => {
+            checkNewPage(30)
+            const issueText = typeof issue === 'object' ? JSON.stringify(issue, null, 2) : String(issue)
+            yPosition = addText(`${idx + 1}. ${issueText.substring(0, 200)}${issueText.length > 200 ? '...' : ''}`, 25, yPosition)
+          })
+          yPosition += 10
+        }
+        
+        // Recommendations Section
+        const allRecommendations = [
+          ...(result.recommendations || []),
+          ...(report.recommendations || [])
+        ]
+        if (allRecommendations.length > 0) {
+          checkNewPage(60)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 50)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Recommendations', 25, yPosition)
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          allRecommendations.forEach((rec, idx) => {
+            checkNewPage(20)
+            yPosition = addText(`${idx + 1}. ${rec}`, 25, yPosition)
+          })
+          yPosition += 10
+        }
+        
+        // Raw Output
+        if (report.rawOutput || report.raw_output) {
+          checkNewPage(60)
+          doc.rect(20, yPosition - 10, pageWidth - 40, 50)
+          doc.setFontSize(12)
+          doc.setFont('helvetica', 'bold')
+          yPosition = addText('Raw Scan Output', 25, yPosition)
+          doc.setFontSize(8)
+          doc.setFont('courier', 'normal')
+          const rawText = report.rawOutput || report.raw_output || ''
+          const rawLines = doc.splitTextToSize(rawText.substring(0, 3000), pageWidth - 50)
+          rawLines.forEach(line => {
+            checkNewPage(15)
+            doc.text(line, 25, yPosition)
+            yPosition += 5
+          })
+          if (rawText.length > 3000) {
+            doc.setFont('helvetica', 'normal')
+            yPosition = addText(`... (output truncated, total length: ${rawText.length} characters)`, 25, yPosition)
+          }
+          yPosition += 10
+        }
+        
+        return yPosition
+      }
+      
+      // Process all scan results - iterate through selected scans
+      const scansToReport = getScansToRun()
+      let sectionNumber = 2 // Start after DNS which is handled separately
+      
+      scansToReport.forEach((test) => {
+        const result = allResults[test.id]
+        if (result && test.id !== 'dns-resolution' && test.id !== 'waf-detection') {
+          // Use the helper function to add comprehensive scan section
+          yPosition = addScanSection(sectionNumber++, test.name, test.id, result)
+        }
+      })
+      
+      // SSL/TLS Analysis Section (if exists)
+      if (allResults['ssl-tls-analysis'] && scansToReport.some(t => t.id === 'ssl-tls-analysis')) {
+        const sslResult = allResults['ssl-tls-analysis']
+        // Already handled by addScanSection above
+      }
+      
+      // Security Headers Section (if exists)
+      if (allResults['security-headers'] && scansToReport.some(t => t.id === 'security-headers')) {
+        const headersResult = allResults['security-headers']
+        // Already handled by addScanSection above
+      }
+      
+      // CMS Detection Section (if exists)
+      if (allResults['cms-detection'] && scansToReport.some(t => t.id === 'cms-detection')) {
+        const cmsResult = allResults['cms-detection']
+        // Already handled by addScanSection above
+      }
+      
+      // Subdomain Enumeration Section (if exists)
+      if (allResults['subdomain-enumeration'] && scansToReport.some(t => t.id === 'subdomain-enumeration')) {
+        const subdomainResult = allResults['subdomain-enumeration']
+        // Already handled by addScanSection above
+      }
+      
+      // Port Scanning Section (if exists)
+      if (allResults['port-scanning'] && scansToReport.some(t => t.id === 'port-scanning')) {
+        const portResult = allResults['port-scanning']
+        // Already handled by addScanSection above
+      }
+      
+      // Add other scan types (SQL Injection, XSS, CSRF, WAF, File Upload, etc.)
+      const otherScanTypes = ['sql-injection-test', 'xss-test', 'csrf-test', 'file-upload-check', 'ct-log-subdomain-discovery', 'http-methods-check', 'host-header-injection', 'cors-policy-validation', 'open-redirect-check', 'quick-fingerprint']
+      otherScanTypes.forEach(testId => {
+        if (allResults[testId] && scansToReport.some(t => t.id === testId)) {
+          const test = securityTests.find(t => t.id === testId)
+          if (test) {
+            yPosition = addScanSection(sectionNumber++, test.name, testId, allResults[testId])
+          }
+        }
+      })
+      
+      // Footer with enhanced information
+      doc.setFontSize(8)
+      doc.setFont('helvetica', 'italic')
+      
+      const currentDate = new Date();
+      const generatedDateTime = currentDate.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short'
+      });
+      
+      doc.text('Generated by Cyberix Security Scanner', 20, pageHeight - 20)
+      doc.text(`Generated on: ${generatedDateTime}`, 20, pageHeight - 10)
+      doc.text(`Target: ${targetUrl}`, pageWidth - 120, pageHeight - 20)
+      doc.text(`Report ID: SEC-${Date.now()}`, pageWidth - 120, pageHeight - 10)
+      
+      // Save the PDF with enhanced filename
+      const reportDate = new Date();
+      const dateStr = reportDate.toISOString().split('T')[0];
+      const timeStr = reportDate.toTimeString().split(' ')[0].replace(/:/g, '-');
+      const domainStr = targetUrl.replace(/[^a-zA-Z0-9]/g, '-');
+      const reportFileName = `cyberix-security-report-${domainStr}-${dateStr}-${timeStr}.pdf`
+      // Update all footers with correct page numbers
+      updateAllFooters()
+      
+      doc.save(reportFileName)
+      
+      showSuccess('Comprehensive security report generated successfully!')
+    } catch (error) {
+      console.error('❌ [PDF] Error generating security report:', error)
+      showError('Failed to generate security report: ' + error.message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  // Open DNS Detail Dialog
+  const openDnsDetailDialog = (result) => {
+    console.log('[DNS-DIALOG] Opening DNS detail dialog for result:', result)
+    setSelectedDnsResult(result)
+    setShowDnsDetailDialog(true)
+  }
+
+  // Install missing tools
+  const installMissingTools = async () => {
+    console.log('🔧 User clicked "Install Missing Tools" button')
+    console.log('📅 Installation started at:', new Date().toISOString())
+    
+    setIsCheckingTools(true)
+    
+    try {
+      // Check if we have WSL credentials
+      if (!hasSecurePassword()) {
+        console.log('🔐 No WSL credentials found, showing password prompt')
+        setIsCheckingTools(false)
+        setShowPasswordPrompt(true)
+        return false
+      }
+      
+      console.log('🔐 WSL credentials found, proceeding with installation')
+      const success = await ensureToolsInstalled()
+      if (success) {
+        console.log('✅ Tool installation completed successfully!')
+        showSuccess('All tools installed successfully!')
+        // Re-check tools after installation
+        const status = await checkAllTools()
+        setToolStatus(status)
+        return true
+      } else {
+        console.log('❌ Tool installation failed')
+        showError('Tool installation failed. Please install manually.')
+        return false
+      }
+    } catch (error) {
+      console.error('❌ Tool installation error:', error.message)
+      // Check if it's an authentication error
+      if (error.message && error.message.includes('authentication')) {
+        showError('WSL authentication required. Please provide credentials.')
+        setShowPasswordPrompt(true)
+      } else {
+        showError(`Tool installation failed: ${error.message}`)
+      }
+      return false
+    } finally {
+      setIsCheckingTools(false)
+      console.log('📅 Installation completed at:', new Date().toISOString())
+    }
+  }
+
+  // Start comprehensive security scan
+  const startScan = async () => {
+    console.log('🚀 User clicked "Start Scan" button')
+    console.log('🎯 Target URL:', targetUrl)
+    console.log('📅 Scan started at:', new Date().toISOString())
+    
+    if (!targetUrl.trim()) {
+      console.log('❌ No target URL provided')
+      showError('Please enter a target URL')
+      return
+    }
+
+    // Validate URL format
+    try {
+      new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`)
+      console.log('✅ URL format is valid')
+    } catch {
+      console.log('❌ Invalid URL format')
+      showError('Please enter a valid URL')
+      return
+    }
+
+    // Test Kali handlers first
+      console.log('[SCAN-DEBUG] Testing Kali handlers...')
+    try {
+      if (window.cyberGuard && window.cyberGuard.testKaliHandlers) {
+        const testResult = await window.cyberGuard.testKaliHandlers()
+        console.log('[SCAN-DEBUG] Kali handlers test result:', testResult)
+      } else {
+        console.log('[SCAN-DEBUG] cyberGuard or testKaliHandlers not available')
+      }
+    } catch (testError) {
+      console.log('[SCAN-DEBUG] Kali handlers test failed:', testError)
+    }
+
+    // Skip tool checking since we already verified during login
+    console.log('Starting security scan (tools already verified during login)...')
+    console.log('Initializing scan state...')
+    
+    setIsScanning(true)
+    setBackgroundScanning(true)
+    completionTriggeredRef.current = false // Reset completion flag
+    // Clear all previous scan results when starting new scan
+    setScanResults({})
+    setNewScanResults({})
+    setLogs([])
+    setCompletedTests(new Set())
+    setTestProgress({})
+    setCurrentTest(null)
+    setExpandedTests(new Set())
+    setExpandedFindings(new Set())
+    setScanStartTime(null)
+    setScanEndTime(null)
+    // Reset notification tracking for new scan
+    notifiedScansRef.current.clear()
+    
+    const startTime = Date.now()
+    setScanStartTime(startTime)
+    
+    // Run all selected scans sequentially
+    const targetBase = targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`
+    const scansToRun = getScansToRun()
+    
+    setScanTiming({
+      startTime,
+      endTime: null,
+      elapsedTime: 0,
+      expectedCompletion: startTime + (scansToRun.reduce((total, test) => total + test.estimatedTime, 0) * 1000)
+    })
+    
+    // Set a timeout for DNS scan (8 minutes to be safe)
+    scanTimeoutRef.current = setTimeout(() => {
+      if (isScanning || backgroundScanning) {
+        console.log('⏰ DNS scan timeout reached - forcing completion')
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: '⏰ DNS scan timeout reached (8 minutes) - scan may still be running in background',
+          testId: 'dns-resolution',
+          type: 'warning'
+        }])
+        
+        // Don't force completion, just log the timeout
+        // The scan might still be running and will complete later
+      }
+    }, 480000) // 8 minutes timeout
+    
+    setLogs(prev => [...prev, {
+      timestamp: Date.now(),
+      message: `Starting comprehensive security scan with ${scansToRun.length} selected scan(s)...`,
+      testId: 'general',
+      type: 'info'
+    }])
+    
+    // Register overview scan with GlobalScanContext for floating window
+    const scanId = registerScan({
+      scanType: 'Overview Scan',
+      target: targetBase,
+      progress: 0,
+      message: `Starting ${scansToRun.length} scan(s)...`,
+      startTime: new Date().toISOString(),
+      viewId: 'overview',
+      onStop: () => {
+        stopLocalScan()
+      },
+      onView: () => {
+        // Navigate to overview tab (already there)
+        console.log('Navigate to overview tab')
+      }
+    })
+    overviewScanIdRef.current = scanId
+    
+    // Set ref to track scan status (to avoid React state async issues)
+    scanActiveRef.current = true
+    
+    // Execute all selected scans sequentially
+    for (const test of scansToRun) {
+      // Check if scan was stopped by user using ref (which updates immediately)
+      // We use ref instead of state because React state updates are async
+      if (!scanActiveRef.current) {
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: 'Scan stopped by user',
+          testId: 'general',
+          type: 'warning'
+        }])
+        break
+      }
+      
+      try {
+        setCurrentTest({ id: test.id, name: test.name })
+        setTestProgress(prev => ({ ...prev, [test.id]: 10 }))
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `Starting ${test.name}...`,
+          testId: test.id,
+          type: 'info'
+        }])
+        
+        let report = null
+        
+        // Execute the appropriate scan function based on test ID
+        if (test.id === 'quick-fingerprint') {
+          const json = await runQuickFingerprint(targetBase)
+          report = {
+            testId: 'quick-fingerprint',
+            testName: 'Quick Fingerprint',
+            category: 'Reconnaissance',
+            severity: (json.severity_hint || 'informational').toLowerCase(),
+            status: 'completed',
+            timestamp: new Date().toISOString(),
+            findings: [ 
+              { 
+                type: json.severity_hint === 'High' ? 'high' : json.severity_hint === 'Medium' ? 'medium' : 'info', 
+                message: `Quick Fingerprint completed: ${json.plugins?.length || 0} plugins detected`, 
+                details: json.summary || 'Fingerprint scan completed successfully' 
+              } 
+            ],
+            recommendations: json.recommendation ? [ json.recommendation ] : [],
+            report: { 
+              scanType: 'Quick Fingerprint', 
+              target: targetBase, 
+              summary: json,
+              command: `whatweb -v ${targetBase}`
+            }
+          }
+        } else if (test.id === 'waf-detection') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting WAF Detection scan...`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Running WAF detection scan...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          const result = await runWAFDetection()
+          console.log(`✅ [${test.id.toUpperCase()}] WAF Detection scan completed`)
+          report = result
+        } else if (test.id === 'file-upload-check') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting File Upload Check scan...`)
+          const result = await runFileUploadCheck()
+          console.log(`✅ [${test.id.toUpperCase()}] File Upload Check scan completed`)
+          report = result
+        } else if (test.id === 'ct-log-subdomain-discovery') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting CT Log Subdomain Discovery scan...`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Running Certificate Transparency log query...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          const result = await runCTLogSubdomainDiscovery(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] CT Log Subdomain Discovery scan completed`)
+          report = result
+        } else if (test.id === 'dns-resolution') {
+          // DNS analysis using direct command execution
+          const dnsResult = await runDnsResolution(targetBase)
+          report = {
+            testId: 'dns-resolution',
+            testName: 'DNS Resolution & Analysis',
+            category: 'Reconnaissance',
+            severity: 'informational',
+            status: 'completed',
+            timestamp: new Date().toISOString(),
+            findings: [
+              {
+                type: 'info',
+                message: `DNS Resolution & Analysis completed`,
+                details: dnsResult.summary || 'DNS analysis completed successfully'
+              }
+            ],
+            recommendations: [],
+            report: dnsResult
+          }
+          // Old Electron IPC implementation (commented out)
+          /*if (window.cyberGuard && window.cyberGuard.startKaliScan) {
+            setTestProgress(prev => ({ ...prev, [test.id]: 20 }))
+            dnsCompleteRef.current = false
+            
+            // Set up progress handlers BEFORE starting the scan
+            const progressHandler = (progress) => {
+              console.log('📊 [DNS-PROGRESS] Received progress:', progress)
+              
+              // Only process DNS-related progress while waiting for DNS
+              // Ignore XSS/CSRF progress messages until their turn in queue
+              const testId = progress.testId || ''
+              
+              // Only log DNS-related progress to UI
+              if (testId === 'dns-resolution' || progress.message?.includes('DNS') || progress.message?.includes('dns')) {
+                if (progress.message) {
+                  setLogs(prev => [...prev, {
+                    timestamp: Date.now(),
+                    message: progress.message,
+                    testId: 'dns-resolution',
+                    type: progress.type || 'info'
+                  }])
+                }
+                
+                // Update progress based on message content
+                if (progress.message) {
+                  let progressValue = 20
+                  if (progress.message.includes('Starting DNS resolution') || progress.message.includes('Executing DNS Analysis')) progressValue = 5
+                  else if (progress.message.includes('Querying A records') || progress.message.includes('dig +short')) progressValue = 15
+                  else if (progress.message.includes('Querying MX records') || progress.message.includes('dig +noall +answer')) progressValue = 25
+                  else if (progress.message.includes('Querying TXT records')) progressValue = 35
+                  else if (progress.message.includes('Reverse DNS lookup') || progress.message.includes('dig -x')) progressValue = 45
+                  else if (progress.message.includes('dnsrecon') || progress.message.includes('DNS reconnaissance')) progressValue = 60
+                  else if (progress.message.includes('dnsenum') || progress.message.includes('DNS enumeration')) progressValue = 75
+                  else if (progress.message.includes('Checking SPF')) progressValue = 85
+                  else if (progress.message.includes('Checking DMARC')) progressValue = 90
+                  else if (progress.message.includes('Testing zone transfer')) progressValue = 95
+                  else if (progress.message.includes('completed successfully') || progress.message.includes('DNS Analysis output')) progressValue = 100
+                  
+                  if (progressValue > 0) {
+                    setTestProgress(prev => ({
+                      ...prev,
+                      'dns-resolution': progressValue
+                    }))
+                  }
+                }
+              } else {
+                // XSS/CSRF progress - store but don't process yet (wait for their turn in queue)
+                console.log(`📝 [DNS-PROGRESS] Received progress for ${testId} - storing but not processing until queue reaches it`)
+              }
+            }
+            
+            // Store handler reference so we can clean it up later
+            let handlerActive = true
+            
+            const completeHandler = (results) => {
+              console.log('✅ [DNS-COMPLETE] Complete handler called, results:', results)
+              
+              if (results && results.tests) {
+                // ALWAYS process DNS result when it completes (even after timeout)
+                if (results.tests['dns-resolution']) {
+                  const dnsResult = results.tests['dns-resolution']
+                  console.log('✅ [DNS-COMPLETE] DNS result found:', dnsResult)
+                  
+                  // Update DNS scan result (always, even if handlerActive is false)
+                  setScanResults(prev => ({ ...prev, 'dns-resolution': dnsResult }))
+                  setNewScanResults(prev => ({ ...prev, 'dns-resolution': dnsResult }))
+                  setCompletedTests(prev => new Set([...(prev || new Set()), 'dns-resolution']))
+                  setTestProgress(prev => ({ ...prev, 'dns-resolution': 100 }))
+                  
+                  // ALWAYS set the ref to true when DNS completes (so polling can detect it immediately)
+                  // This ensures DNS completion is detected as soon as it happens (within 2 minutes)
+                  dnsCompleteRef.current = true
+                  
+                  // Also process XSS/CSRF if they're in the same results batch (DNS completed)
+                  // This ensures all results are properly updated when they arrive together
+                  Object.keys(results.tests).forEach(testId => {
+                    if (testId !== 'dns-resolution' && (testId === 'xss-test' || testId === 'csrf-test')) {
+                      const otherResult = results.tests[testId]
+                      // Use the actual status from the result, don't force 'pending'
+                      const resultStatus = otherResult.status || 'completed'
+                      console.log(`✅ [DNS-COMPLETE] Processing ${testId} result with DNS - Status: ${resultStatus}`)
+                      
+                      const finalResult = { ...otherResult, status: resultStatus }
+                      setScanResults(prev => {
+                        const existing = prev[testId]
+                        // If existing result has 'pending' status, update it to the actual status
+                        if (existing && existing.status === 'pending') {
+                          console.log(`✅ [DNS-COMPLETE] Updating ${testId} from pending to ${resultStatus}`)
+                        }
+                        return { ...prev, [testId]: finalResult }
+                      })
+                      setNewScanResults(prev => {
+                        const existing = prev[testId]
+                        // If existing result has 'pending' status, update it to the actual status
+                        if (existing && existing.status === 'pending') {
+                          console.log(`✅ [DNS-COMPLETE] Updating ${testId} from pending to ${resultStatus}`)
+                        }
+                        return { ...prev, [testId]: finalResult }
+                      })
+                      
+                      // Add to completedTests if status is final (not 'pending')
+                      if (resultStatus !== 'pending') {
+                        setCompletedTests(prev => new Set([...(prev || new Set()), testId]))
+                        setTestProgress(prev => ({ ...prev, [testId]: 100 }))
+                      }
+                    }
+                  })
+                  
+                  // Only resolve promise if we're still waiting (handlerActive)
+                  if (handlerActive) {
+                    handlerActive = false
+                    setLogs(prev => [...prev, {
+                      timestamp: Date.now(),
+                      message: `DNS Resolution & Analysis completed - Status: ${dnsResult.status}`,
+                      testId: 'dns-resolution',
+                      type: dnsResult.status === 'completed' ? 'success' : 'error'
+                    }])
+                    console.log('✅ [DNS-COMPLETE] DNS completed - ref set to true, promise should resolve via polling')
+                  } else {
+                    // DNS completed after timeout - update status in background
+                    console.log('✅ [DNS-COMPLETE] DNS completed after timeout - updating status')
+                    setLogs(prev => [...prev, {
+                      timestamp: Date.now(),
+                      message: `DNS Resolution & Analysis completed in background - Status: ${dnsResult.status}`,
+                      testId: 'dns-resolution',
+                      type: dnsResult.status === 'completed' ? 'success' : 'error'
+                    }])
+                  }
+                } else {
+                  // XSS/CSRF completed but NOT DNS - do NOT process, just store silently
+                  console.log('📝 [DNS-COMPLETE] XSS/CSRF completed but DNS not done yet - storing results but NOT processing until DNS completes')
+                  
+                  // Store XSS/CSRF results silently (don't log or mark complete)
+                  // They will be processed when queue reaches them
+                  Object.keys(results.tests).forEach(testId => {
+                    if (testId !== 'dns-resolution' && (testId === 'xss-test' || testId === 'csrf-test')) {
+                      const otherResult = results.tests[testId]
+                      // Store with original status from result (don't force 'pending')
+                      // The scan loop will handle status conversion when it processes them
+                      const resultWithStatus = otherResult.status || 'completed'
+                      setScanResults(prev => {
+                        const existing = prev[testId]
+                        if (!existing || existing.status === 'pending') {
+                          return { ...prev, [testId]: { ...otherResult, status: resultWithStatus } }
+                        }
+                        return prev
+                      })
+                      setNewScanResults(prev => {
+                        const existing = prev[testId]
+                        if (!existing || existing.status === 'pending') {
+                          return { ...prev, [testId]: { ...otherResult, status: resultWithStatus } }
+                        }
+                        return prev
+                      })
+                      console.log(`📝 [DNS-COMPLETE] Silently stored ${testId} result with status: ${resultWithStatus} (will process when queue reaches it)`)
+                    }
+                  })
+                  
+                  // DO NOT resolve promise - continue waiting for DNS
+                  console.log('⏳ [DNS-COMPLETE] Continuing to wait for DNS completion...')
+                  return
+                }
+              }
+            }
+            
+            // Set up event listeners BEFORE starting the scan
+            window.cyberGuard.onKaliProgress(progressHandler)
+            window.cyberGuard.onKaliComplete(completeHandler)
+            
+            // Log DNS scan commands BEFORE starting
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `Starting DNS Resolution & Analysis for: ${targetUrl}`,
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            // Extract domain for display purposes
+            let displayDomain = targetUrl
+            try {
+              if (targetUrl.includes('://')) {
+                const url = new URL(targetUrl)
+                displayDomain = url.hostname
+              } else if (targetUrl.includes('/')) {
+                displayDomain = targetUrl.split('/')[0]
+              }
+            } catch (error) {
+              displayDomain = targetUrl
+            }
+            
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: 'DNS Analysis Commands (Kali Linux):',
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `  • Batch DNS Analysis: dig +short ${displayDomain} A && dig +noall +answer ${displayDomain} A/MX/TXT/NS/SOA && reverse DNS lookup`,
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `  • Reverse DNS: dig -x $(dig +short ${displayDomain} A) +short`,
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `  • DNS Reconnaissance: timeout 30 dnsrecon -d ${displayDomain}`,
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `  • DNS Enumeration: timeout 30 dnsenum ${displayDomain}`,
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: 'DNS scan typically takes 1-2 minutes to complete...',
+              testId: 'dns-resolution',
+              type: 'info'
+            }])
+            
+            // Start DNS scan and wait for completion
+            try {
+              await new Promise((resolve, reject) => {
+                let progressCheckInterval
+                let timeoutTimer
+                
+                // Set a timeout (5 minutes max wait as per user request)
+                timeoutTimer = setTimeout(() => {
+                  clearInterval(progressCheckInterval)
+                  if (!dnsCompleteRef.current) {
+                    setLogs(prev => [...prev, {
+                      timestamp: Date.now(),
+                      message: 'DNS scan timeout reached (5 minutes) - continuing with next scan (SSL/TLS Analysis). DNS will continue running in background.',
+                      testId: 'dns-resolution',
+                      type: 'warning'
+                    }])
+                    
+                    // Create a placeholder result so the scan can continue to next test (SSL/TLS)
+                    // DNS scan continues in background and will be processed when it completes
+                    const timeoutResult = {
+                      testId: 'dns-resolution',
+                      testName: 'DNS Resolution & Analysis',
+                      category: test.category,
+                      severity: test.severity,
+                      status: 'timed out', // Mark as timed out - DNS exceeded 5 minute limit
+                      timestamp: new Date().toISOString(),
+                      error: 'DNS scan timeout - scan took longer than 5 minutes. Partial results available when DNS completes in background.',
+                      findings: [
+                        {
+                          type: 'warning',
+                          message: 'DNS scan timed out after 5 minutes',
+                          details: 'Scan was moved to next test to avoid blocking. DNS will continue in background and results will be updated when available.'
+                        }
+                      ],
+                      recommendations: test.fixRecommendations || [],
+                      report: { 
+                        scanType: test.name, 
+                        target: targetBase,
+                        timedOut: true,
+                        partialResults: 'DNS scan exceeded 5-minute timeout. Partial results will be available when DNS completes.'
+                      }
+                    }
+                    setScanResults(prev => ({ ...prev, [test.id]: timeoutResult }))
+                    setNewScanResults(prev => ({ ...prev, [test.id]: timeoutResult }))
+                    // Add to completedTests since it's timed out (final status)
+                    setCompletedTests(prev => new Set([...(prev || new Set()), test.id]))
+                    setTestProgress(prev => ({ ...prev, [test.id]: 100 }))
+                    dnsCompleteRef.current = true // Allow loop to continue
+                    
+                    console.log('⏭️ [DNS] Moving to next scan (SSL/TLS) while DNS continues in background')
+                  }
+                  resolve()
+                }, 300000) // 5 minutes = 300000ms
+                
+                // Check for completion every 500ms for faster detection (DNS completes in ~2 minutes)
+                progressCheckInterval = setInterval(() => {
+                  // CRITICAL: Check the ref FIRST (set by completeHandler) - this is the fastest way
+                  if (dnsCompleteRef.current) {
+                    console.log('✅ [DNS-POLL] DNS complete ref is true, resolving immediately')
+                    clearInterval(progressCheckInterval)
+                    clearTimeout(timeoutTimer)
+                    resolve()
+                    return
+                  }
+                  
+                  // Also check scanResults state as backup (may have slight delay)
+                  setScanResults(currentResults => {
+                    setNewScanResults(currentNewResults => {
+                      const result = currentResults[test.id] || currentNewResults[test.id]
+                      // Accept 'completed', 'failed', or 'timed out' as completion signals (not 'pending')
+                      if (result && (result.status === 'completed' || result.status === 'failed' || result.status === 'timed out')) {
+                        console.log(`✅ [DNS-POLL] DNS scan status detected in state: ${result.status}`)
+                        dnsCompleteRef.current = true
+                        clearInterval(progressCheckInterval)
+                        clearTimeout(timeoutTimer)
+                        resolve()
+                        return currentNewResults
+                      }
+                      return currentNewResults
+                    })
+                    return currentResults
+                  })
+                }, 500) // Check every 500ms instead of 1 second for faster detection
+                
+                // Start the scan AFTER setting up handlers
+                // Note: startKaliScan runs ALL tests (XSS, CSRF, DNS), but we only care about DNS here
+                console.log('🚀 [DNS] Starting Kali scan (will run all tests, but waiting for DNS only)...')
+                window.cyberGuard.startKaliScan(targetUrl).catch(error => {
+                  console.error('❌ [DNS] Error starting DNS scan:', error)
+                  handlerActive = false
+                  setLogs(prev => [...prev, {
+                    timestamp: Date.now(),
+                    message: `DNS scan failed to start: ${error.message}`,
+                    testId: 'dns-resolution',
+                    type: 'error'
+                  }])
+                  clearInterval(progressCheckInterval)
+                  clearTimeout(timeoutTimer)
+                  reject(error)
+                })
+              })
+              
+              // Wait a bit for state to update, then get the result
+              await new Promise(resolve => setTimeout(resolve, 500))
+              
+              // Get the result after completion using functional update
+              let dnsResult = null
+              setScanResults(currentResults => {
+                setNewScanResults(currentNewResults => {
+                  dnsResult = currentResults[test.id] || currentNewResults[test.id]
+                  return currentNewResults
+                })
+                return currentResults
+              })
+              
+              // Wait for state update
+              await new Promise(resolve => setTimeout(resolve, 100))
+              
+              // Try again if not found
+              if (!dnsResult) {
+                const result = scanResults[test.id] || newScanResults[test.id]
+                if (result) {
+                  dnsResult = result
+                }
+              }
+              
+              // Try multiple times to get the result (race condition protection)
+              let retries = 0
+              while (!dnsResult && retries < 5) {
+                await new Promise(resolve => setTimeout(resolve, 200))
+                setScanResults(currentResults => {
+                  setNewScanResults(currentNewResults => {
+                    dnsResult = currentResults[test.id] || currentNewResults[test.id]
+                    return currentNewResults
+                  })
+                  return currentResults
+                })
+                retries++
+              }
+              
+              if (dnsResult) {
+                console.log('✅ [DNS] DNS result found after waiting:', dnsResult.status)
+                report = dnsResult
+                // Ensure it's marked as completed in state
+                setScanResults(prev => ({ ...prev, [test.id]: dnsResult }))
+                setNewScanResults(prev => ({ ...prev, [test.id]: dnsResult }))
+                setCompletedTests(prev => new Set([...(prev || new Set()), test.id]))
+                setTestProgress(prev => ({ ...prev, [test.id]: 100 }))
+              } else {
+                // Create a placeholder report for DNS if no result found (mark as failed so loop continues)
+                console.log('⚠️ [DNS] No DNS result found after waiting, creating placeholder')
+                report = {
+                  testId: 'dns-resolution',
+                  testName: 'DNS Resolution & Analysis',
+                  category: test.category,
+                  severity: test.severity,
+                  status: 'failed',
+                  timestamp: new Date().toISOString(),
+                  error: 'DNS scan completed but no result was found',
+                  findings: [],
+                  recommendations: test.fixRecommendations || [],
+                  report: { scanType: test.name, target: targetBase }
+                }
+                
+                // Also save this to state so it's available for checking
+                setScanResults(prev => ({ ...prev, [test.id]: report }))
+                setNewScanResults(prev => ({ ...prev, [test.id]: report }))
+                setCompletedTests(prev => new Set([...(prev || new Set()), test.id]))
+                
+                setLogs(prev => [...prev, {
+                  timestamp: Date.now(),
+                  message: 'DNS scan completed but no result found - marking as failed and continuing',
+                  testId: 'dns-resolution',
+                  type: 'warning'
+                }])
+              }
+            } catch (error) {
+              console.error('Error in DNS analysis:', error)
+              throw error
+            }
+          } else {
+            throw new Error('Electron API not available - DNS analysis cannot run')
+          }
+          */
+        } else if (test.id === 'open-redirect-check') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting Open Redirect Check...`)
+          const redirectUrl = `${targetBase.replace(/\/$/, '')}/?redirect=http://evil.com`
+          const cmd = `curl -I ${JSON.stringify(redirectUrl)}`
+          console.log(`▶️ [${test.id.toUpperCase()}] Command: ${cmd}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Running Open Redirect Check...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `🔍 We checked your site for unvalidated redirects by sending a request with a malicious redirect parameter`,
+            testId: test.id,
+            type: 'info'
+          }])
+          const json = await runOpenRedirectCheck(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] Open Redirect Check completed - Status: ${json.status}`)
+          console.log(`📊 [${test.id.toUpperCase()}] Result: ${JSON.stringify(json, null, 2)}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Open Redirect Check result: ${json.status === 'Vulnerable' ? '❌ FAILURE - Potential vulnerability detected' : '✅ SUCCESS - No unvalidated redirects found'}`,
+            testId: test.id,
+            type: json.status === 'Vulnerable' ? 'error' : 'success'
+          }])
+          report = {
+            testId: 'open-redirect-check',
+            testName: 'Open Redirect Check',
+            category: test.category,
+            severity: (json.severity || 'high').toLowerCase(),
+            status: json.status === 'Vulnerable' ? 'completed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: [
+              {
+                type: json.status === 'Vulnerable' ? 'high' : 'info',
+                message: json.status === 'Vulnerable' ? 'Potential open redirect vulnerability detected' : 'No unvalidated redirects found',
+                details: json.evidence || json.status
+              }
+            ],
+            recommendations: json.recommendation ? [json.recommendation] : test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, command: cmd, summary: json }
+          }
+        } else if (test.id === 'cors-policy-validation') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting CORS Policy Validation...`)
+          const cmd = `curl -I -H "Origin: http://evil.com" ${JSON.stringify(targetBase)} | grep -i "access-control-allow-origin" || true`
+          console.log(`▶️ [${test.id.toUpperCase()}] Command: ${cmd}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Running CORS Policy Validation...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `🔍 We created a defensive attack against your site by sending a request with a malicious Origin header`,
+            testId: test.id,
+            type: 'info'
+          }])
+          const json = await runCorsPolicyValidation(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] CORS Policy Validation completed - Status: ${json.status}`)
+          console.log(`📊 [${test.id.toUpperCase()}] Result: ${JSON.stringify(json, null, 2)}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `CORS Policy Validation result: ${json.status === 'Vulnerable' ? '❌ FAILURE - Insecure CORS policy detected' : '✅ SUCCESS - CORS policy is secure'}`,
+            testId: test.id,
+            type: json.status === 'Vulnerable' ? 'error' : 'success'
+          }])
+          report = {
+            testId: 'cors-policy-validation',
+            testName: 'CORS Policy Validation',
+            category: test.category,
+            severity: (json.severity || 'critical').toLowerCase(),
+            status: json.status === 'Vulnerable' ? 'completed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: [
+              {
+                type: json.status === 'Vulnerable' ? 'critical' : 'info',
+                message: json.status === 'Vulnerable' ? 'Insecure CORS policy detected (wildcard or allows arbitrary origins)' : 'CORS policy is secure',
+                details: json.evidence || json.status
+              }
+            ],
+            recommendations: json.recommendation ? [json.recommendation] : test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, command: cmd, summary: json }
+          }
+        } else if (test.id === 'host-header-injection') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting Host Trust Verification...`)
+          const cmd = `curl -I -H "Host: attacker.com" ${JSON.stringify(targetBase)}`
+          console.log(`▶️ [${test.id.toUpperCase()}] Command: ${cmd}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Running Host Trust Verification...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `🔍 We created a defensive attack against your site by sending a request with a malicious Host header`,
+            testId: test.id,
+            type: 'info'
+          }])
+          const json = await runHostHeaderInjection(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] Host Trust Verification completed - Status: ${json.status}`)
+          console.log(`📊 [${test.id.toUpperCase()}] Result: ${JSON.stringify(json, null, 2)}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Host Trust Verification result: ${json.status === 'Vulnerable' ? '❌ FAILURE - Potential host header injection vulnerability detected' : '✅ SUCCESS - Host header properly validated'}`,
+            testId: test.id,
+            type: json.status === 'Vulnerable' ? 'error' : 'success'
+          }])
+          report = {
+            testId: 'host-header-injection',
+            testName: 'Host Trust Verification',
+            category: test.category,
+            severity: (json.severity || 'high').toLowerCase(),
+            status: json.status === 'Vulnerable' ? 'completed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: [
+              {
+                type: json.status === 'Vulnerable' ? 'high' : 'info',
+                message: json.status === 'Vulnerable' ? 'Potential host header injection vulnerability detected' : 'Host header properly validated',
+                details: json.evidence || json.status
+              }
+            ],
+            recommendations: json.recommendation ? [json.recommendation] : test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, command: cmd, summary: json }
+          }
+        } else if (test.id === 'http-methods-check') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting HTTP Allowed Methods Check...`)
+          const cmd = `curl -X OPTIONS -I ${JSON.stringify(targetBase)}`
+          console.log(`▶️ [${test.id.toUpperCase()}] Command: ${cmd}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Running HTTP Allowed Methods Check...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `🔍 We checked your site for dangerous HTTP methods by sending an OPTIONS request`,
+            testId: test.id,
+            type: 'info'
+          }])
+          const json = await runHttpMethodsCheck(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] HTTP Allowed Methods Check completed - Status: ${json.status}`)
+          console.log(`📊 [${test.id.toUpperCase()}] Result: ${JSON.stringify(json, null, 2)}`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `HTTP Allowed Methods Check result: ${json.status === 'Vulnerable' ? '❌ FAILURE - Dangerous HTTP methods enabled' : '✅ SUCCESS - Only safe HTTP methods enabled'}`,
+            testId: test.id,
+            type: json.status === 'Vulnerable' ? 'error' : 'success'
+          }])
+          report = {
+            testId: 'http-methods-check',
+            testName: 'HTTP Allowed Methods Check',
+            category: test.category,
+            severity: (json.severity || 'critical').toLowerCase(),
+            status: json.status === 'Vulnerable' ? 'completed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: [
+              {
+                type: json.status === 'Vulnerable' ? 'critical' : 'info',
+                message: json.status === 'Vulnerable' ? 'Dangerous HTTP methods (PUT, DELETE, TRACE) enabled' : 'Only safe HTTP methods enabled',
+                details: json.evidence || json.status
+              }
+            ],
+            recommendations: json.recommendation ? [json.recommendation] : test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, command: cmd, summary: json }
+          }
+        } else if (test.id === 'ssl-tls-analysis') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting SSL/TLS Analysis...`)
+          const result = await runSslTlsAnalysis(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] SSL/TLS Analysis completed`)
+          
+          report = {
+            testId: 'ssl-tls-analysis',
+            testName: 'SSL/TLS Analysis',
+            category: test.category,
+            severity: test.severity,
+            status: result.error ? 'failed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: result.error ? [] : [
+              {
+                type: 'info',
+                message: `SSL/TLS Analysis completed - Protocols: ${result.supportedProtocols?.join(', ') || 'Unknown'}, Cipher Strength: ${result.cipherStrength || 'Unknown'}`,
+                details: result.summary || 'SSL/TLS analysis completed successfully'
+              }
+            ],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, ...result }
+          }
+        } else if (test.id === 'security-headers') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting Security Headers Analysis...`)
+          const result = await runSecurityHeaders(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] Security Headers Analysis completed`)
+          
+          report = {
+            testId: 'security-headers',
+            testName: 'Security Headers',
+            category: test.category,
+            severity: test.severity,
+            status: result.error ? 'failed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: result.error ? [] : [
+              {
+                type: result.missingHeaders?.length > 0 ? 'warning' : 'info',
+                message: `Security Headers Analysis completed - Found: ${Object.keys(result.headersFound || {}).length}, Missing: ${result.missingHeaders?.length || 0}`,
+                details: result.summary || 'Security headers analysis completed successfully'
+              }
+            ],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, ...result }
+          }
+        } else if (test.id === 'cms-detection') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting CMS Detection...`)
+          const result = await runCmsDetection(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] CMS Detection completed`)
+          
+          report = {
+            testId: 'cms-detection',
+            testName: 'CMS Detection',
+            category: test.category,
+            severity: test.severity,
+            status: result.error ? 'failed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: result.error ? [] : [
+              {
+                type: 'info',
+                message: `CMS Detection completed - CMS: ${result.cms || 'None'}, Server: ${result.server || 'Unknown'}`,
+                details: result.summary || 'CMS detection completed successfully'
+              }
+            ],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, ...result }
+          }
+        } else if (test.id === 'subdomain-enumeration') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting Subdomain Enumeration...`)
+          const result = await runSubdomainEnumeration(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] Subdomain Enumeration completed`)
+          
+          report = {
+            testId: 'subdomain-enumeration',
+            testName: 'Subdomain Enumeration',
+            category: test.category,
+            severity: test.severity,
+            status: result.error ? 'failed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: result.error ? [] : [
+              {
+                type: 'info',
+                message: `Subdomain Enumeration completed - Found: ${result.count || 0} subdomain(s)`,
+                details: result.summary || 'Subdomain enumeration completed successfully'
+              }
+            ],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, ...result }
+          }
+        } else if (test.id === 'port-scanning') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting Port Scanning...`)
+          const result = await runPortScanning(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] Port Scanning completed`)
+          
+          report = {
+            testId: 'port-scanning',
+            testName: 'Port Scanning',
+            category: test.category,
+            severity: test.severity,
+            status: result.error ? 'failed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: result.error ? [] : [
+              {
+                type: 'info',
+                message: `Port Scanning completed - Found: ${result.totalOpen || 0} open port(s)`,
+                details: result.summary || 'Port scanning completed successfully'
+              }
+            ],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, ...result }
+          }
+        } else if (test.id === 'sql-injection-test') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting SQL Injection Test...`)
+          const result = await runSqlInjectionTest(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] SQL Injection Test completed`)
+          
+          report = {
+            testId: 'sql-injection-test',
+            testName: 'SQL Injection Test',
+            category: test.category,
+            severity: result.vulnerable ? 'high' : test.severity,
+            status: result.error ? 'failed' : 'completed',
+            timestamp: new Date().toISOString(),
+            findings: result.error ? [] : [
+              {
+                type: result.vulnerable ? 'critical' : 'info',
+                message: `SQL Injection Test completed - Vulnerable: ${result.vulnerable ? 'Yes' : 'No'}`,
+                details: result.summary || 'SQL injection test completed successfully'
+              }
+            ],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase, ...result }
+          }
+        } else if (test.id === 'xss-test') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting XSS Test...`)
+          const result = await runXSSTest(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] XSS Test completed`)
+          report = result
+        } else if (test.id === 'csrf-test') {
+          console.log(`🔍 [${test.id.toUpperCase()}] Starting CSRF Test...`)
+          const result = await runCSRFTest(targetBase)
+          console.log(`✅ [${test.id.toUpperCase()}] CSRF Test completed`)
+          report = result
+        } else {
+          // For scans not yet fully implemented, still create a report
+          // This ensures the queue continues in strict FIFO order
+          console.log(`⚠️ [${test.id.toUpperCase()}] Scan not yet fully implemented - creating placeholder report`)
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `Starting ${test.name}...`,
+            testId: test.id,
+            type: 'info'
+          }])
+          
+          // Create placeholder report so scan continues in queue order
+          report = {
+            testId: test.id,
+            testName: test.name,
+            category: test.category,
+            severity: test.severity,
+            status: 'failed',
+            timestamp: new Date().toISOString(),
+            error: `${test.name} scan implementation is in progress. This test will be fully functional in a future update.`,
+            findings: [],
+            recommendations: test.fixRecommendations || [],
+            report: { scanType: test.name, target: targetBase }
+          }
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: `${test.name} - Implementation in progress (placeholder report created)`,
+            testId: test.id,
+            type: 'warning'
+          }])
+          // Continue with report creation below - DO NOT use continue statement
+        }
+        
+        if (report) {
+          setScanResults(prev => ({ ...prev, [test.id]: report }))
+          setNewScanResults(prev => ({ ...prev, [test.id]: report }))
+          
+          // Only add to completedTests if status is final (not 'pending')
+          // 'pending' means scan is still running in background
+          if (report.status !== 'pending') {
+            setCompletedTests(prev => new Set([...(prev || new Set()), test.id]))
+          }
+          
+          // Set progress to 100% for all final statuses
+          if (report.status !== 'pending') {
+            setTestProgress(prev => ({ ...prev, [test.id]: 100 }))
+          }
+          
+          // Update overview scan progress - calculate with latest results including current report
+          if (overviewScanIdRef.current) {
+            const scansToRun = getScansToRun()
+            // Calculate with current report included
+            const allResults = { ...scanResults, ...newScanResults, [test.id]: report }
+            const completedCount = scansToRun.filter(t => {
+              const result = allResults[t.id]
+              return result && (result.status === 'completed' || result.status === 'failed' || result.status === 'timed out')
+            }).length
+            const totalProgress = Math.round((completedCount / scansToRun.length) * 100)
+            updateScan(overviewScanIdRef.current, {
+              progress: totalProgress,
+              message: `Running ${test.name}... (${completedCount}/${scansToRun.length} completed)`
+            })
+          }
+          
+          // Log completion status based on actual result
+          if (report.status === 'completed') {
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `${test.name} completed successfully`,
+              testId: test.id,
+              type: 'success'
+            }])
+            
+            // Send notification for individual scan completion (only once per scan)
+            sendScanNotification(test.id, test.name)
+          } else if (report.status === 'failed') {
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `${test.name} ${report.error ? 'failed' : 'completed with warnings'}: ${report.error || 'See details in report'}`,
+              testId: test.id,
+              type: report.error ? 'error' : 'warning'
+            }])
+          } else {
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `${test.name} finished with status: ${report.status}`,
+              testId: test.id,
+              type: 'info'
+            }])
+          }
+        }
+      } catch (error) {
+        console.error(`Error running ${test.name}:`, error)
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `${test.name} failed: ${error.message}`,
+          testId: test.id,
+          type: 'error'
+        }])
+        
+        // Mark as failed
+        const failedReport = {
+          testId: test.id,
+          testName: test.name,
+          category: test.category,
+          severity: test.severity,
+          status: 'failed',
+          timestamp: new Date().toISOString(),
+          error: error.message,
+          findings: [],
+          recommendations: [],
+          report: { scanType: test.name, target: targetBase }
+        }
+        setScanResults(prev => ({ ...prev, [test.id]: failedReport }))
+        setNewScanResults(prev => ({ ...prev, [test.id]: failedReport }))
+        setCompletedTests(prev => new Set([...(prev || new Set()), test.id]))
+      }
+    }
+    
+    // All scans completed - the useEffect hook will handle final completion check
+    // This ensures we check with the latest state values after all updates
+    // The useEffect will trigger when scanResults/newScanResults change
+  }
+  
+  // Old scan code (disabled - only File Upload check runs now)
+  /*
+  const startScanOld = async () => {
+    try {
+      // Set up progress tracking via IPC with enhanced SQL injection test logging
+        const progressHandler = (progress) => {
+          console.log('📊 [SQL-INJECTION-PROGRESS] Received progress:', progress)
+          
+          // Enhanced logging for SQL injection test commands and results
+          if (progress.message) {
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: progress.message,
+              testId: progress.testId || 'sql-injection-test',
+              type: progress.type || 'info'
+            }])
+          }
+          
+          // Update current test for SQL injection test
+          if (progress.testId && progress.testId !== currentTest?.id) {
+            setCurrentTest({ 
+              id: progress.testId, 
+              name: progress.message?.split(':')[0] || 'SQL Injection Test' 
+            })
+          }
+          
+          // Update progress for DNS analysis steps with better timing
+          if (progress.message) {
+            let progressValue = 0
+            if (progress.message.includes('Starting DNS resolution') || progress.message.includes('Executing DNS Analysis')) progressValue = 5
+            else if (progress.message.includes('Querying A records') || progress.message.includes('dig +short')) progressValue = 15
+            else if (progress.message.includes('Querying MX records') || progress.message.includes('dig +noall +answer')) progressValue = 25
+            else if (progress.message.includes('Querying TXT records')) progressValue = 35
+            else if (progress.message.includes('Reverse DNS lookup') || progress.message.includes('dig -x')) progressValue = 45
+            else if (progress.message.includes('dnsrecon') || progress.message.includes('DNS reconnaissance')) progressValue = 60
+            else if (progress.message.includes('dnsenum') || progress.message.includes('DNS enumeration')) progressValue = 75
+            else if (progress.message.includes('Checking SPF')) progressValue = 85
+            else if (progress.message.includes('Checking DMARC')) progressValue = 90
+            else if (progress.message.includes('Testing zone transfer')) progressValue = 95
+            else if (progress.message.includes('completed successfully') || progress.message.includes('DNS Analysis output')) progressValue = 100
+            
+            if (progressValue > 0) {
+              setTestProgress(prev => ({
+                ...prev,
+                [progress.testId || 'dns-resolution']: progressValue
+              }))
+            }
+            
+            // Add specific logging for DNS commands
+            if (progress.message.includes('Executing DNS Analysis')) {
+              setLogs(prev => [...prev, {
+                timestamp: Date.now(),
+                message: 'Executing comprehensive DNS analysis commands...',
+                testId: 'dns-resolution',
+                type: 'info'
+              }])
+            }
+            
+            if (progress.message.includes('DNS Analysis output')) {
+              setLogs(prev => [...prev, {
+                timestamp: Date.now(),
+                message: 'Processing DNS analysis output...',
+                testId: 'dns-resolution',
+                type: 'info'
+              }])
+            }
+          }
+        }
+
+        const completeHandler = (results) => {
+          console.log('[FRONTEND] ===== SQL INJECTION TEST COMPLETED =====')
+          console.log('[FRONTEND] Raw results received:', results)
+          console.log('[FRONTEND] Results type:', typeof results)
+          console.log('[FRONTEND] Results keys:', results ? Object.keys(results) : 'null')
+          console.log('[FRONTEND] Has tests property:', results && results.tests)
+          console.log('[FRONTEND] Tests keys:', results && results.tests ? Object.keys(results.tests) : 'null')
+          
+          // Generic handling: if we received any tests but not the SQL one, still surface them (e.g., CSRF-only run)
+          if (results && results.tests) {
+            const testKeys = Object.keys(results.tests)
+            if (testKeys.length > 0 && !results.tests['sql-injection-test']) {
+              console.log('[FRONTEND] Non-SQL tests received, updating UI with available tests:', testKeys)
+              setScanResults(prev => ({ ...prev, ...results.tests }))
+              setNewScanResults(prev => ({ ...prev, ...results.tests }))
+              setCompletedTests(new Set(testKeys))
+              setCurrentTest(null)
+              const endTime = Date.now()
+            setScanTiming(prev => ({ ...prev, endTime }))
+            setScanEndTime(endTime)
+              setIsScanning(false)
+              setBackgroundScanning(false)
+              return
+            }
+          }
+          
+          // Add completion log
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: 'Kali SQL injection test completed - processing results...',
+            testId: 'sql-injection-test',
+            type: 'info'
+          }])
+          
+          if (results && results.tests && results.tests['sql-injection-test']) {
+            const sqlResult = results.tests['sql-injection-test']
+            
+            console.log('[FRONTEND] SQL injection test result details:', sqlResult)
+            console.log('[FRONTEND] SQL injection test result status:', sqlResult.status)
+            console.log('[FRONTEND] SQL injection test result error:', sqlResult.error)
+            console.log('[FRONTEND] SQL injection test result report:', sqlResult.report)
+            
+            // Add success log
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: `SQL injection test completed successfully - Status: ${sqlResult.status}`,
+              testId: 'sql-injection-test',
+              type: 'success'
+            }])
+            
+            // Check if the scan actually failed - now only check status, not raw output
+            // The backend will process results even when some commands fail
+            if (sqlResult.status === 'failed' || sqlResult.error) {
+              console.log('[FRONTEND] SQL injection test failed - showing error results')
+              
+              // Add failure log
+              setLogs(prev => [...prev, {
+                timestamp: Date.now(),
+                message: 'SQL injection test failed - no meaningful results obtained',
+                testId: 'sql-injection-test',
+                type: 'error'
+              }])
+              
+              // Set failed scan results with actual error details (merge with existing)
+              setScanResults(prev => ({
+                ...prev,
+                'sql-injection-test': {
+                  testId: 'sql-injection-test',
+                  testName: 'SQL Injection Test',
+                  category: 'Web Security',
+                  severity: 'high',
+                  status: 'failed',
+                  timestamp: new Date().toISOString(),
+                  error: sqlResult.error || 'SQL injection test could not be completed',
+                  findings: [
+                    { 
+                      type: 'critical', 
+                      message: 'SQL injection test failed', 
+                      details: 'Unable to complete SQL injection test. This could indicate network connectivity issues, target server problems, or sqlmap tool not installed.' 
+                    }
+                  ],
+                  recommendations: [
+                    'Check network connectivity',
+                    'Verify target URL accessibility',
+                    'Ensure sqlmap tool is installed',
+                    'Check firewall and proxy settings',
+                    'Verify target web server is responding'
+                  ],
+                  report: {
+                    summary: {
+                      totalTests: 0,
+                      vulnerableParameters: 0,
+                      safeParameters: 0,
+                      sqlInjectionTestStatus: 'failed'
+                    },
+                    findings: [],
+                    rawOutput: sqlResult.report?.rawOutput || 'SQL injection test failed - no results obtained'
+                  }
+                }
+              }))
+              
+              setCompletedTests(new Set(['sql-injection-test']))
+              setCurrentTest(null)
+              const endTime = Date.now()
+            setScanTiming(prev => ({ ...prev, endTime }))
+            setScanEndTime(endTime)
+              setIsScanning(false)
+              setBackgroundScanning(false)
+              
+              showError('SQL injection test failed - no meaningful results obtained. Please check your network connection and try again.')
+              return
+            }
+            
+            // Add success completion log
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: 'SQL Injection Test completed successfully!',
+              testId: 'sql-injection-test',
+              type: 'success'
+            }])
+            
+            console.log('[FRONTEND] Processing successful SQL injection test results...')
+            setScanResults(prev => ({ ...prev, ...results.tests }))
+            // Ensure results are also mirrored into newScanResults for uniform access
+            setNewScanResults(prev => ({ ...prev, ...results.tests }))
+            setCompletedTests(new Set([ ...Array.from(completedTests), ...Object.keys(results.tests) ]))
+            
+            const criticalFindings = Object.values(results.tests).reduce((total, test) => {
+              return total + (test.findings?.filter(f => f.type === 'critical').length || 0)
+            }, 0)
+            
+            console.log('[FRONTEND] Critical findings count:', criticalFindings)
+            
+            // Complete the scanning process - STOP HERE as requested
+            console.log('SQL injection test completed - stopping scan as requested')
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: 'SQL injection test completed - stopping scan process',
+              testId: 'sql-injection-test',
+              type: 'info'
+            }])
+            
+            setCurrentTest(null)
+            const endTime = Date.now()
+            setScanTiming(prev => ({ ...prev, endTime }))
+            setScanEndTime(endTime)
+            setIsScanning(false)
+            setBackgroundScanning(false)
+            
+            showSuccess(`SQL injection test completed! Found ${criticalFindings} critical security issues.`)
+          } else {
+            console.log('[FRONTEND] No valid SQL injection test results received')
+            
+            // Add failure log
+            setLogs(prev => [...prev, {
+              timestamp: Date.now(),
+              message: 'SQL injection test failed - no valid results received from Kali',
+              testId: 'sql-injection-test',
+              type: 'error'
+            }])
+            
+            // Set failed scan results (merge with existing)
+            setScanResults(prev => ({
+              ...prev,
+              'sql-injection-test': {
+                testId: 'sql-injection-test',
+                testName: 'SQL Injection Test',
+                category: 'Web Security',
+                severity: 'high',
+                status: 'failed',
+                timestamp: new Date().toISOString(),
+                error: 'No valid SQL injection test results received from Kali scan',
+                findings: [
+                  { 
+                    type: 'critical', 
+                    message: 'SQL injection test failed', 
+                    details: 'No valid SQL injection test results were received from the Kali scan. This could indicate a network issue, target server problem, or sqlmap tool not installed.' 
+                  }
+                ],
+                recommendations: [
+                  'Check network connectivity',
+                  'Verify target URL accessibility',
+                  'Ensure sqlmap tool is installed',
+                  'Check firewall settings',
+                  'Verify Kali tools are properly installed'
+                ],
+                report: {
+                  summary: {
+                    totalTests: 0,
+                    vulnerableParameters: 0,
+                    safeParameters: 0,
+                    sqlInjectionTestStatus: 'failed'
+                  },
+                  findings: [],
+                  rawOutput: 'SQL injection test failed - no valid results received from Kali'
+                }
+              }
+            }))
+            
+            setCompletedTests(new Set(['sql-injection-test']))
+            setCurrentTest(null)
+            const endTime = Date.now()
+            setScanTiming(prev => ({ ...prev, endTime }))
+            setScanEndTime(endTime)
+            setIsScanning(false)
+            setBackgroundScanning(false)
+            
+            showError('SQL injection test failed - no valid results received from Kali scan.')
+          }
+        }
+
+        // Set up event listeners
+        window.cyberGuard.onKaliProgress(progressHandler)
+        window.cyberGuard.onKaliComplete(completeHandler)
+
+        // Add DNS scan command logging
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `Starting DNS analysis for: ${targetUrl}`,
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: '📋 DNS Analysis Commands (Kali Linux):',
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        // Extract domain for display purposes
+        let displayDomain = targetUrl;
+        try {
+          if (targetUrl.includes('://')) {
+            const url = new URL(targetUrl);
+            displayDomain = url.hostname;
+          } else if (targetUrl.includes('/')) {
+            displayDomain = targetUrl.split('/')[0];
+          }
+        } catch (error) {
+          displayDomain = targetUrl;
+        }
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `  • Batch DNS Analysis: dig +short ${displayDomain} A && dig +noall +answer ${displayDomain} A/MX/TXT/NS/SOA && reverse DNS lookup`,
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `  • Reverse DNS: dig -x \$(dig +short ${displayDomain} A) +short`,
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `  • DNS Reconnaissance: timeout 30 dnsrecon -d ${displayDomain}`,
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: `  • DNS Enumeration: timeout 30 dnsenum ${displayDomain}`,
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: 'DNS scan typically takes 1-2 minutes to complete...',
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        // Start the scan via Electron IPC
+        await window.cyberGuard.startKaliScan(targetUrl)
+      } else {
+        // Fallback: Simulate DNS scan with enhanced logging
+        setIsDemoMode(true)
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: 'Electron API not available - running DEMO DNS scan',
+          testId: 'dns-resolution',
+          type: 'warning'
+        }])
+        
+        setLogs(prev => [...prev, {
+          timestamp: Date.now(),
+          message: 'Simulating DNS commands for DEMO purposes only...',
+          testId: 'dns-resolution',
+          type: 'info'
+        }])
+        
+        // Simulate DNS scan completion with demo data and enhanced logging
+        setTimeout(() => {
+          // Add simulated command execution logs
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '📡 Executing: dig A example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '   → example.com. 300 IN A 192.168.1.100\n   → example.com. 300 IN A 192.168.1.101',
+            testId: 'dns-resolution',
+            type: 'success'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '📡 Executing: dig MX example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '   → example.com. 300 IN MX 10 mail.example.com\n   → example.com. 300 IN MX 20 backup.example.com',
+            testId: 'dns-resolution',
+            type: 'success'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '📡 Executing: dig TXT example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '   → example.com. 300 IN TXT "v=spf1 include:_spf.google.com ~all"',
+            testId: 'dns-resolution',
+            type: 'success'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '📡 Executing: dig NS example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '📡 Executing: dig SOA example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: 'Testing zone transfer: dig axfr example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '   → Zone transfer blocked (good security practice)',
+            testId: 'dns-resolution',
+            type: 'success'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '🔒 Checking DNSSEC: dig +dnssec example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: '   → DNSSEC not enabled (security risk)',
+            testId: 'dns-resolution',
+            type: 'warning'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: 'Enumerating subdomains: subfinder -d example.com',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          const demoResults = {
+            'dns-resolution': {
+              testId: 'dns-resolution',
+              testName: 'DNS Resolution & Analysis',
+              category: 'Infrastructure',
+              severity: 'high',
+              status: 'completed',
+              timestamp: new Date().toISOString(),
+              findings: [
+                { type: 'success', message: 'DNS resolution successful', details: 'Domain resolves to valid IP addresses' },
+                { type: 'warning', message: 'Missing SPF record', details: 'Email spoofing protection not configured - attackers can send emails on behalf of your domain' },
+                { type: 'warning', message: 'Missing DMARC record', details: 'Email authentication policy not configured - no protection against email spoofing' },
+                { type: 'info', message: 'DNSSEC not enabled', details: 'DNS responses are not cryptographically signed - vulnerable to DNS cache poisoning' },
+                { type: 'high', message: 'Zone transfer allowed', details: 'DNS zone transfer is not restricted - potential information disclosure' }
+              ],
+              recommendations: [
+                'Configure SPF record to prevent email spoofing',
+                'Implement DMARC policy for email authentication',
+                'Enable DNSSEC for DNS integrity',
+                'Restrict DNS zone transfers',
+                'Monitor DNS changes regularly'
+              ],
+              report: {
+                summary: {
+                  dnssec: false,
+                  zoneTransfer: 'allowed',
+                  spfRecord: false,
+                  dmarcRecord: false,
+                  subdomainsFound: 3,
+                  dnsResolutionStatus: 'successful'
+                },
+                records: {
+                  a: ['192.168.1.100', '192.168.1.101'],
+                  aaaa: ['2001:db8::1'],
+                  ns: ['ns1.example.com', 'ns2.example.com'],
+                  mx: ['mail.example.com (10)', 'backup.example.com (20)'],
+                  txt: ['v=spf1 include:_spf.google.com ~all'],
+                  subdomains: [
+                    { name: 'www.example.com', ip: '192.168.1.100' },
+                    { name: 'mail.example.com', ip: '192.168.1.102' },
+                    { name: 'ftp.example.com', ip: '192.168.1.103' }
+                  ]
+                },
+                rawOutput: 'dig example.com A\n\n; <<>> DiG 9.16.1-Ubuntu <<>> example.com A\n;; global options: +cmd\n;; Got answer:\n;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 12345\n;; flags: qr rd ra; QUERY: 1, ANSWER: 2, AUTHORITY: 0, ADDITIONAL: 1\n\n;; QUESTION SECTION:\n;example.com.\t\t\tIN\tA\n\n;; ANSWER SECTION:\nexample.com.\t\t\t300\tIN\tA\t192.168.1.100\nexample.com.\t\t\t300\tIN\tA\t192.168.1.101\n\n;; ADDITIONAL SECTION:\n\n;; Query time: 45 msec\n;; SERVER: 8.8.8.8#53(8.8.8.8)\n;; WHEN: Mon Jan 01 12:00:00 UTC 2024\n;; MSG SIZE  rcvd: 75'
+              }
+            }
+          }
+          
+        setScanResults(prev => ({ ...prev, ...demoResults }))
+          setCompletedTests(new Set(Object.keys(demoResults)))
+          setCurrentTest(null)
+          setScanTiming(prev => ({ ...prev, endTime: Date.now() }))
+          setIsScanning(false)
+          setBackgroundScanning(false)
+          
+          // Add final completion log
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: 'Demo DNS security analysis completed successfully!',
+            testId: 'dns-resolution',
+            type: 'success'
+          }])
+          
+          setLogs(prev => [...prev, {
+            timestamp: Date.now(),
+            message: 'Analysis Summary: 5 findings detected (2 warnings, 1 high risk, 2 info)',
+            testId: 'dns-resolution',
+            type: 'info'
+          }])
+          
+          showSuccess('DEMO DNS scan completed! This is simulated data only. Use the desktop application for real DNS security analysis.')
+        }, 3000)
+      }
+      
+    } catch (error) {
+      console.error('Scan error:', error)
+      setIsScanning(false)
+      setCurrentTest(null)
+      showError(`Scan failed: ${error.message}`)
+    }
+  }
+  */
+
+  // Stop local scan
+  const stopLocalScan = () => {
+    // Set ref to false immediately so loop can check it
+    scanActiveRef.current = false
+    setIsScanning(false)
+    setBackgroundScanning(false)
+    setCurrentTest(null)
+    
+    // Stop scan in global context if registered
+    if (overviewScanIdRef.current) {
+      stopScan(overviewScanIdRef.current)
+      overviewScanIdRef.current = null
+    }
+    
+    // Clear timeout when scan is stopped
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current)
+      scanTimeoutRef.current = null
+    }
+    
+    // Clear all scan results when stopped
+    setScanResults({})
+    setNewScanResults({})
+    setCompletedTests(new Set())
+    setTestProgress({})
+    setExpandedTests(new Set())
+    setExpandedFindings(new Set())
+    setScanStartTime(null)
+    setScanEndTime(null)
+    setScanTiming({
+      startTime: null,
+      endTime: null,
+      elapsedTime: 0,
+      expectedCompletion: null
+    })
+    
+    setLogs(prev => [...prev, {
+      timestamp: Date.now(),
+      message: '⏹️ Scan stopped by user - all results cleared',
+      testId: 'general',
+      type: 'warning'
+    }])
+    showError('Scan stopped by user')
+  }
+
+  // Toggle test expansion
+  const toggleTestExpansion = (testId) => {
+    setExpandedTests(prev => {
+      const newExpanded = new Set(prev)
+    if (newExpanded.has(testId)) {
+      newExpanded.delete(testId)
+    } else {
+      newExpanded.add(testId)
+    }
+      return newExpanded
+    })
+  }
+
+  // Handler for opening scan detail - handles DNS resolution specially
+  const handleOpenDetail = (testId, result) => {
+    if (testId === 'dns-resolution') {
+      openDnsDetailDialog(result)
+    } else {
+      openScanDetailDialog(testId, result)
     }
   }
 
@@ -826,6 +7784,7 @@ const ComprehensiveSecurityScanner = () => {
   }
 
   return (
+    <div className="space-y-6 w-full max-w-full overflow-x-hidden" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
       {/* Merged Main Section - All sections in one container */}
       <div className="bg-gradient-to-br from-orange-50 via-orange-100 to-amber-50 dark:from-slate-800 dark:via-slate-700 dark:to-slate-600 rounded-2xl shadow-lg border border-orange-200 dark:border-slate-600 p-8 relative overflow-hidden mb-6" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
         {/* Background Pattern */}
@@ -5111,4 +12070,3 @@ const ComprehensiveSecurityScanner = () => {
 }
 
 export default ComprehensiveSecurityScanner;
-
