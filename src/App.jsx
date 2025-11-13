@@ -240,6 +240,30 @@ const AppContent = () => {
     setCurrentToastId(loadingToastId)
     
     try {
+      // TEMPORARY: Hardcoded login check (API integration commented out)
+      // Check if email is "admin" and password is "1234"
+      if (formData.username === 'admin' && formData.password === '1234') {
+        // Dismiss loading toast
+        dismissToast(loadingToastId)
+        
+        // Show success toast
+        showSuccess(`🎉 Welcome back, admin! Login successful.`, {
+          duration: 3000
+        })
+        
+        // Start the WSL credential and tool checking flow
+        await handlePostLoginFlow()
+      } else {
+        // Dismiss loading toast
+        dismissToast(loadingToastId)
+        
+        // Show error toast
+        showError('❌ Authentication failed! Invalid credentials provided.', {
+          duration: 5000
+        })
+      }
+      
+      /* COMMENTED OUT: API Integration (temporarily disabled)
       // Call the API for authentication
       const response = await authApi.login({
         username: formData.username,
@@ -257,6 +281,7 @@ const AppContent = () => {
       
       // Start the WSL credential and tool checking flow
       await handlePostLoginFlow()
+      */
       
     } catch (error) {
       // Dismiss loading toast

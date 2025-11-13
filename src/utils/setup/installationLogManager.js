@@ -20,12 +20,13 @@ class InstallationLogManager {
   getDefaultInstallationPath() {
     const os = require('os');
     const platform = os.platform();
-    const homeDir = os.homedir();
     
     if (platform === 'win32') {
-      // Use AppData\Roaming\Cyberix\installation_process
-      return path.join(homeDir, 'AppData', 'Roaming', 'Cyberix', 'installation_process');
+      // Use C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process
+      const adminPath = 'C:\\Users\\Admin\\AppData\\Roaming\\Cyberix';
+      return path.join(adminPath, 'Cyberix-Logs', 'installation_process');
     } else {
+      const homeDir = os.homedir();
       return path.join(homeDir, '.cyberix', 'installation_process');
     }
   }
@@ -116,9 +117,8 @@ class InstallationLogManager {
       } else if (userPickedPath && currentPathNormalized === defaultPathNormalized) {
         // User is using default path, but we still want to ensure it's in the new structure
         // The new structure is: C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process
-        const os = require('os');
-        const homeDir = os.homedir();
-        const newDefaultPath = path.join(homeDir, 'AppData', 'Roaming', 'Cyberix', 'Cyberix-Logs', 'installation_process');
+        const adminPath = 'C:\\Users\\Admin\\AppData\\Roaming\\Cyberix';
+        const newDefaultPath = path.join(adminPath, 'Cyberix-Logs', 'installation_process');
         const newDefaultLogFile = path.join(newDefaultPath, 'installation-process.log');
         
         // Only write if it's different from current path

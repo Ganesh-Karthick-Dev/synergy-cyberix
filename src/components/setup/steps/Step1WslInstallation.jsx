@@ -78,22 +78,33 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
             addLog(`📤 [OUTPUT] stderr: ${result.stderr.trim()}`, 'warning');
           }
           
-          const output = ((result?.stdout || '') + (result?.stderr || '')).toLowerCase();
-          
-          // Check for WSL indicators
-          if (output.includes('default distribution') || 
-              output.includes('wsl version') || 
-              output.includes('kernel version') ||
-              result?.success) {
-            addLog('✅ [RESULT] WSL is installed (detected via wsl --status output)', 'success');
-            addLog('✅ [STATUS] WSL installation verified successfully', 'success');
-            addLog('➡️ [NEXT] Navigating to next step...', 'info');
-            wslFound = true;
-            setWslInstalled(true);
-            break;
-          } else {
-            addLog(`⚠️ [RESULT] WSL not found in output (attempt ${attempt})`, 'warning');
-          }
+        const output = ((result?.stdout || '') + (result?.stderr || '')).toLowerCase();
+        
+        // Check for "no installed distributions" message
+        const noDistributionsPattern = /windows subsystem for linux has no installed distributions/i;
+        const microsoftStorePattern = /distributions can be installed by visiting the microsoft store/i;
+        
+        if (noDistributionsPattern.test(output) || 
+            (microsoftStorePattern.test(output) && !output.includes('ubuntu'))) {
+          addLog('⚠️ [RESULT] WSL is installed but NO distributions found', 'warning');
+          addLog('📋 [ACTION] Ubuntu installation required', 'info');
+          // WSL is installed but no distributions - don't mark as found yet
+          // Continue to check Ubuntu installation
+          wslFound = true; // WSL exists, but we need to check/install Ubuntu
+          setWslInstalled(true);
+          break;
+        } else if (output.includes('default distribution') || 
+                   output.includes('wsl version') || 
+                   output.includes('kernel version') ||
+                   result?.success) {
+          addLog('✅ [RESULT] WSL is installed (detected via wsl --status output)', 'success');
+          // Don't mark as complete yet - need to check Ubuntu first
+          wslFound = true;
+          setWslInstalled(true);
+          break;
+        } else {
+          addLog(`⚠️ [RESULT] WSL not found in output (attempt ${attempt})`, 'warning');
+        }
         } else {
           addLog(`❌ [ERROR] WSL check API not available`, 'error');
         }
@@ -126,18 +137,29 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
             addLog(`📤 [OUTPUT] stderr: ${result.stderr.trim()}`, 'warning');
           }
           
-          const output = (result?.stdout || '').toLowerCase();
-          
-          if (output.includes('ubuntu')) {
-            addLog('✅ [RESULT] Ubuntu found in WSL distributions', 'success');
-            addLog('✅ [STATUS] WSL and Ubuntu installation verified', 'success');
-            wslFound = true;
-            setWslInstalled(true);
-            setUbuntuInstalled(true);
-          } else {
-            addLog('❌ [RESULT] Ubuntu not found in WSL distributions', 'error');
-            addLog('📋 [ACTION] WSL installation required', 'info');
-          }
+        const output = (result?.stdout || '').toLowerCase();
+        const allOutput = ((result?.stdout || '') + (result?.stderr || '')).toLowerCase();
+        
+        // Check for "no installed distributions" message
+        const noDistributionsPattern = /windows subsystem for linux has no installed distributions/i;
+        const microsoftStorePattern = /distributions can be installed by visiting the microsoft store/i;
+        
+        if (noDistributionsPattern.test(allOutput) || 
+            (microsoftStorePattern.test(allOutput) && !allOutput.includes('ubuntu'))) {
+          addLog('⚠️ [RESULT] WSL is installed but NO distributions found', 'warning');
+          addLog('📋 [ACTION] Ubuntu installation required', 'info');
+          wslFound = true; // WSL exists, but we need to install Ubuntu
+          setWslInstalled(true);
+        } else if (output.includes('ubuntu')) {
+          addLog('✅ [RESULT] Ubuntu found in WSL distributions', 'success');
+          addLog('✅ [STATUS] WSL and Ubuntu installation verified', 'success');
+          wslFound = true;
+          setWslInstalled(true);
+          setUbuntuInstalled(true);
+        } else {
+          addLog('❌ [RESULT] Ubuntu not found in WSL distributions', 'error');
+          addLog('📋 [ACTION] WSL installation required', 'info');
+        }
         } else if (window.cyberGuard?.checkWsl) {
           // Fallback: Just check if WSL exists
           const hasWsl = await window.cyberGuard.checkWsl();
@@ -193,6 +215,20 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
         }
         
         const output = (result?.stdout || '').toLowerCase();
+        const allOutput = ((result?.stdout || '') + (result?.stderr || '')).toLowerCase();
+        
+        // Check for "no installed distributions" message
+        const noDistributionsPattern = /windows subsystem for linux has no installed distributions/i;
+        const microsoftStorePattern = /distributions can be installed by visiting the microsoft store/i;
+        
+        if (noDistributionsPattern.test(allOutput) || 
+            (microsoftStorePattern.test(allOutput) && !allOutput.includes('ubuntu'))) {
+          addLog('❌ [RESULT] Ubuntu not found - no distributions installed', 'error');
+          addLog('📋 [ACTION] System will automatically install Ubuntu...', 'info');
+          addLog('💻 [COMMAND] Installation command: wsl --install -d Ubuntu', 'info');
+          await installUbuntu();
+          return; // Don't complete yet
+        }
         
         if (output.includes('ubuntu')) {
           addLog('✅ [RESULT] Ubuntu is installed', 'success');
@@ -352,6 +388,9 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
     addLog('📦 [INSTALL] Installing Ubuntu distribution...', 'info');
     addLog('💻 [COMMAND] Executing: wsl --install -d Ubuntu', 'info');
 
+    let installationFailed = false;
+    let errorMessage = '';
+
     try {
       if (window.cyberGuard?.installUbuntu) {
         addLog('🔄 [PROCESS] Calling Ubuntu installation API...', 'info');
@@ -359,8 +398,24 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
         
         if (success) {
           addLog('✅ [RESULT] Ubuntu installation command completed', 'success');
+          // Wait a bit and verify installation
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          const hasUbuntu = await window.cyberGuard.verifyUbuntu?.();
+          if (hasUbuntu) {
+            setUbuntuInstalled(true);
+            setProgress(100);
+            setStatus('completed');
+            setMessage('WSL and Ubuntu installation complete');
+            addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
+            onComplete();
+            return;
+          } else {
+            installationFailed = true;
+            errorMessage = 'Ubuntu installation command completed but verification failed';
+          }
         } else {
-          addLog('⚠️ [INFO] Ubuntu installation may continue in background', 'warning');
+          installationFailed = true;
+          errorMessage = 'Ubuntu installation returned false';
         }
       } else {
         // Fallback: Use IPC executeCommand if available
@@ -378,31 +433,80 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
             }
             
             if (result?.success) {
-              addLog('✅ [RESULT] Ubuntu installation completed', 'success');
+              addLog('✅ [RESULT] Ubuntu installation command completed', 'success');
+              // Wait a bit and verify installation
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              const hasUbuntu = await window.cyberGuard.verifyUbuntu?.();
+              if (hasUbuntu) {
+                setUbuntuInstalled(true);
+                setProgress(100);
+                setStatus('completed');
+                setMessage('WSL and Ubuntu installation complete');
+                addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
+                onComplete();
+                return;
+              } else {
+                installationFailed = true;
+                errorMessage = result?.error || 'Ubuntu installation completed but verification failed';
+              }
             } else {
-              addLog(`⚠️ [WARNING] Ubuntu installation may have issues: ${result?.error || 'Unknown error'}`, 'warning');
-              addLog('⏳ [INFO] Ubuntu may still be installing. Please wait...', 'info');
+              installationFailed = true;
+              errorMessage = result?.error || 'Ubuntu installation failed';
             }
           } catch (error) {
-            addLog(`⚠️ [WARNING] Ubuntu installation error: ${error.message}`, 'warning');
-            addLog('⏳ [INFO] Ubuntu may still be installing. Please wait...', 'info');
+            installationFailed = true;
+            errorMessage = error.message || 'Ubuntu installation error';
+            addLog(`❌ [ERROR] Ubuntu installation error: ${errorMessage}`, 'error');
           }
         } else {
-          addLog('⚠️ [WARNING] Command execution API not available', 'warning');
-          addLog('⏳ [INFO] Ubuntu installation may continue in background...', 'info');
+          installationFailed = true;
+          errorMessage = 'Command execution API not available';
         }
       }
 
-      setProgress(100);
-      setStatus('completed');
-      setMessage('WSL and Ubuntu installation complete');
-      addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
-      onComplete();
+      // If installation failed, show manual installation instructions
+      if (installationFailed) {
+        addLog('❌ [ERROR] Ubuntu auto-installation failed', 'error');
+        addLog(`❌ [ERROR] ${errorMessage}`, 'error');
+        addLog('📋 [MANUAL] Please install Ubuntu manually using the following steps:', 'info');
+        addLog('1. Open PowerShell or Command Prompt as Administrator', 'info');
+        addLog('2. Run the following command:', 'info');
+        addLog('   wsl --install -d Ubuntu', 'info');
+        addLog('3. Wait for the installation to complete (this may take several minutes)', 'info');
+        addLog('4. After installation, restart this application', 'info');
+        addLog('5. The system will automatically detect Ubuntu on next launch', 'info');
+        
+        setStatus('error');
+        setMessage('Ubuntu installation failed - Manual installation required');
+        setProgress(80);
+        
+        // Call onError with detailed message
+        const manualInstallMessage = `Ubuntu auto-installation failed: ${errorMessage}\n\nPlease install Ubuntu manually:\n1. Open PowerShell or Command Prompt as Administrator\n2. Run: wsl --install -d Ubuntu\n3. Wait for installation to complete\n4. Restart this application`;
+        onError(manualInstallMessage);
+      } else {
+        // Installation succeeded
+        setProgress(100);
+        setStatus('completed');
+        setMessage('WSL and Ubuntu installation complete');
+        addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
+        onComplete();
+      }
     } catch (error) {
       addLog(`❌ [ERROR] Ubuntu installation error: ${error.message}`, 'error');
+      addLog('📋 [MANUAL] Please install Ubuntu manually using the following steps:', 'info');
+      addLog('1. Open PowerShell or Command Prompt as Administrator', 'info');
+      addLog('2. Run the following command:', 'info');
+      addLog('   wsl --install -d Ubuntu', 'info');
+      addLog('3. Wait for the installation to complete (this may take several minutes)', 'info');
+      addLog('4. After installation, restart this application', 'info');
+      addLog('5. The system will automatically detect Ubuntu on next launch', 'info');
+      
       setStatus('error');
-      setMessage('Ubuntu installation failed');
-      onError(error.message);
+      setMessage('Ubuntu installation failed - Manual installation required');
+      setProgress(80);
+      
+      const manualInstallMessage = `Ubuntu installation failed: ${error.message}\n\nPlease install Ubuntu manually:\n1. Open PowerShell or Command Prompt as Administrator\n2. Run: wsl --install -d Ubuntu\n3. Wait for installation to complete\n4. Restart this application`;
+      onError(manualInstallMessage);
     }
   };
 
@@ -416,6 +520,10 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
         return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
     }
   };
+
+  // Get the latest error log entry for manual installation instructions
+  const errorLogs = logs.filter(log => log.type === 'error' || log.message.includes('[MANUAL]'));
+  const manualInstallLogs = logs.filter(log => log.message.includes('[MANUAL]') || log.message.includes('wsl --install -d Ubuntu'));
 
   return (
     <div className="space-y-4">
@@ -437,6 +545,50 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
         label="Installation Progress"
         status={status === 'completed' ? 'completed' : status === 'error' ? 'error' : 'active'}
       />
+
+      {/* Error Message with Manual Installation Instructions */}
+      {status === 'error' && errorLogs.length > 0 && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-red-900 dark:text-red-200 mb-2">
+                Ubuntu Installation Failed
+              </h4>
+              <p className="text-sm text-red-800 dark:text-red-300 mb-3">
+                Auto-installation failed. Please install Ubuntu manually using the steps below:
+              </p>
+              
+              {/* Manual Installation Steps */}
+              <div className="bg-white dark:bg-gray-800 rounded-md p-3 space-y-2 text-sm">
+                <div className="flex items-start gap-2">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">1.</span>
+                  <span className="text-gray-700 dark:text-gray-300">Open PowerShell or Command Prompt as Administrator</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">2.</span>
+                  <span className="text-gray-700 dark:text-gray-300">Run the following command:</span>
+                </div>
+                <div className="ml-6 bg-gray-900 dark:bg-black rounded p-2 font-mono text-green-400 border border-gray-700">
+                  wsl --install -d Ubuntu
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">3.</span>
+                  <span className="text-gray-700 dark:text-gray-300">Wait for the installation to complete (this may take several minutes)</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">4.</span>
+                  <span className="text-gray-700 dark:text-gray-300">After installation, restart this application</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="font-semibold text-gray-700 dark:text-gray-300">5.</span>
+                  <span className="text-gray-700 dark:text-gray-300">The system will automatically detect Ubuntu on next launch</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -4427,12 +4427,65 @@ ipcMain.handle('notification:getCount', async () => {
   });
 
   // File system handlers (register early, before app.whenReady)
+  // Helper function to get/create Admin Cyberix path
+  function getAdminCyberixPath() {
+    const path = require('path');
+    const fs = require('fs');
+    
+    // Define the Admin path: C:\Users\Admin\AppData\Roaming\Cyberix
+    const adminUsersPath = 'C:\\Users\\Admin';
+    const adminAppDataPath = path.join(adminUsersPath, 'AppData', 'Roaming');
+    const adminCyberixPath = path.join(adminAppDataPath, 'Cyberix');
+    
+    try {
+      // Create C:\Users\Admin if it doesn't exist
+      if (!fs.existsSync(adminUsersPath)) {
+        console.log(`[PATH] Creating Admin folder: ${adminUsersPath}`);
+        logToFile(`[PATH] Creating Admin folder: ${adminUsersPath}`);
+        fs.mkdirSync(adminUsersPath, { recursive: true });
+      }
+      
+      // Create C:\Users\Admin\AppData if it doesn't exist
+      if (!fs.existsSync(adminAppDataPath)) {
+        console.log(`[PATH] Creating AppData folder: ${adminAppDataPath}`);
+        logToFile(`[PATH] Creating AppData folder: ${adminAppDataPath}`);
+        fs.mkdirSync(adminAppDataPath, { recursive: true });
+      }
+      
+      // Create C:\Users\Admin\AppData\Roaming if it doesn't exist
+      const roamingPath = path.join(adminAppDataPath, 'Roaming');
+      if (!fs.existsSync(roamingPath)) {
+        console.log(`[PATH] Creating Roaming folder: ${roamingPath}`);
+        logToFile(`[PATH] Creating Roaming folder: ${roamingPath}`);
+        fs.mkdirSync(roamingPath, { recursive: true });
+      }
+      
+      // Create C:\Users\Admin\AppData\Roaming\Cyberix if it doesn't exist
+      if (!fs.existsSync(adminCyberixPath)) {
+        console.log(`[PATH] Creating Cyberix folder: ${adminCyberixPath}`);
+        logToFile(`[PATH] Creating Cyberix folder: ${adminCyberixPath}`);
+        fs.mkdirSync(adminCyberixPath, { recursive: true });
+      }
+      
+      console.log(`[PATH] Using Admin Cyberix path: ${adminCyberixPath}`);
+      logToFile(`[PATH] Using Admin Cyberix path: ${adminCyberixPath}`);
+      return adminCyberixPath;
+    } catch (error) {
+      console.error(`[PATH] Error creating Admin path: ${error.message}`);
+      logToFile(`[PATH] Error creating Admin path: ${error.message}`);
+      // Fallback to app.getPath('userData') if Admin path creation fails
+      return app.getPath('userData');
+    }
+  }
+
   ipcMain.handle('fs:getUserDataPath', async () => {
     try {
-      return app.getPath('userData');
+      return getAdminCyberixPath();
     } catch (error) {
       console.error('Error getting userData path:', error);
-      return null;
+      logToFile(`[PATH] Error getting userData path: ${error.message}`);
+      // Fallback to app.getPath('userData')
+      return app.getPath('userData');
     }
   });
 
@@ -5003,8 +5056,18 @@ ipcMain.handle('notification:getCount', async () => {
   console.log('[MALDEF] Handler should be registered now. Check console for errors above.')
 
 app.whenReady().then(async () => {
-    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
-    logToFile('📱 [MAIN] app.whenReady() - Starting application...');
+  // Initialize Admin Cyberix path on startup
+  try {
+    getAdminCyberixPath();
+    console.log('[MAIN] Admin Cyberix path initialized');
+    logToFile('[MAIN] Admin Cyberix path initialized');
+  } catch (error) {
+    console.error('[MAIN] Failed to initialize Admin path:', error);
+    logToFile(`[MAIN] Failed to initialize Admin path: ${error.message}`);
+  }
+  
+  console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+  logToFile('📱 [MAIN] app.whenReady() - Starting application...');
   const win = await createMainWindow();
   mainWindowInstance = win;
   logToFile('📱 [MAIN] Main window created successfully');
@@ -5278,14 +5341,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('setup:checkInstallationLogFile', async (event) => {
     try {
       const installationLogManager = require(path.join(__dirname, '..', 'utils', 'setup', 'installationLogManager'));
-      const userDataPath = app.getPath('userData');
+      const adminPath = getAdminCyberixPath(); // Use the new helper function
       
       let exists = false;
       let foundPath = null;
       
       // PRIORITY 1: Check in user selected path FIRST (if user picked a custom path)
       try {
-        const referenceFile = path.join(userDataPath, 'step-system-path.json');
+        const referenceFile = path.join(adminPath, 'step-system-path.json');
         
         if (fs.existsSync(referenceFile)) {
           const data = JSON.parse(fs.readFileSync(referenceFile, 'utf8'));
@@ -5321,8 +5384,8 @@ app.whenReady().then(async () => {
         logToFile(`[SETUP] Error checking user selected path: ${err.message}`);
       }
       
-      // PRIORITY 2: Check in NEW default path (backup): C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process\installation-process.log
-      const newDefaultPath = path.join(userDataPath, 'Cyberix-Logs', 'installation_process');
+      // PRIORITY 2: Check in Admin backup path: C:\Users\Admin\AppData\Roaming\Cyberix\Cyberix-Logs\installation_process\installation-process.log
+      const newDefaultPath = path.join(adminPath, 'Cyberix-Logs', 'installation_process');
       const newDefaultLogFile = path.join(newDefaultPath, 'installation-process.log');
       
       if (fs.existsSync(newDefaultLogFile)) {
@@ -5377,7 +5440,7 @@ app.whenReady().then(async () => {
   // Check if any files exist in C:\Users\Admin\AppData\Roaming\Cyberix
   ipcMain.handle('setup:checkCyberixFolderExists', async (event) => {
     try {
-      const userDataPath = app.getPath('userData');
+      const userDataPath = getAdminCyberixPath(); // Use the new helper function
       logToFile(`[SETUP] Checking if Cyberix folder exists: ${userDataPath}`);
       
       if (!fs.existsSync(userDataPath)) {
@@ -5400,12 +5463,12 @@ app.whenReady().then(async () => {
   // Sync files to both default and user-picked locations
   ipcMain.handle('setup:syncFilesToBothLocations', async (event, userPickedPath) => {
     try {
-      const userDataPath = app.getPath('userData');
-      const defaultPath = path.join(userDataPath, 'Cyberix-Logs', 'installation_process');
+      const adminPath = getAdminCyberixPath(); // Use the new helper function
+      const defaultPath = path.join(adminPath, 'Cyberix-Logs', 'installation_process');
       const defaultLogFile = path.join(defaultPath, 'installation-process.log');
       
       logToFile(`[SETUP] Syncing files to both locations`);
-      logToFile(`[SETUP] Default path: ${defaultPath}`);
+      logToFile(`[SETUP] Admin backup path: ${defaultPath}`);
       logToFile(`[SETUP] User picked path: ${userPickedPath || 'none'}`);
       
       // PRIORITY 1: Get installation log content from user-picked path if it exists
@@ -5436,7 +5499,7 @@ app.whenReady().then(async () => {
         }
       }
       
-      // PRIORITY 2: Write to backup location (NEW default path)
+      // PRIORITY 2: Write to backup location (Admin path)
       // Ensure default path exists
       if (!fs.existsSync(defaultPath)) {
         fs.mkdirSync(defaultPath, { recursive: true });
@@ -5452,7 +5515,7 @@ app.whenReady().then(async () => {
       }
       
       // PRIORITY 1: If user picked a different path, ensure it's synced there too
-      if (userPickedPath && userPickedPath !== userDataPath) {
+      if (userPickedPath && userPickedPath !== adminPath) {
         const userLogPath = path.join(userPickedPath, 'Cyberix-Logs', 'installation_process', 'installation-process.log');
         const userLogDir = path.dirname(userLogPath);
         

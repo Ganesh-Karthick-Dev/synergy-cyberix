@@ -458,6 +458,95 @@ async function verifyUbuntuInstalled() {
         const allOutput = (output + errorOutput);
         const allOutputLower = allOutput.toLowerCase();
         
+        // Check for "no installed distributions" message
+        const noDistributionsPattern = /windows subsystem for linux has no installed distributions/i;
+        const microsoftStorePattern = /distributions can be installed by visiting the microsoft store/i;
+        
+        if (noDistributionsPattern.test(allOutput) || 
+            (microsoftStorePattern.test(allOutput) && !allOutputLower.includes('ubuntu'))) {
+          console.log('[WSL] ⚠️ No WSL distributions found. Auto-installing Ubuntu...');
+          console.log('[WSL] Detected message: "Windows Subsystem for Linux has no installed distributions"');
+          
+          // Auto-install Ubuntu
+          const installProc = spawn('wsl', ['--install', '-d', 'Ubuntu'], {
+            shell: true,
+            stdio: ['ignore', 'pipe', 'pipe']
+          });
+          
+          let installOutput = '';
+          installProc.stdout.on('data', (d) => {
+            installOutput += d.toString();
+            console.log(`[WSL] Install stdout: ${d.toString().trim()}`);
+          });
+          
+          installProc.stderr.on('data', (d) => {
+            console.log(`[WSL] Install stderr: ${d.toString().trim()}`);
+          });
+          
+          installProc.on('close', (installCode) => {
+            console.log(`[WSL] Ubuntu installation command completed with code: ${installCode}`);
+            console.log('[WSL] Note: Installation may continue in background. Will verify after delay.');
+            
+            // Wait a bit and then verify again (max 3 attempts)
+            let recheckAttempts = 0;
+            const maxRecheckAttempts = 3;
+            
+            const recheckUbuntu = () => {
+              recheckAttempts++;
+              console.log(`[WSL] Re-verifying Ubuntu installation (attempt ${recheckAttempts}/${maxRecheckAttempts})...`);
+              
+              // Create a new verification process
+              const verifyProc = spawn('wsl', ['-l', '-v'], {
+                shell: true,
+                stdio: ['ignore', 'pipe', 'pipe'],
+                timeout: 10000
+              });
+              
+              let verifyOutput = '';
+              verifyProc.stdout.on('data', (d) => {
+                verifyOutput += d.toString();
+              });
+              
+              verifyProc.on('close', (verifyCode) => {
+                const verifyOutputLower = verifyOutput.toLowerCase();
+                if (/ubuntu/i.test(verifyOutput)) {
+                  console.log('[WSL] ✅ Ubuntu found after auto-install!');
+                  resolve(true);
+                } else if (recheckAttempts < maxRecheckAttempts) {
+                  // Wait longer before next check
+                  setTimeout(recheckUbuntu, 5000);
+                } else {
+                  console.log('[WSL] ⚠️ Ubuntu not found after auto-install attempts. Installation may still be in progress.');
+                  resolve(false); // Return false but installation is in progress
+                }
+              });
+            };
+            
+            // Start rechecking after initial delay
+            setTimeout(recheckUbuntu, 5000);
+          });
+          
+          installProc.on('error', (err) => {
+            console.error('[WSL] Error auto-installing Ubuntu:', err);
+            // Try PowerShell as fallback
+            const psProc = spawn('powershell', [
+              '-NoProfile',
+              '-ExecutionPolicy', 'Bypass',
+              '-Command', 'wsl --install -d Ubuntu'
+            ], { shell: true });
+            
+            psProc.on('close', () => {
+              console.log('[WSL] PowerShell installation command completed');
+              // Wait and resolve false (installation started but not verified yet)
+              setTimeout(() => {
+                resolve(false);
+              }, 3000);
+            });
+          });
+          
+          return; // Don't resolve yet, wait for re-verification
+        }
+        
         // Check for Ubuntu in various formats
         // Ubuntu might appear as: "Ubuntu", "Ubuntu-22.04", "Ubuntu-20.04", etc.
         const ubuntuPatterns = [
