@@ -54,6 +54,17 @@ export function useScanRestrictions() {
         await checkScanLimit(selectedProject.id)
       }
       
+      // Dispatch event to notify other components that a scan was created
+      window.dispatchEvent(new CustomEvent('scan:created', { 
+        detail: { 
+          report,
+          projectId: selectedProject.id,
+          project: selectedProject
+        } 
+      }))
+      
+      console.log('✅ [ScanRestrictions] Scan report created and event dispatched:', report.id)
+      
       return report
     } catch (error) {
       console.error('Error creating scan report:', error)

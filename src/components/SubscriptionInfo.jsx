@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Crown, AlertCircle, RefreshCw } from 'lucide-react'
+import { Crown, AlertCircle, RefreshCw, Calendar, Clock, CheckCircle } from 'lucide-react'
 import subscriptionService from '../services/subscriptionService'
 
 function SubscriptionInfo() {
@@ -20,15 +20,23 @@ function SubscriptionInfo() {
       fetchPlanInfo(true) // Force refresh
     }
     
+    // Listen for scan creation events
+    const handleScanChange = () => {
+      console.log('📊 [SubscriptionInfo] Scan created, refreshing plan info...')
+      fetchPlanInfo(true) // Force refresh
+    }
+    
     window.addEventListener('project:created', handleProjectChange)
     window.addEventListener('project:updated', handleProjectChange)
     window.addEventListener('project:deleted', handleProjectChange)
+    window.addEventListener('scan:created', handleScanChange)
     
     return () => {
       clearInterval(interval)
       window.removeEventListener('project:created', handleProjectChange)
       window.removeEventListener('project:updated', handleProjectChange)
       window.removeEventListener('project:deleted', handleProjectChange)
+      window.removeEventListener('scan:created', handleScanChange)
     }
   }, [])
 
@@ -107,11 +115,35 @@ function SubscriptionInfo() {
     return null
   }
 
-  const { planName, limits, usage } = planInfo
+  const { planName, limits, usage, validity } = planInfo
   const projectsRemaining = limits.maxProjects === -1 
     ? 'Unlimited' 
     : Math.max(0, limits.maxProjects - usage.projects)
   const isProjectsLimitReached = limits.maxProjects !== -1 && usage.projects >= limits.maxProjects
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A'
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      })
+    } catch {
+      return dateString
+    }
+  }
+
+  const formatBillingCycle = (cycle) => {
+    if (!cycle) return null
+    const cycleMap = {
+      'MONTHLY': 'Monthly',
+      'YEARLY': 'Yearly',
+      'LIFETIME': 'Lifetime'
+    }
+    return cycleMap[cycle] || cycle
+  }
 
   return (
     <div className="relative">
@@ -239,6 +271,85 @@ function SubscriptionInfo() {
                   </span>
                 </div>
               </div>
+
+              {/* Validity Information */}
+              {validity && (
+                <div className="pt-3 border-t border-gray-200 dark:border-slate-700">
+                  <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+                    Subscription Validity
+                  </h4>
+                  <div className="space-y-2">
+                    {validity.billingCycle && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                          Billing Cycle:
+                        </span>
+                        <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                          {formatBillingCycle(validity.billingCycle)}
+                        </span>
+                      </div>
+                    )}
+                    {validity.startDate && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                          Started:
+                        </span>
+                        <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                          {formatDate(validity.startDate)}
+                        </span>
+                      </div>
+                    )}
+                    {validity.isLifetime ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                          <CheckCircle className="w-3.5 h-3.5 mr-1.5 text-green-500" />
+                          Status:
+                        </span>
+                        <span className="text-xs font-medium text-green-600 dark:text-green-400">
+                          Lifetime Plan
+                        </span>
+                      </div>
+                    ) : validity.endDate ? (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                            <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                            Valid Until:
+                          </span>
+                          <span className="text-xs font-medium text-gray-900 dark:text-gray-100">
+                            {formatDate(validity.endDate)}
+                          </span>
+                        </div>
+                        {validity.daysRemaining !== null && (
+                          <div className={`flex items-center justify-between ${
+                            validity.daysRemaining <= 7 && validity.daysRemaining > 0
+                              ? 'text-yellow-600 dark:text-yellow-400'
+                              : validity.daysRemaining <= 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : ''
+                          }`}>
+                            <span className="text-xs flex items-center">
+                              <Clock className="w-3.5 h-3.5 mr-1.5" />
+                              Days Remaining:
+                            </span>
+                            <span className={`text-xs font-medium ${
+                              validity.daysRemaining <= 7 && validity.daysRemaining > 0
+                                ? 'text-yellow-600 dark:text-yellow-400'
+                                : validity.daysRemaining <= 0
+                                ? 'text-red-600 dark:text-red-400'
+                                : ''
+                            }`}>
+                              {validity.daysRemaining} day{validity.daysRemaining !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
 
               {/* Upgrade CTA for FREE/PRO */}
               {planName !== 'PRO_PLUS' && (
