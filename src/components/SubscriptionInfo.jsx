@@ -13,7 +13,23 @@ function SubscriptionInfo() {
     
     // Refresh every 30 seconds
     const interval = setInterval(fetchPlanInfo, 30000)
-    return () => clearInterval(interval)
+    
+    // Listen for project creation/update events
+    const handleProjectChange = () => {
+      console.log('📊 [SubscriptionInfo] Project changed, refreshing plan info...')
+      fetchPlanInfo(true) // Force refresh
+    }
+    
+    window.addEventListener('project:created', handleProjectChange)
+    window.addEventListener('project:updated', handleProjectChange)
+    window.addEventListener('project:deleted', handleProjectChange)
+    
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('project:created', handleProjectChange)
+      window.removeEventListener('project:updated', handleProjectChange)
+      window.removeEventListener('project:deleted', handleProjectChange)
+    }
   }, [])
 
   const fetchPlanInfo = async (forceRefresh = false) => {
@@ -160,12 +176,15 @@ function SubscriptionInfo() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Projects
+                    Projects (Sites/URLs)
                   </span>
                   <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                     {usage.projects} / {formatLimit(limits.maxProjects)}
                   </span>
                 </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Each website/URL counts as 1 project
+                </p>
                 <div className="w-full bg-gray-200 dark:bg-slate-700 rounded-full h-2">
                   <div
                     className={`h-2 rounded-full transition-all ${

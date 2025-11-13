@@ -63,6 +63,11 @@ function ProjectSelector({ onSelect, onCancel, required = true }) {
       await fetchProjects()
       await checkCanCreate()
       
+      // Notify other components that a project was created
+      window.dispatchEvent(new CustomEvent('project:created', { 
+        detail: { project } 
+      }))
+      
       // Reset form
       setNewProject({ name: '', description: '', target: '' })
       setShowCreateForm(false)
