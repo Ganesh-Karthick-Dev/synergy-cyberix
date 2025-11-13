@@ -17,9 +17,6 @@ import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPassw
 import { ensureReposInstalled } from './utils/kaliRepoInstaller'
 import authService from './utils/authService'
 import logo from './assets/webp/Cybersecurity research-02.webp'
-import { ensureReposInstalled } from './utils/kaliRepoInstaller'
-import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
-import { hasSecurePassword, getSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 
 const AppContent = () => {
   const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
@@ -134,15 +131,15 @@ const AppContent = () => {
     }
   }
 
-  const handlePostLoginFlow = async () => {
+  const handlePostLoginFlowDuplicate = async () => {
     try {
-      console.log('🚀 [APP] Starting post-login flow...')
+      console.log('🚀 [APP] Starting post-login flow (duplicate)...')
       setIsCheckingCredentials(true)
-      
+
       // Step 1: Check if WSL is installed
       console.log('🔍 [APP] Checking if WSL is installed...')
       setWslInstallationStatus('checking')
-      
+
       let wslInstalled = false
       if (window.cyberGuard && window.cyberGuard.checkWsl) {
         try {
@@ -152,14 +149,14 @@ const AppContent = () => {
           console.error('❌ [APP] Error checking WSL:', error)
         }
       }
-      
+
       // Step 2: If WSL is not installed, install it
       if (!wslInstalled) {
         console.log('❌ [APP] WSL is not installed. Starting installation...')
         setWslInstallationStatus('installing')
-        
+
         const installToast = showLoading('Installing WSL... This may take a few minutes and may require administrator privileges.')
-        
+
         if (window.cyberGuard && window.cyberGuard.installWslDirect) {
           try {
             // Listen for installation progress
@@ -168,16 +165,16 @@ const AppContent = () => {
                 console.log('📢 [APP] WSL install progress:', message)
               })
             }
-            
+
             const installResult = await window.cyberGuard.installWslDirect()
             dismissToast(installToast)
-            
+
             console.log('📋 [APP] WSL installation result:', installResult)
-            
+
             if (installResult && installResult.success) {
               console.log('✅ [APP] WSL installation initiated:', installResult.message)
               showSuccess(installResult.message || 'WSL installation started. You may need to restart your computer.')
-              
+
               // If message indicates restart needed, don't check again
               if (installResult.message && installResult.message.toLowerCase().includes('restart')) {
                 console.log('⚠️ [APP] WSL installation requires a restart')
@@ -185,11 +182,11 @@ const AppContent = () => {
                 setIsCheckingCredentials(false)
                 return
               }
-              
+
               // Wait a bit and check again
               await new Promise(resolve => setTimeout(resolve, 3000))
               wslInstalled = await window.cyberGuard.checkWsl()
-              
+
               if (wslInstalled) {
                 console.log('✅ [APP] WSL is now installed')
                 setWslInstallationStatus('installed')
@@ -201,7 +198,7 @@ const AppContent = () => {
               }
             } else {
               console.error('❌ [APP] WSL installation failed:', installResult?.error)
-              
+
               // Provide helpful error message with manual installation instructions
               const errorMsg = installResult?.error || 'Failed to install WSL'
               showError(`${errorMsg}\n\nPlease install WSL manually:\n1. Open PowerShell as Administrator\n2. Run: wsl --install\n3. Restart your computer\n4. Log in again`)
@@ -226,7 +223,7 @@ const AppContent = () => {
         console.log('✅ [APP] WSL is installed')
         setWslInstallationStatus('installed')
       }
-      
+
       // Step 3: Check and install Kali Linux if missing
       console.log('🔍 [APP] Checking if Kali Linux is installed...')
       let kaliInstalled = false
@@ -238,20 +235,20 @@ const AppContent = () => {
           console.error('❌ [APP] Error checking Kali Linux:', error)
         }
       }
-      
+
       // If Kali Linux is not installed, install it automatically
       if (!kaliInstalled && wslInstalled) {
         console.log('❌ [APP] Kali Linux is not installed. Starting automatic installation...')
-        
+
         const kaliInstallToast = showLoading('Installing Kali Linux... This may take several minutes as it downloads ~1-2GB.')
-        
+
         if (window.cyberGuard && window.cyberGuard.installKali) {
           try {
             // Listen for installation progress with percentage
             if (window.cyberGuard.onKaliInstallProgress) {
               window.cyberGuard.onKaliInstallProgress((progressData) => {
                 console.log('📢 [APP] Kali install progress:', progressData)
-                
+
                 // progressData can be either a string (old format) or object (new format)
                 if (typeof progressData === 'string') {
                   updateToast(kaliInstallToast, { message: progressData || 'Installing Kali Linux...' })
@@ -261,13 +258,13 @@ const AppContent = () => {
                   const message = progressData.message || 'Installing Kali Linux...'
                   const stage = progressData.stage || 'installing'
                   const elapsed = progressData.elapsed || 0
-                  
+
                   const formattedMessage = `${message} (${percentage}%)`
-                  const fullMessage = elapsed > 0 
+                  const fullMessage = elapsed > 0
                     ? `${formattedMessage} - ${Math.floor(elapsed / 60)}m ${elapsed % 60}s elapsed`
                     : formattedMessage
-                  
-                  updateToast(kaliInstallToast, { 
+
+                  updateToast(kaliInstallToast, {
                     message: fullMessage,
                     percentage: percentage,
                     stage: stage
@@ -275,20 +272,20 @@ const AppContent = () => {
                 }
               })
             }
-            
+
             const kaliInstallResult = await window.cyberGuard.installKali()
             dismissToast(kaliInstallToast)
-            
+
             console.log('📋 [APP] Kali Linux installation result:', kaliInstallResult)
-            
+
             if (kaliInstallResult) {
               console.log('✅ [APP] Kali Linux installation initiated')
               showSuccess('Kali Linux installation started. This may take several minutes. You can continue using the application.')
-              
+
               // Wait a bit and check again
               await new Promise(resolve => setTimeout(resolve, 5000))
               kaliInstalled = await window.cyberGuard.checkKali()
-              
+
               if (kaliInstalled) {
                 console.log('✅ [APP] Kali Linux is now installed')
               } else {
@@ -312,14 +309,14 @@ const AppContent = () => {
       } else if (!wslInstalled) {
         console.log('⚠️ [APP] WSL is not installed, skipping Kali Linux installation')
       }
-      
+
       // Step 4: Check if we have stored WSL credentials
       const storedCredentials = getWslCredentials()
       const hasStoredPassword = hasSecurePassword()
-      
+
       if (storedCredentials && storedCredentials.username && storedCredentials.password) {
         console.log('🔐 [APP] Found stored WSL credentials, validating...')
-        
+
         // Validate the stored credentials
         if (window.cyberGuard && window.cyberGuard.validateWslCredentials) {
           try {
@@ -327,7 +324,7 @@ const AppContent = () => {
               storedCredentials.username,
               storedCredentials.password
             )
-            
+
             if (isValid && isValid.success) {
               console.log('✅ [APP] Stored credentials are valid')
               // Continue with existing flow
@@ -362,10 +359,10 @@ const AppContent = () => {
         }
       } else if (hasStoredPassword) {
         console.log('🔐 [APP] Found stored WSL password, validating...')
-        
+
         // Validate the stored password
         const isValid = await validateStoredPassword()
-        
+
         if (isValid) {
           console.log('✅ [APP] Stored password is valid, checking tools...')
           // Also ensure Kali repos are prepared (supports future multiple URLs)
@@ -384,12 +381,12 @@ const AppContent = () => {
           } catch (e) {
             console.warn('Repo setup skipped/failed:', e?.message)
           }
-          
+
           // Check which tools are missing
           const password = getSecurePassword()
           if (window.cyberGuard && window.cyberGuard.checkRequiredToolsOnly) {
             console.log('🔧 [APP] Calling checkRequiredToolsOnly with password:', password ? 'EXISTS' : 'NULL')
-            
+
             // Add timeout to prevent hanging
             const toolCheckPromise = window.cyberGuard.checkRequiredToolsOnly(password)
             const timeoutPromise = new Promise((resolve) => {
@@ -398,23 +395,23 @@ const AppContent = () => {
                 resolve({ success: false, timeout: true })
               }, 30000) // 30 second timeout
             })
-            
+
             const toolCheck = await Promise.race([toolCheckPromise, timeoutPromise])
-            
+
             console.log('🔧 [APP] ===== TOOL CHECK RESULT =====')
             console.log('🔧 [APP] Tool check result:', toolCheck)
             console.log('🔧 [APP] Tool check success:', toolCheck?.success)
             console.log('🔧 [APP] Tool check missingTools:', toolCheck?.missingTools)
             console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
             console.log('🔧 [APP] ===== END TOOL CHECK RESULT =====')
-            
+
             // Check tgpt in background (non-blocking)
             if (password && window.cyberGuard && window.cyberGuard.checkAndInstallTgpt) {
               window.cyberGuard.checkAndInstallTgpt(password).catch(err => {
                 console.log('⚠️ [APP] tgpt check/install failed (non-blocking):', err)
               })
             }
-            
+
             if (toolCheck && toolCheck.success) {
               console.log('✅ [APP] All tools are ready!')
               // Navigate directly to dashboard
