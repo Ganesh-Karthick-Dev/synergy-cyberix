@@ -12,6 +12,9 @@ import setupStateManager from './utils/setupStateManager'
 import SimpleWslPasswordDialog from './components/SimpleWslPasswordDialog';
 import WslUserCreationDialog from './components/WslUserCreationDialog';
 import logo from './assets/webp/Cybersecurity research-02.webp'
+import { ensureReposInstalled } from './utils/kaliRepoInstaller'
+import { getWslCredentials, storeWslCredentialsComplete } from './utils/wslPasswordManager'
+import { hasSecurePassword, getSecurePassword, validateStoredPassword } from './utils/securePasswordStorage'
 
 const AppContent = () => {
   const { showError, showSuccess, showLoading, dismissToast, updateToast } = useToast()
@@ -27,6 +30,10 @@ const AppContent = () => {
   const [checkingSetup, setCheckingSetup] = useState(true)
   const [showSetupFlow, setShowSetupFlow] = useState(false)
   const [isCheckingCredentials, setIsCheckingCredentials] = useState(false)
+  const [showWslPasswordDialog, setShowWslPasswordDialog] = useState(false)
+  const [showWslUserCreationDialog, setShowWslUserCreationDialog] = useState(false)
+  const [wslInstallationStatus, setWslInstallationStatus] = useState(null)
+  const [installPath, setInstallPath] = useState(null)
 
   // Check setup completion status on app load
   useEffect(() => {

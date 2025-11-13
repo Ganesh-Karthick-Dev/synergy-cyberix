@@ -1086,37 +1086,37 @@ function PhishingDetection() {
             </div>
             <div className="p-6 space-y-6">
               <div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3">How It Works</h3>
-                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 space-y-3">
-                  <p className="text-gray-700 dark:text-gray-300">
+                <h3 className="text-xl font-semibold text-orange-900 dark:text-orange-100 mb-3">How It Works</h3>
+                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 space-y-3 border border-orange-200 dark:border-orange-800">
+                  <p className="text-orange-800 dark:text-orange-200">
                     This system uses <strong>dnstwist</strong>, an advanced domain name permutation engine that generates 
                     typosquatting variations of a target domain to identify potential phishing threats.
                   </p>
                   <div className="grid md:grid-cols-2 gap-4 mt-4">
-                    <div className="bg-white dark:bg-slate-700 rounded-lg p-3">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">1. Domain Fuzzing</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-orange-200 dark:border-orange-700">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">1. Domain Fuzzing</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Generates domain variations using multiple algorithms: addition, bitsquatting, dictionary, 
                         homoglyph, transposition, and subdomain techniques.
                       </p>
                     </div>
-                    <div className="bg-white dark:bg-slate-700 rounded-lg p-3">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">2. DNS Verification</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-orange-200 dark:border-orange-700">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">2. DNS Verification</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Checks which variations are actually registered and have active DNS records, filtering 
                         out unregistered domains.
                       </p>
                     </div>
-                    <div className="bg-white dark:bg-slate-700 rounded-lg p-3">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">3. Visual Analysis</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-orange-200 dark:border-orange-700">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">3. Visual Analysis</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Captures screenshots of suspicious domains and uses perceptual hashing (phash) to 
                         compare visual similarity with the original domain.
                       </p>
                     </div>
-                    <div className="bg-white dark:bg-slate-700 rounded-lg p-3">
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">4. Content Analysis</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-orange-200 dark:border-orange-700">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">4. Content Analysis</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Uses fuzzy hashing (LSH with ssdeep) to compare HTML content similarity and detect 
                         potential content copying or phishing attempts.
                       </p>
@@ -1126,61 +1126,61 @@ function PhishingDetection() {
               </div>
 
               <div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3">Command Used</h3>
-                <div className="bg-gray-900 rounded-lg p-4 font-mono text-sm text-green-400 overflow-x-auto">
+                <h3 className="text-xl font-semibold text-orange-900 dark:text-orange-100 mb-3">Command Used</h3>
+                <div className="bg-slate-900 rounded-lg p-4 font-mono text-sm text-orange-400 overflow-x-auto border border-orange-200 dark:border-orange-800">
                   <code>
                     dnstwist --fuzzers "*original,addition,bitsquatting,dictionary,homoglyph,transposition,subdomain" --registered --geoip --phash --lsh ssdeep --screenshots /tmp/dnstwist_screenshots --format json webnox.in
                   </code>
                 </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                <p className="text-sm text-orange-800 dark:text-orange-200 mt-2">
                   This command runs through WSL (Windows Subsystem for Linux) and uses the comprehensive Python wrapper 
                   to execute dnstwist with all advanced features enabled.
                 </p>
               </div>
 
               <div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3">Detection Features</h3>
+                <h3 className="text-xl font-semibold text-orange-900 dark:text-orange-100 mb-3">Detection Features</h3>
                 <div className="space-y-3">
-                  <div className="flex items-start space-x-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <svg className="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <svg className="w-5 h-5 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100">Domain Typosquatting</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100">Domain Typosquatting</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Identifies domains that closely resemble legitimate ones (e.g., g00gle.com, googIe.com)
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
                     <svg className="w-5 h-5 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                     <div>
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100">Visual Similarity (phash)</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100">Visual Similarity (phash)</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Compares screenshots to detect visual spoofing attempts
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start space-x-3 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
-                    <svg className="w-5 h-5 text-purple-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <svg className="w-5 h-5 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     <div>
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100">Content Similarity (ssdeep)</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100">Content Similarity (ssdeep)</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Analyzes HTML content to detect copied or similar pages
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+                  <div className="flex items-start space-x-3 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
                     <svg className="w-5 h-5 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <h4 className="font-semibold text-gray-900 dark:text-gray-100">Geolocation & WHOIS</h4>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <h4 className="font-semibold text-orange-900 dark:text-orange-100">Geolocation & WHOIS</h4>
+                      <p className="text-sm text-orange-800 dark:text-orange-200">
                         Provides location and registration information for suspicious domains
                       </p>
                     </div>
@@ -1189,8 +1189,8 @@ function PhishingDetection() {
               </div>
 
               <div>
-                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3">Understanding Results</h3>
-                <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+                <h3 className="text-xl font-semibold text-orange-900 dark:text-orange-100 mb-3">Understanding Results</h3>
+                <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800 space-y-2 text-sm text-orange-800 dark:text-orange-200">
                   <p><strong>Threat Score:</strong> 0-100 rating indicating overall phishing risk</p>
                   <p><strong>Active Domains:</strong> Suspicious domains that are currently registered and accessible</p>
                   <p><strong>Visual Matches:</strong> Domains with high screenshot similarity scores</p>
@@ -2006,7 +2006,7 @@ function PhishingDetection() {
       )}
 
       {/* Missing dnstwist helper */}
-      {!isScanning && !scanResults && dnstwistInstall.installing === false && dnstwistInstall.done === false && (
+      {/* {!isScanning && !scanResults && dnstwistInstall.installing === false && dnstwistInstall.done === false && (
         <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl p-4">
           <div className="flex items-start justify-between">
             <div>
@@ -2029,7 +2029,7 @@ function PhishingDetection() {
             </div>
           )}
         </div>
-      )}
+      )} */}
 
     </div>
   );

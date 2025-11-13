@@ -751,28 +751,30 @@ const InitialSetupFlow = ({ onComplete }) => {
                   Setup Logs
                 </h2>
               </div>
-              <div className="flex-1 bg-gray-900 dark:bg-black rounded-lg p-4 overflow-y-auto font-mono text-sm">
-                {logs.length === 0 ? (
-                  <div className="text-gray-500">No logs yet...</div>
-                ) : (
-                  logs.map((log, index) => (
-                    <div key={index} className="mb-1">
-                      <span className="text-gray-500">[{log.timestamp}]</span>{' '}
-                      <span
-                        className={
-                          log.type === 'error'
-                            ? 'text-red-400'
-                            : log.type === 'success'
-                            ? 'text-green-400'
-                            : 'text-gray-300'
-                        }
-                      >
-                        {log.message}
-                      </span>
-                    </div>
-                  ))
-                )}
-                <div ref={logEndRef} />
+              <div className="flex-1 bg-gray-900 dark:bg-black rounded-lg p-4 overflow-y-auto font-mono text-sm max-h-[600px] min-h-[400px]">
+                <div className="h-full overflow-y-auto">
+                  {logs.length === 0 ? (
+                    <div className="text-gray-500">No logs yet...</div>
+                  ) : (
+                    logs.map((log, index) => (
+                      <div key={index} className="mb-1">
+                        <span className="text-gray-500">[{log.timestamp}]</span>{' '}
+                        <span
+                          className={
+                            log.type === 'error'
+                              ? 'text-red-400'
+                              : log.type === 'success'
+                              ? 'text-green-400'
+                              : 'text-gray-300'
+                          }
+                        >
+                          {log.message}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                  <div ref={logEndRef} />
+                </div>
               </div>
             </div>
           </div>

@@ -1411,15 +1411,21 @@ const ComprehensiveSecurityScanner = () => {
     }
   }, [])
 
-  // Track which scans have already sent notifications
+  // Track which scans have already sent notifications (global tracking)
   const notifiedScansRef = useRef(new Set())
+  
+  // Use a more unique key to prevent duplicates across different scan runs
+  const getNotificationKey = useCallback((testId, testName) => {
+    return `overview-${testId}-${testName}-${Date.now()}`
+  }, [])
 
   // Helper function to send notification for a completed scan
   const sendScanNotification = useCallback((testId, testName) => {
-    const scanKey = `${testId}-completed`
+    const scanKey = `${testId}-${testName}`
     
     // Only send notification once per scan
     if (notifiedScansRef.current.has(scanKey)) {
+      console.log(`[NOTIFICATION] Skipping duplicate notification for ${testName}`)
       return
     }
     
@@ -1432,7 +1438,8 @@ const ComprehensiveSecurityScanner = () => {
         const notificationPromise = window.cyberGuard.showNotification({
           title: 'Overview Scan',
           body: `In Overview Scan, ${testName} has been completed successfully.`,
-          viewId: 'overview'
+          viewId: 'overview',
+          scanId: `overview-${testId}`
         })
         
         if (notificationPromise && typeof notificationPromise.then === 'function') {
@@ -1440,15 +1447,20 @@ const ComprehensiveSecurityScanner = () => {
             console.log(`[NOTIFICATION] ✅ Notification sent successfully for ${testName}`)
           }).catch(err => {
             console.error(`[NOTIFICATION] ❌ Failed to send notification for ${testName}:`, err?.message || 'Unknown error')
+            // Remove from set on error so it can be retried
+            notifiedScansRef.current.delete(scanKey)
           })
         } else {
           console.log(`[NOTIFICATION] ⚠️ Notification call returned non-promise for ${testName}`)
+          notifiedScansRef.current.delete(scanKey)
         }
       } catch (err) {
         console.error(`[NOTIFICATION] ❌ Error sending notification for ${testName}:`, err?.message || 'Unknown error')
+        notifiedScansRef.current.delete(scanKey)
       }
     } else {
       console.warn('[NOTIFICATION] ⚠️ window.cyberGuard.showNotification is not available')
+      notifiedScansRef.current.delete(scanKey)
     }
   }, [])
 
@@ -1514,38 +1526,58 @@ const ComprehensiveSecurityScanner = () => {
         overviewScanIdRef.current = null
       }
       
-      // Send desktop push notification when all scans complete
-      console.log('📢 [SCAN-COMPLETION] Sending notification...')
-      if (window.cyberGuard?.showNotification) {
-        try {
-          // Determine notification message based on number of scans
-          let notificationBody
-          if (scansToCheck.length === 1) {
-            const scanName = scansToCheck[0].name
-            notificationBody = `In Overview Scan, ${scanName} has been completed successfully.`
-          } else {
-            notificationBody = 'All Scans in Overview Tab has been completed successfully.'
+      // Send desktop push notification when all scans complete (only once)
+      const allScansCompleteKey = 'overview-all-scans-complete'
+      if (!notifiedScansRef.current.has(allScansCompleteKey)) {
+        console.log('📢 [SCAN-COMPLETION] Sending notification...')
+        notifiedScansRef.current.add(allScansCompleteKey)
+        
+        if (window.cyberGuard?.showNotification) {
+          try {
+            // Determine notification message based on number of scans
+            let notificationBody
+            if (scansToCheck.length === 1) {
+              const scanName = scansToCheck[0].name
+              notificationBody = `In Overview Scan, ${scanName} has been completed successfully.`
+            } else {
+              notificationBody = 'All Scans in Overview Tab has been completed successfully.'
+            }
+            
+            console.log('📢 [SCAN-COMPLETION] Notification body:', notificationBody)
+            window.cyberGuard.showNotification({
+              title: 'Overview Scan Completed',
+              body: notificationBody,
+              viewId: 'overview',
+              scanId: 'overview-all-complete'
+            }).then(() => {
+              console.log('✅ [SCAN-COMPLETION] Notification sent successfully')
+            }).catch(err => {
+              console.error('❌ [SCAN-COMPLETION] Notification error:', err?.message || 'Unknown error')
+              notifiedScansRef.current.delete(allScansCompleteKey)
+            })
+          } catch (err) {
+            console.error('❌ [SCAN-COMPLETION] Notification exception:', err?.message || 'Unknown error')
+            notifiedScansRef.current.delete(allScansCompleteKey)
           }
-          
-          console.log('📢 [SCAN-COMPLETION] Notification body:', notificationBody)
-          window.cyberGuard.showNotification({
-            title: 'Overview Scan Completed',
-            body: notificationBody,
-            viewId: 'overview'
-          }).then(() => {
-            console.log('✅ [SCAN-COMPLETION] Notification sent successfully')
-          }).catch(err => {
-            console.error('❌ [SCAN-COMPLETION] Notification error:', err?.message || 'Unknown error')
-          })
-        } catch (err) {
-          console.error('❌ [SCAN-COMPLETION] Notification exception:', err?.message || 'Unknown error')
+        } else {
+          console.warn('⚠️ [SCAN-COMPLETION] window.cyberGuard.showNotification not available')
+          notifiedScansRef.current.delete(allScansCompleteKey)
         }
       } else {
-        console.warn('⚠️ [SCAN-COMPLETION] window.cyberGuard.showNotification not available')
+        console.log('📢 [SCAN-COMPLETION] Notification already sent, skipping duplicate')
       }
       
-      // Reset notification tracking for next scan
-      notifiedScansRef.current.clear()
+      // Reset notification tracking for next scan (only individual scan notifications, not the all-complete one)
+      // Keep the all-complete key to prevent duplicate notifications
+      const allCompleteKey = 'overview-all-scans-complete'
+      const keysToKeep = new Set([allCompleteKey])
+      const newSet = new Set()
+      notifiedScansRef.current.forEach(key => {
+        if (keysToKeep.has(key)) {
+          newSet.add(key)
+        }
+      })
+      notifiedScansRef.current = newSet
     } else {
       console.log('⏳ [SCAN-COMPLETION] Not all scans completed yet. Completed:', scansToCheck.filter(test => {
         const result = scanResults[test.id] || newScanResults[test.id]
@@ -9626,7 +9658,7 @@ const ComprehensiveSecurityScanner = () => {
                   }}
                   disabled={isExporting}
                   className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-                  title="Export this scan report to PDF"
+                  title="Export PDF"
                 >
                   {isExporting ? (
                     <>
@@ -9649,7 +9681,7 @@ const ComprehensiveSecurityScanner = () => {
                   }}
                   disabled={isLoadingAI}
                   className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-600 hover:to-pink-700 text-white rounded-lg transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
-                  title="Get AI-powered suggestions for this scan"
+                  title="AI Suggestion"
                 >
                   {isLoadingAI ? (
                     <>

@@ -3113,6 +3113,37 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
     return { success: true, message: 'Wapiti handlers are working' }
   })
   
+  // Helper function to test WSL connection with retry
+  const testWslConnection = async (maxRetries = 3) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[WSL] Testing WSL connection (attempt ${attempt}/${maxRetries})...`)
+        const { exec } = require('child_process')
+        const { promisify } = require('util')
+        const execAsync = promisify(exec)
+        
+        // Test with a simple command that has a short timeout
+        await execAsync('wsl echo "WSL connection test"', { 
+          timeout: 10000, // 10 second timeout
+          maxBuffer: 1024 
+        })
+        console.log('[WSL] ✅ WSL connection test successful')
+        return true
+      } catch (error) {
+        console.log(`[WSL] ❌ WSL connection test failed (attempt ${attempt}/${maxRetries}):`, error.message)
+        if (attempt < maxRetries) {
+          const waitTime = attempt * 2000 // Exponential backoff: 2s, 4s, 6s
+          console.log(`[WSL] ⏳ Waiting ${waitTime}ms before retry...`)
+          await new Promise(resolve => setTimeout(resolve, waitTime))
+        } else {
+          console.log('[WSL] ❌ All WSL connection tests failed')
+          return false
+        }
+      }
+    }
+    return false
+  }
+
   console.log('[WAPITI] Registering wapiti:start handler...')
   ipcMain.handle('wapiti:start', async (event, url) => {
     console.log('[WAPITI] wapiti:start handler called with url:', url)
@@ -3125,22 +3156,77 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
         event.sender.send('wapiti:progress', { stage: 'error', message: 'WSL is required for Wapiti scans' })
         return { error: 'WSL is required for Wapiti scans' }
       }
+      
+      // Test WSL connection before starting scan
+      event.sender.send('wapiti:progress', { stage: 'info', message: 'Testing WSL connection...' })
+      const wslConnected = await testWslConnection(3)
+      if (!wslConnected) {
+        const errorMsg = 'WSL connection timeout. Please ensure WSL is running. Try restarting WSL or your computer if the issue persists.'
+        event.sender.send('wapiti:progress', { stage: 'error', message: errorMsg })
+        return { error: errorMsg }
+      }
+      
       const tempDir = path.join(process.cwd(), 'temp-scans')
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true })
       }
       const scanFile = path.join(tempDir, 'local_scan.json')
       const wslPath = tempDir.replace(/\\/g, '/').replace(/^([A-Z]):/, (match, drive) => `/mnt/${drive.toLowerCase()}`)
-      const wapitiCmd = `wapiti -u "${url}" -d 3 -m xss,sql -f json -o local_scan.json --max-scan-time 300 --skip .jpg --skip .jpeg --skip .png --skip .webp`
+      const wapitiCmd = `wapiti -u "${url}" -d 3 -m xss,sql -f json -o local_scan.json --max-scan-time 1800 --skip .jpg --skip .jpeg --skip .png --skip .webp`
       event.sender.send('wapiti:progress', { stage: 'starting', message: `Starting Wapiti scan for ${url}...` })
       event.sender.send('wapiti:progress', { stage: 'info', message: `Command: ${wapitiCmd}` })
       const wslCommand = `cd "${wslPath}" && ${wapitiCmd}`
-      wapitiScanChild = spawn('wsl', ['bash', '-c', wslCommand], {
-        stdio: ['pipe', 'pipe', 'pipe']
-      })
+      
+      // Spawn with error handling for WSL connection issues
+      let spawnTimeout = null
+      let spawnStarted = false
+      
+      try {
+        wapitiScanChild = spawn('wsl', ['bash', '-c', wslCommand], {
+          stdio: ['pipe', 'pipe', 'pipe']
+        })
+        
+        // Set a timeout to detect if spawn fails to start
+        spawnTimeout = setTimeout(() => {
+          if (!spawnStarted && wapitiScanChild) {
+            console.log('[WAPITI] Spawn timeout - process may not have started')
+            event.sender.send('wapiti:progress', { stage: 'warning', message: 'WSL process is taking longer than expected to start...' })
+          }
+        }, 15000) // 15 second warning
+        
+        // Mark as started when we get first data or process starts
+        wapitiScanChild.stdout.once('data', () => {
+          spawnStarted = true
+          if (spawnTimeout) {
+            clearTimeout(spawnTimeout)
+            spawnTimeout = null
+          }
+        })
+        
+        wapitiScanChild.stderr.once('data', () => {
+          spawnStarted = true
+          if (spawnTimeout) {
+            clearTimeout(spawnTimeout)
+            spawnTimeout = null
+          }
+        })
+        
+      } catch (spawnError) {
+        if (spawnTimeout) {
+          clearTimeout(spawnTimeout)
+          spawnTimeout = null
+        }
+        if (spawnError.message && spawnError.message.includes('HCS_E_CONNECTION_TIMEOUT')) {
+          const errorMsg = 'WSL connection timeout when starting scan. Please ensure WSL is running properly. Try: wsl --shutdown then wsl in PowerShell to restart WSL.'
+          event.sender.send('wapiti:progress', { stage: 'error', message: errorMsg })
+          return { error: errorMsg }
+        }
+        throw spawnError
+      }
+      
       let interruptionTimeout = null
       let autoInterruptTimeout = null
-      const maxScanTime = 5 * 60 * 1000 // 5 minutes
+      const maxScanTime = 30 * 60 * 1000 // 30 minutes (1800000ms) - WordPress/Shopify scans can take 20-30 minutes
       let reportRetryTimeout = null
       
       const checkForInterruption = (data) => {
@@ -3222,10 +3308,10 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
         }
       }
       
-      // Auto-interrupt after 5 minutes
+      // Auto-interrupt after 30 minutes (WordPress/Shopify scans can take 20-30 minutes)
       autoInterruptTimeout = setTimeout(() => {
         if (wapitiScanChild && !wapitiInterrupted && !wapitiReportGenerated) {
-          event.sender.send('wapiti:progress', { stage: 'warning', message: 'Scan has been running for 5 minutes. Interrupting to generate report...' })
+          event.sender.send('wapiti:progress', { stage: 'warning', message: 'Scan has been running for 30 minutes. Interrupting to generate report...' })
           
           // Send Ctrl+C (SIGINT) to interrupt the scan
           try {
@@ -3261,6 +3347,10 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
       // This timeout is now handled by autoInterruptTimeout above
       wapitiScanChild.on('close', (code) => {
         // Clear all timeouts
+        if (spawnTimeout) {
+          clearTimeout(spawnTimeout)
+          spawnTimeout = null
+        }
         if (interruptionTimeout) {
           clearTimeout(interruptionTimeout)
           interruptionTimeout = null
@@ -3274,39 +3364,61 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
           reportRetryTimeout = null
         }
         
-        if (code === 0 || wapitiReportGenerated) {
+        // Always try to read the report file if it exists, even if exit code is not 0
+        // This handles cases where scan was interrupted but report was still generated
+        const checkForReport = async () => {
+          // Wait a bit longer for report generation if it was interrupted
+          if (wapitiInterrupted && !wapitiReportGenerated) {
+            await new Promise(resolve => setTimeout(resolve, 3000)) // Wait 3 seconds for report generation
+          }
+          
           if (fs.existsSync(scanFile)) {
             event.sender.send('wapiti:progress', { stage: 'info', message: 'Reading scan results from file...' })
-            setTimeout(async () => {
+            try {
+              const reportContent = fs.readFileSync(scanFile, 'utf8')
+              let scanResults = null
               try {
-                const reportContent = fs.readFileSync(scanFile, 'utf8')
-                let scanResults = null
-                try {
-                  scanResults = JSON.parse(reportContent)
-                  event.sender.send('wapiti:progress', { stage: 'success', message: 'Scan results parsed successfully!' })
-                } catch (parseError) {
-                  scanResults = { raw: reportContent }
-                }
-                event.sender.send('wapiti:done', { 
-                  success: true, 
-                  results: scanResults,
-                  rawJson: reportContent
-                })
-              } catch (readError) {
-                event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to read report: ${readError.message}` })
-                event.sender.send('wapiti:done', { error: `Failed to read report: ${readError.message}` })
+                scanResults = JSON.parse(reportContent)
+                event.sender.send('wapiti:progress', { stage: 'success', message: 'Scan results parsed successfully!' })
+              } catch (parseError) {
+                scanResults = { raw: reportContent }
               }
-            }, 1000)
+              event.sender.send('wapiti:done', { 
+                success: true, 
+                results: scanResults,
+                rawJson: reportContent
+              })
+            } catch (readError) {
+              event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to read report: ${readError.message}` })
+              event.sender.send('wapiti:done', { error: `Failed to read report: ${readError.message}` })
+            }
           } else {
-            event.sender.send('wapiti:done', { error: 'Scan completed but report file not found' })
+            // If report doesn't exist and scan was interrupted, it might still be generating
+            if (wapitiInterrupted) {
+              // Wait a bit more and check again
+              setTimeout(async () => {
+                if (fs.existsSync(scanFile)) {
+                  await checkForReport()
+                } else {
+                  event.sender.send('wapiti:done', { error: 'Scan was interrupted but report file was not generated. The scan may have been stopped before completion.' })
+                }
+              }, 5000) // Wait 5 more seconds
+            } else {
+              event.sender.send('wapiti:done', { error: 'Scan completed but report file not found' })
+            }
           }
-        } else {
-          event.sender.send('wapiti:done', { error: `Scan process exited with code ${code}` })
         }
+        
+        // Start checking for report
+        setTimeout(checkForReport, 1000)
         wapitiScanChild = null
       })
       wapitiScanChild.on('error', (error) => {
         // Clear all timeouts
+        if (spawnTimeout) {
+          clearTimeout(spawnTimeout)
+          spawnTimeout = null
+        }
         if (interruptionTimeout) {
           clearTimeout(interruptionTimeout)
           interruptionTimeout = null
@@ -3320,8 +3432,19 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
           reportRetryTimeout = null
         }
         
-        event.sender.send('wapiti:progress', { stage: 'error', message: `Process error: ${error.message}` })
-        event.sender.send('wapiti:done', { error: error.message })
+        let errorMessage = error.message
+        // Provide helpful error messages for common WSL errors
+        if (error.message && (error.message.includes('HCS_E_CONNECTION_TIMEOUT') || error.message.includes('connection timeout'))) {
+          errorMessage = 'WSL connection timeout. The WSL service may not be running. Please try:\n1. Open PowerShell as Administrator\n2. Run: wsl --shutdown\n3. Run: wsl\n4. Then try the scan again'
+        } else if (error.message && error.message.includes('ENOENT')) {
+          errorMessage = 'WSL command not found. Please ensure WSL is installed and available in your PATH.'
+        } else if (error.message && error.message.includes('timeout')) {
+          errorMessage = 'WSL operation timed out. The WSL service may be unresponsive. Try restarting WSL or your computer.'
+        }
+        
+        console.log('[WAPITI] Process error:', errorMessage)
+        event.sender.send('wapiti:progress', { stage: 'error', message: `Process error: ${errorMessage}` })
+        event.sender.send('wapiti:done', { error: errorMessage })
         wapitiScanChild = null
       })
       return { ok: true }

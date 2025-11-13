@@ -99,7 +99,12 @@ const WapitiScan = ({
   const getExpectedCompletionTime = () => {
     if (!startTime || endTime) return null
     
-    // Estimate based on current state
+    // For WordPress and Shopify: simply add 20 minutes to start time
+    if ((detectionType === 'WordPress' || detectionType === 'Shopify') && isScanning) {
+      return startTime + (20 * 60 * 1000) // 20 minutes from start time
+    }
+    
+    // For other scans: estimate based on current state
     const elapsed = Date.now() - startTime
     let estimatedRemaining = 0
     
@@ -110,7 +115,7 @@ const WapitiScan = ({
       // If scan is done but tgpt hasn't started yet, estimate 2 minutes
       estimatedRemaining = 2 * 60 * 1000
     } else if (isScanning) {
-      // If still scanning, estimate based on typical scan time (5 minutes max)
+      // For other scans: estimate 5 minutes max
       const maxScanTime = 5 * 60 * 1000
       estimatedRemaining = Math.max(0, maxScanTime - elapsed)
       // If scan is almost done, add 2 minutes for tgpt conversion
@@ -316,19 +321,19 @@ const WapitiScan = ({
         
         addLog('📋 JSON content loaded: ' + rawJsonData.length + ' characters', 'info')
         
-        // Automatically convert results using tgpt first
-        // Only show results after tgpt conversion completes
-        // Timer will continue running during conversion
-        // Skip TGPT conversion for WordPress and Shopify tabs
-        if (detectionType !== 'WordPress' && detectionType !== 'Shopify') {
-          await handleTgptConversion(rawJsonData)
-        } else {
-          // For WordPress and Shopify, mark conversion as complete immediately
+        // For WordPress and Shopify: Skip TGPT conversion, show raw JSON formatted nicely
+        // For other scans: Use TGPT conversion to make results user-friendly
+        // Grok is only used for AI Suggestion feature, not for result conversion
+        if (detectionType === 'WordPress' || detectionType === 'Shopify') {
+          // WordPress/Shopify: Raw JSON is already in good format, just mark conversion as complete
           setTgptConversionComplete(true)
-          addLog('ℹ️ TGPT conversion skipped for ' + detectionType + ' tab', 'info')
+          addLog('ℹ️ Showing formatted scan results directly (no AI conversion needed)', 'info')
+        } else {
+          // Other scans: Convert with TGPT for better readability
+          await handleTgptConversion(rawJsonData)
         }
         
-        // Stop timer only after tgpt conversion completes
+        // Stop timer only after processing completes
         setEndTime(Date.now())
         if (timerRef.current) {
           clearInterval(timerRef.current)
@@ -693,8 +698,11 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
       const summary = results.summary || {}
       const target = results.target || siteUrl
       
-      // Count total vulnerabilities
-      const totalVulns = Object.keys(classifications).length + vulnerabilities.length
+      // Count total vulnerabilities with proper null/NaN handling
+      const classificationsCount = classifications && typeof classifications === 'object' ? Object.keys(classifications).length : 0
+      const vulnerabilitiesCount = Array.isArray(vulnerabilities) ? vulnerabilities.length : (vulnerabilities ? 1 : 0)
+      const totalVulns = (classificationsCount || 0) + (vulnerabilitiesCount || 0)
+      const displayTotalVulns = isNaN(totalVulns) || totalVulns === null || totalVulns === undefined ? 'N/A' : totalVulns
       
       return (
         <div className="mt-6 space-y-6 max-w-full overflow-x-hidden">
@@ -725,7 +733,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                     </svg>
                     <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Total Vulnerabilities</div>
                   </div>
-                  <div className="text-4xl font-bold bg-gradient-to-r from-red-600 to-red-700 bg-clip-text text-transparent mt-2">{totalVulns}</div>
+                  <div className="text-4xl font-bold bg-gradient-to-r from-red-600 to-red-700 bg-clip-text text-transparent mt-2">{displayTotalVulns}</div>
                 </div>
                 <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-xl p-6 shadow-xl border-2 border-orange-100 dark:border-orange-900 hover:shadow-2xl transition-all duration-300">
                   <div className="flex items-center gap-2 mb-2">
@@ -734,7 +742,13 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                     </svg>
                     <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Vulnerability Types</div>
                   </div>
-                  <div className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mt-2">{Object.keys(classifications).length}</div>
+                  <div className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-orange-700 bg-clip-text text-transparent mt-2">
+                    {(() => {
+                      if (!classifications || typeof classifications !== 'object') return 'N/A'
+                      const count = Object.keys(classifications).length
+                      return isNaN(count) || count === null || count === undefined ? 'N/A' : count
+                    })()}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1107,6 +1121,22 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
             )}
           </button>
             </div>
+            {/* Duration Notice for WordPress/Shopify */}
+            {(detectionType === 'WordPress' || detectionType === 'Shopify') && (
+              <div className="mt-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                <div className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <span className="text-amber-800 dark:text-amber-200 font-semibold block mb-1">Estimated Scan Duration</span>
+                    <span className="text-amber-700 dark:text-amber-300 text-sm">
+                      {detectionType} scans are comprehensive and may take <strong>20-30 minutes</strong> to complete. Please be patient and do not close the application during the scan.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
             {detectionResult !== null && (
               <div className={`mt-3 p-3 rounded-lg flex items-center gap-2 ${
                 detectionResult 
@@ -1145,6 +1175,19 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
             </div>
             <h3 className="text-xl font-bold text-gray-900 dark:text-white">Scan Timing</h3>
           </div>
+          {/* Long Duration Notice for WordPress/Shopify during scan */}
+          {isScanning && (detectionType === 'WordPress' || detectionType === 'Shopify') && (
+            <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <div className="flex items-center gap-2">
+                <svg className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-amber-700 dark:text-amber-300 text-sm font-medium">
+                  {detectionType} scans typically take 20-30 minutes. Please wait patiently...
+                </span>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm rounded-lg p-4 border border-gray-200 dark:border-gray-700">
               <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2">Start Date/Time</div>
@@ -1228,7 +1271,8 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
       )}
 
       {/* Scan Results - Only show raw results if tgpt conversion failed */}
-      {tgptConversionComplete && !tgptConvertedResults && renderScanResults()}
+      {/* Raw scan results for non-WordPress/Shopify when TGPT conversion is complete but no converted results */}
+      {tgptConversionComplete && !tgptConvertedResults && detectionType !== 'WordPress' && detectionType !== 'Shopify' && renderScanResults()}
 
       {/* Action Buttons */}
       {scanResults && (
@@ -1280,9 +1324,26 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
         </div>
       )}
 
-      {/* TGPT Converted Results */}
-      {/* Hide loading UI for WordPress and Shopify tabs */}
-      {((isLoadingTgpt || tgptConvertedResults) && detectionType !== 'WordPress' && detectionType !== 'Shopify') || (tgptConvertedResults && (detectionType === 'WordPress' || detectionType === 'Shopify')) ? (
+      {/* Scan Results Section - For WordPress and Shopify (raw JSON formatted) */}
+      {tgptConversionComplete && scanResults && (detectionType === 'WordPress' || detectionType === 'Shopify') && (
+        <div id="scan-results-section" className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 rounded-xl shadow-2xl p-8 mt-6 border border-blue-200 dark:border-blue-800 max-w-full overflow-x-hidden">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Scan Results</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Formatted scan results from Kali security tools</p>
+            </div>
+          </div>
+          {renderScanResults()}
+        </div>
+      )}
+
+      {/* TGPT Converted Results - Only for non-WordPress/Shopify scans */}
+      {((isLoadingTgpt || tgptConvertedResults) && detectionType !== 'WordPress' && detectionType !== 'Shopify') ? (
         <div id="tgpt-results-section" className="bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 dark:from-indigo-900/30 dark:via-purple-900/30 dark:to-pink-900/30 rounded-xl shadow-2xl p-8 mt-6 border border-indigo-200 dark:border-indigo-800 max-w-full overflow-x-hidden">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg">
@@ -1296,7 +1357,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
             </div>
           </div>
           
-          {isLoadingTgpt && detectionType !== 'WordPress' && detectionType !== 'Shopify' ? (
+          {isLoadingTgpt ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <svg className="animate-spin h-12 w-12 text-indigo-600 dark:text-indigo-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
@@ -1331,7 +1392,12 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                         {tgptConvertedResults.summary.totalVulnerabilities !== undefined && (
                           <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
                             <div className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Total Vulnerabilities</div>
-                            <div className="text-3xl font-bold text-red-600 dark:text-red-400">{tgptConvertedResults.summary.totalVulnerabilities}</div>
+                            <div className="text-3xl font-bold text-red-600 dark:text-red-400">
+                              {(() => {
+                                const val = tgptConvertedResults.summary.totalVulnerabilities
+                                return (val === null || val === undefined || isNaN(val)) ? 'N/A' : val
+                              })()}
+                            </div>
                           </div>
                         )}
                         {tgptConvertedResults.summary.scanDate && (
@@ -1346,25 +1412,45 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                             <div className="grid grid-cols-2 gap-2">
                               {tgptConvertedResults.summary.severityBreakdown.critical !== undefined && (
                                 <div className="text-center">
-                                  <div className="text-2xl font-bold text-red-600">{tgptConvertedResults.summary.severityBreakdown.critical}</div>
+                                  <div className="text-2xl font-bold text-red-600">
+                                    {(() => {
+                                      const val = tgptConvertedResults.summary.severityBreakdown.critical
+                                      return (val === null || val === undefined || isNaN(val)) ? 'N/A' : val
+                                    })()}
+                                  </div>
                                   <div className="text-xs text-gray-600 dark:text-gray-400">Critical</div>
                                 </div>
                               )}
                               {tgptConvertedResults.summary.severityBreakdown.high !== undefined && (
                                 <div className="text-center">
-                                  <div className="text-2xl font-bold text-orange-600">{tgptConvertedResults.summary.severityBreakdown.high}</div>
+                                  <div className="text-2xl font-bold text-orange-600">
+                                    {(() => {
+                                      const val = tgptConvertedResults.summary.severityBreakdown.high
+                                      return (val === null || val === undefined || isNaN(val)) ? 'N/A' : val
+                                    })()}
+                                  </div>
                                   <div className="text-xs text-gray-600 dark:text-gray-400">High</div>
                                 </div>
                               )}
                               {tgptConvertedResults.summary.severityBreakdown.medium !== undefined && (
                                 <div className="text-center">
-                                  <div className="text-2xl font-bold text-yellow-600">{tgptConvertedResults.summary.severityBreakdown.medium}</div>
+                                  <div className="text-2xl font-bold text-yellow-600">
+                                    {(() => {
+                                      const val = tgptConvertedResults.summary.severityBreakdown.medium
+                                      return (val === null || val === undefined || isNaN(val)) ? 'N/A' : val
+                                    })()}
+                                  </div>
                                   <div className="text-xs text-gray-600 dark:text-gray-400">Medium</div>
                                 </div>
                               )}
                               {tgptConvertedResults.summary.severityBreakdown.low !== undefined && (
                                 <div className="text-center">
-                                  <div className="text-2xl font-bold text-blue-600">{tgptConvertedResults.summary.severityBreakdown.low}</div>
+                                  <div className="text-2xl font-bold text-blue-600">
+                                    {(() => {
+                                      const val = tgptConvertedResults.summary.severityBreakdown.low
+                                      return (val === null || val === undefined || isNaN(val)) ? 'N/A' : val
+                                    })()}
+                                  </div>
                                   <div className="text-xs text-gray-600 dark:text-gray-400">Low</div>
                                 </div>
                               )}
@@ -1532,24 +1618,28 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
 
       {/* Help Dialog */}
       {showHelpDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
-              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">{title}</h3>
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowHelpDialog(false)}>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-orange-500 to-amber-600 p-6 flex items-center justify-between">
+              <h3 className="text-2xl font-bold text-white">{title}</h3>
               <button
                 onClick={() => setShowHelpDialog(false)}
-                className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
+                className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
               >
-                ×
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
             </div>
-            <div className="p-6 space-y-8">
+            <div className="flex-1 overflow-y-auto p-6">
               {typeof helpContent === 'string' ? (
-                <div className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                <div className="text-orange-800 dark:text-orange-200 whitespace-pre-wrap leading-relaxed">
                   {helpContent}
                 </div>
               ) : (
-                helpContent
+                <div className="text-orange-800 dark:text-orange-200">
+                  {helpContent}
+                </div>
               )}
             </div>
           </div>
