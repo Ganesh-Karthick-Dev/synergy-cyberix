@@ -25,3 +25,4 @@ dist-ssr
 -e "/release/\n/dist/\n/out/\n/build/\n/*.exe\n/*.AppImage\n/*.deb\n/*.rpm" 
 -e "/release/\n/dist/\n/out/\n/build/\n/*.exe\n/*.AppImage\n/*.deb\n/*.rpm" 
 -e "/release/\n/dist/\n/out/\n/build/\n/*.exe\n/*.AppImage\n/*.deb\n/*.rpm" 
+-e "/release/\n/dist/\n/out/\n/build/\n/*.exe\n/*.AppImage\n/*.deb\n/*.rpm\n*.json\n*.txt\n*.xml\n*.md" 
