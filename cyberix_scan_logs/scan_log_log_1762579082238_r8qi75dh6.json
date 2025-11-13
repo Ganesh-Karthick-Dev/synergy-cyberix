@@ -1,0 +1,12 @@
+{
+  "id": "log_1762579082238_r8qi75dh6",
+  "timestamp": "2025-11-08T05:18:02.238Z",
+  "scanType": "server",
+  "scanName": "Server Scan",
+  "target": "we",
+  "status": "completed",
+  "startTime": "2025-11-08T05:03:02.238Z",
+  "endTime": "2025-11-08T05:18:02.238Z",
+  "duration": 900000,
+  "result": "Server scan completed successfully"
+}

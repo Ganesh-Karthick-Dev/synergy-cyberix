@@ -17,6 +17,7 @@ const path_1 = __importDefault(require("path"));
 const util_1 = require("util");
 const net_1 = __importDefault(require("net"));
 const port_scan_1 = require("./port-scan");
+const wslHelper_1 = require("../utils/wslHelper");
 const execPromise = (0, util_1.promisify)(child_process_1.exec);
 // Comprehensive port scanning with service/version detection
 async function grabBanners(host, options) {
@@ -786,10 +787,11 @@ async function runWSLNetworkAnalysis(host, options) {
     };
     
     try {
-        // Check if WSL is available
-        const wslAvailable = await checkWSL();
-        if (!wslAvailable) {
-            throw new Error('WSL not available, falling back to basic analysis');
+        // Check if environment supports network analysis
+        const env = await (0, wslHelper_1.getEnvironment)();
+        const supportsNetworkAnalysis = env.type === 'wsl-kali' || env.type === 'native-kali';
+        if (!supportsNetworkAnalysis) {
+            throw new Error('Network analysis not supported on this environment');
         }
         
         // Run traceroute
@@ -797,7 +799,7 @@ async function runWSLNetworkAnalysis(host, options) {
             onProgress({ stage: 'scanning', message: `Running traceroute to ${host}` });
         }
         try {
-            const tracerouteResult = await execPromise(`wsl traceroute -n ${host}`, { timeout: 30000 });
+            const tracerouteResult = await (0, wslHelper_1.runWSL)(`traceroute -n ${host}`);
             const tracerouteFile = path_1.default.join(outputDir, `${host}-traceroute-${timestamp}.txt`);
             await fs_1.promises.writeFile(tracerouteFile, tracerouteResult.stdout);
             results.tracerouteFile = tracerouteFile;
@@ -814,7 +816,7 @@ async function runWSLNetworkAnalysis(host, options) {
             onProgress({ stage: 'scanning', message: `Running nmap service detection on ${host}` });
         }
         try {
-            const nmapResult = await execPromise(`wsl nmap -sV -sC -O ${host}`, { timeout: 60000 });
+            const nmapResult = await (0, wslHelper_1.runWSL)(`nmap -sV -sC -O ${host}`);
             const nmapFile = path_1.default.join(outputDir, `${host}-nmap-services-${timestamp}.txt`);
             await fs_1.promises.writeFile(nmapFile, nmapResult.stdout);
             results.nmapFile = nmapFile;
@@ -856,11 +858,11 @@ async function runWSLNetworkAnalysis(host, options) {
         return results;
     }
 }
-// Check if WSL is available
+// Check if environment supports network analysis
 async function checkWSL() {
     try {
-        await execPromise('wsl --status', { timeout: 5000 });
-        return true;
+        const env = await (0, wslHelper_1.getEnvironment)();
+        return env.type === 'wsl-kali' || env.type === 'native-kali';
     }
     catch (error) {
         return false;

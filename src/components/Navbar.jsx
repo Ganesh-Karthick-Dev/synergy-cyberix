@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '../context/ThemeContext'
 import { useNotifications } from '../context/NotificationContext'
+import SubscriptionInfo from './SubscriptionInfo'
 
 function Navbar({ onLogout, currentView }) {
   const { isDark, toggleTheme } = useTheme()
@@ -200,6 +201,9 @@ function Navbar({ onLogout, currentView }) {
 
           {/* Center Section - System Status */}
           <div className="flex items-center space-x-4">
+            {/* Subscription Info */}
+            <SubscriptionInfo />
+
             {/* Dark Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -263,6 +267,18 @@ function Navbar({ onLogout, currentView }) {
 
           {/* Right Section - Actions & User Menu */}
           <div className="flex items-center space-x-4">
+            {/* Search Bar */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search..."
+                className="w-64 pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              />
+              <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+
             {/* Notifications */}
             <div className="relative">
               <button

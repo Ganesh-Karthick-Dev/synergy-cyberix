@@ -1,0 +1,12 @@
+{
+  "id": "log_1760096803842_bsh2h9su8",
+  "timestamp": "2025-10-10T11:46:43.842Z",
+  "scanType": "port",
+  "scanName": "Port Scan",
+  "target": "https://wordpress.com/",
+  "status": "started",
+  "startTime": "2025-10-10T11:46:43.842Z",
+  "endTime": null,
+  "duration": null,
+  "result": "Scan initiated"
+}

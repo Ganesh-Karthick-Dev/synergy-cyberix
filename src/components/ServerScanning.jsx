@@ -83,10 +83,7 @@ function ServerScanning() {
   const [isLoadingTgpt, setIsLoadingTgpt] = useState(false)
   const [tgptConversionComplete, setTgptConversionComplete] = useState(false)
   const [showHelpDialog, setShowHelpDialog] = useState(false)
-  const [aiSuggestions, setAiSuggestions] = useState(null)
-  const [aiError, setAiError] = useState(null)
   const currentScanIdRef = useRef(null)
-  const aiSuggestionRef = useRef(null)
 
   useEffect(() => {
     checkKaliStatus()
@@ -138,64 +135,19 @@ function ServerScanning() {
     setTgptConversionComplete(true)
   }
 
-  // Handle AI Suggestion button click (using Grok API)
+  // Handle AI Suggestion button click
   const handleAISuggestion = async () => {
     if (!scanResults) {
       alert('No scan results available')
       return
     }
+
+    // Get the combined raw results for TGPT conversion
+    const rawJsonData = scanResults?.results?.json?.rawResults ? 
+      JSON.stringify(scanResults.results.json.rawResults, null, 2) : 
+      JSON.stringify(scanResults, null, 2)
     
-    setIsLoadingTgpt(true)
-    setAiError(null)
-    setAiSuggestions(null)
-    
-    // Scroll to AI Suggestion section
-    setTimeout(() => {
-      if (aiSuggestionRef.current) {
-        aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    }, 100)
-    
-    try {
-      // Import Grok API
-      const { getAISuggestions } = await import('../utils/grokApi')
-      
-      // Get the combined raw results for AI analysis
-      const rawJsonData = scanResults?.results?.json?.rawResults ? 
-        JSON.stringify(scanResults.results.json.rawResults, null, 2) : 
-        JSON.stringify(scanResults, null, 2)
-      
-      // Call Grok API
-      const suggestions = await getAISuggestions(
-        'server-scan',
-        'Server Scan',
-        scanResults,
-        rawJsonData,
-        scanResults.target || target || 'Unknown'
-      )
-      
-      setAiSuggestions(suggestions)
-      
-      // Scroll to AI Suggestion section after results are loaded
-      setTimeout(() => {
-        if (aiSuggestionRef.current) {
-          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 500)
-    } catch (error) {
-      console.error('Error fetching AI suggestions:', error)
-      setAiError(error.message || 'Failed to fetch AI suggestions. Please try again.')
-      alert(error.message || 'Failed to fetch AI suggestions. Please try again.')
-      
-      // Scroll to AI Suggestion section even on error
-      setTimeout(() => {
-        if (aiSuggestionRef.current) {
-          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 100)
-    } finally {
-      setIsLoadingTgpt(false)
-    }
+    await handleTgptConversion(rawJsonData)
   }
 
   // Handle PDF Export
@@ -1709,27 +1661,25 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
       {/* Help Dialog */}
       {showHelpDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowHelpDialog(false)}>
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-orange-500 to-amber-600 p-6 flex items-center justify-between">
-              <h3 className="text-2xl font-bold text-white">Server-Level Scanning</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
+              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Server-Level Scanning</h3>
               <button
                 onClick={() => setShowHelpDialog(false)}
-                className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+                className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="p-6 space-y-8">
               {/* What is Server-Level Scanning? */}
               <div className="space-y-4">
-                <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 flex items-center gap-3">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <div className="w-1 h-8 bg-orange-500 rounded"></div>
                   What is Server-Level Scanning?
                 </h4>
-                <p className="text-orange-800 dark:text-orange-200 leading-relaxed text-lg">
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-lg">
                   Server-level scanning is a systematic, automated inspection of a server and the services it exposes to the internet. The goal is to discover:
                 </p>
                 <ul className="list-none space-y-3 ml-4">
@@ -1737,29 +1687,29 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-orange-800 dark:text-orange-200">which services and ports are open (e.g., web server, SSH, database),</span>
+                    <span className="text-gray-700 dark:text-gray-300">which services and ports are open (e.g., web server, SSH, database),</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-orange-800 dark:text-orange-200">which software and versions are running,</span>
+                    <span className="text-gray-700 dark:text-gray-300">which software and versions are running,</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-orange-800 dark:text-orange-200">obvious misconfigurations or known vulnerable components (e.g., outdated SSL/TLS, vulnerable server modules),</span>
+                    <span className="text-gray-700 dark:text-gray-300">obvious misconfigurations or known vulnerable components (e.g., outdated SSL/TLS, vulnerable server modules),</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <svg className="w-5 h-5 text-orange-500 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-orange-800 dark:text-orange-200">surface details that an attacker could use to probe further.</span>
+                    <span className="text-gray-700 dark:text-gray-300">surface details that an attacker could use to probe further.</span>
                   </li>
                 </ul>
                 <div className="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 p-4 rounded-r-lg mt-4">
-                  <p className="text-orange-800 dark:text-orange-200 italic leading-relaxed">
+                  <p className="text-gray-800 dark:text-gray-200 italic leading-relaxed">
                     Think of it like a health check and vulnerability reconnaissance performed from the outside-in: we identify weak or exposed places so you can fix them before someone else finds them.
                   </p>
                 </div>
@@ -1767,63 +1717,63 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
               {/* Why do we need Server-Level Scanning? */}
               <div className="space-y-4">
-                <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 flex items-center gap-3">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <div className="w-1 h-8 bg-orange-500 rounded"></div>
                   Why do we need Server-Level Scanning?
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-5 border border-blue-200 dark:border-blue-800">
+                    <h5 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                       </svg>
                       Prevent breaches before they happen
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Finding misconfigurations, old software, or exposed admin interfaces early reduces the chance of a successful attack.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-5 border border-green-200 dark:border-green-800">
+                    <h5 className="font-semibold text-green-900 dark:text-green-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                       </svg>
                       Prioritize fixes
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Scans help you focus resources on the highest-risk problems (e.g., an exposed admin page vs. a minor header misconfiguration).
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-5 border border-purple-200 dark:border-purple-800">
+                    <h5 className="font-semibold text-purple-900 dark:text-purple-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                       </svg>
                       Meet compliance and audits
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Many standards (PCI, ISO, etc.) expect regular scans and evidence of remediation.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-5 border border-yellow-200 dark:border-yellow-800">
+                    <h5 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                       Improve incident response
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Knowing your server's attack surface helps you respond faster and more accurately if an incident occurs.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800 md:col-span-2">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-5 border border-indigo-200 dark:border-indigo-800 md:col-span-2">
+                    <h5 className="font-semibold text-indigo-900 dark:text-indigo-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                       </svg>
                       Maintain customer trust
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Regular scanning and remediation show due diligence to customers and partners.
                     </p>
                   </div>
@@ -1832,66 +1782,66 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
 
               {/* How we help */}
               <div className="space-y-4">
-                <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 flex items-center gap-3">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <div className="w-1 h-8 bg-orange-500 rounded"></div>
                   How we help — our Server-Level Scanning service (high level)
                 </h4>
-                <p className="text-orange-800 dark:text-orange-200 leading-relaxed">
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
                   We run a carefully controlled and authorized set of reconnaissance and scanning tools (the same class of tools used by defenders and penetration testers) against your server(s). For each scan we:
                 </p>
                 <div className="space-y-3">
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       1
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Confirm written authorization</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">No scans are run without your explicit permission.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Confirm written authorization</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">No scans are run without your explicit permission.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       2
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Perform discovery</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">Identify live hosts, open ports, and running services.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Perform discovery</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Identify live hosts, open ports, and running services.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       3
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Fingerprint software</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">Determine server software and versions (web server, application server, TLS library).</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Fingerprint software</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Determine server software and versions (web server, application server, TLS library).</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       4
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Check common web/vuln issues</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">Automated checks for insecure configs, outdated components, SSL/TLS weaknesses, and common web server vulnerabilities.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Check common web/vuln issues</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Automated checks for insecure configs, outdated components, SSL/TLS weaknesses, and common web server vulnerabilities.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       5
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Collect and collate results</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">Create a clear, actionable report with severity, explanation, and recommended fixes.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Collect and collate results</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Create a clear, actionable report with severity, explanation, and recommended fixes.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       6
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Deliver the report</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">Provide the report and (optionally) a walkthrough session to explain findings and remediation steps.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Deliver the report</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Provide the report and (optionally) a walkthrough session to explain findings and remediation steps.</p>
                     </div>
                   </div>
                 </div>
@@ -2427,47 +2377,6 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                   })}
                 </div>
               )}
-
-              {/* AI Suggestions Section */}
-              <div ref={aiSuggestionRef} className="mt-6">
-                {(aiSuggestions || aiError || isLoadingTgpt) && (
-                  <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                      </div>
-                      <h5 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Suggestions</h5>
-                    </div>
-                    
-                    {isLoadingTgpt ? (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="ml-3 text-gray-600 dark:text-gray-400">Generating AI suggestions...</span>
-                      </div>
-                    ) : aiError ? (
-                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <p className="text-sm text-red-600 dark:text-red-400">{aiError}</p>
-                      </div>
-                    ) : aiSuggestions ? (
-                      <div className="space-y-4">
-                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                            {aiSuggestions}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Click the AI Suggestions button to get AI-powered recommendations based on your scan results.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
             </div>
           )}
         </div>

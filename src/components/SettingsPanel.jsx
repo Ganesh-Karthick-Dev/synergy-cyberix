@@ -17,7 +17,7 @@ function SettingsPanel() {
   const [installProgress, setInstallProgress] = useState({ current: 0, total: 0, message: '' })
   const [installType, setInstallType] = useState('general') // 'general' or 'maldef'
 
-  const REQUIRED_TOOLS = ['jq','unzip','nmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','wapiti','ffuf','nuclei','dalfox','go','dnstwist','geoiplookup','wfuzz','tshark']
+  const REQUIRED_TOOLS = ['jq','unzip','nmap','hydra','gobuster','dirb','amass','john','medusa','mitmproxy','socat','fail2ban','curl','wget','wapiti','ffuf','nuclei','dalfox','go','dnstwist','zaproxy','wfuzz','tshark']
   
   // API Scanning tools subset (Wireshark-based)
   const API_SCANNING_TOOLS = ['tshark']
@@ -412,7 +412,7 @@ function SettingsPanel() {
               {API_SCANNING_TOOLS.map((t) => {
                 const toolStatus = statuses.tools[t]
                 const isInstalled = !!toolStatus?.installed
-                const version = toolStatus?.version || null
+                const version = statuses.toolVersions[t] || toolStatus?.version || null
                 
                 return (
                   <div key={t} className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -452,7 +452,7 @@ function SettingsPanel() {
               {REQUIRED_TOOLS.map((t) => {
                 const toolStatus = statuses.tools[t]
                 const isInstalled = !!toolStatus?.installed
-                const version = toolStatus?.version || null
+                const version = statuses.toolVersions[t] || toolStatus?.version || null
                 const isAPITool = API_SCANNING_TOOLS.includes(t)
                 
                 return (

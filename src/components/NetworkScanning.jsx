@@ -82,10 +82,7 @@ function NetworkScanning() {
   const [isLoadingTgpt, setIsLoadingTgpt] = useState(false)
   const [tgptConversionComplete, setTgptConversionComplete] = useState(false)
   const [showHelpDialog, setShowHelpDialog] = useState(false)
-  const [aiSuggestions, setAiSuggestions] = useState(null)
-  const [aiError, setAiError] = useState(null)
   const currentScanIdRef = useRef(null)
-  const aiSuggestionRef = useRef(null)
 
   useEffect(() => {
     checkKaliStatus()
@@ -299,64 +296,19 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
     }
   }
 
-  // Handle AI Suggestion button click (using Grok API)
+  // Handle AI Suggestion button click
   const handleAISuggestion = async () => {
     if (!scanResults) {
       alert('No scan results available')
       return
     }
     
-    setIsLoadingTgpt(true)
-    setAiError(null)
-    setAiSuggestions(null)
+    // Get the combined raw results for TGPT conversion
+    const rawJsonData = scanResults?.results?.json?.rawResults ? 
+      JSON.stringify(scanResults.results.json.rawResults, null, 2) : 
+      JSON.stringify(scanResults, null, 2)
     
-    // Scroll to AI Suggestion section
-    setTimeout(() => {
-      if (aiSuggestionRef.current) {
-        aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      }
-    }, 100)
-    
-    try {
-      // Import Grok API
-      const { getAISuggestions } = await import('../utils/grokApi')
-      
-      // Get the combined raw results for AI analysis
-      const rawJsonData = scanResults?.results?.json?.rawResults ? 
-        JSON.stringify(scanResults.results.json.rawResults, null, 2) : 
-        JSON.stringify(scanResults, null, 2)
-      
-      // Call Grok API
-      const suggestions = await getAISuggestions(
-        'network-scan',
-        'Network Scan',
-        scanResults,
-        rawJsonData,
-        scanResults.target || target || 'Unknown'
-      )
-      
-      setAiSuggestions(suggestions)
-      
-      // Scroll to AI Suggestion section after results are loaded
-      setTimeout(() => {
-        if (aiSuggestionRef.current) {
-          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 500)
-    } catch (error) {
-      console.error('Error fetching AI suggestions:', error)
-      setAiError(error.message || 'Failed to fetch AI suggestions. Please try again.')
-      alert(error.message || 'Failed to fetch AI suggestions. Please try again.')
-      
-      // Scroll to AI Suggestion section even on error
-      setTimeout(() => {
-        if (aiSuggestionRef.current) {
-          aiSuggestionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-        }
-      }, 100)
-    } finally {
-      setIsLoadingTgpt(false)
-    }
+    await handleTgptConversion(rawJsonData)
   }
 
   // Handle PDF Export
@@ -1371,34 +1323,32 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
 
       {/* Help Dialog */}
       {showHelpDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setShowHelpDialog(false)}>
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="bg-gradient-to-r from-orange-500 to-amber-600 p-6 flex items-center justify-between">
-              <h3 className="text-2xl font-bold text-white">Network Scanning</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex items-center justify-between z-10">
+              <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Network Scanning</h3>
               <button
                 onClick={() => setShowHelpDialog(false)}
-                className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors"
+                className="w-10 h-10 rounded-full bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 text-gray-700 dark:text-gray-300 hover:from-red-100 hover:to-red-200 dark:hover:from-red-900 dark:hover:to-red-800 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-110 flex items-center justify-center font-bold"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="p-6 space-y-8">
               {/* What is Network Scanning? */}
               <div className="space-y-4">
-                <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 flex items-center gap-3">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <div className="w-1 h-8 bg-orange-500 rounded"></div>
                   What is Network Scanning?
                 </h4>
-                <p className="text-orange-800 dark:text-orange-200 leading-relaxed text-lg">
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed text-lg">
                   Network scanning is the process of probing a network and its connected hosts from the outside (and sometimes inside) to build an accurate map of what devices and services are present, how they communicate, and where potential weaknesses may exist.
                 </p>
-                <p className="text-orange-800 dark:text-orange-200 leading-relaxed">
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
                   Where server-level scanning targets a single server and its web-facing services, network scanning looks at the broader network context: which hosts are reachable, which ports are open across those hosts, how packets travel through the network, and what network-level behaviors might reveal misconfiguration or attack surface.
                 </p>
                 <div className="bg-orange-50 dark:bg-orange-900/20 border-l-4 border-orange-500 p-4 rounded-r-lg mt-4">
-                  <p className="text-orange-800 dark:text-orange-200 italic leading-relaxed">
+                  <p className="text-gray-800 dark:text-gray-200 italic leading-relaxed">
                     Think of it as a GPS and X-ray for your network: we discover devices and routes, then inspect the "doors" (ports) and the labels on those doors (service banners/version info) to identify risky entry points.
                   </p>
                 </div>
@@ -1406,64 +1356,64 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
 
               {/* Why do we need Network Scanning? */}
               <div className="space-y-4">
-                <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 flex items-center gap-3">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <div className="w-1 h-8 bg-orange-500 rounded"></div>
                   Why do we need Network Scanning?
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-5 border border-blue-200 dark:border-blue-800">
+                    <h5 className="font-semibold text-blue-900 dark:text-blue-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                       Visibility of your attack surface
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Networks change often. Devices get added, ports get opened, and services get enabled. Scanning gives you a current map of exposure.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-5 border border-green-200 dark:border-green-800">
+                    <h5 className="font-semibold text-green-900 dark:text-green-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                       </svg>
                       Find invisible or forgotten hosts
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Development servers, test boxes, or legacy devices are frequently left accessible. Detecting them reduces hidden risks.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-5 border border-purple-200 dark:border-purple-800">
+                    <h5 className="font-semibold text-purple-900 dark:text-purple-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                       </svg>
                       Detect network misconfigurations
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Misrouted traffic, open management interfaces, permissive ICMP/ping responses, or wrongly exposed services can be identified and fixed.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-5 border border-yellow-200 dark:border-yellow-800">
+                    <h5 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                       Support incident response & threat hunting
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       A recent network scan helps responders understand what was reachable and potentially compromised at a point in time.
                     </p>
                   </div>
-                  <div className="bg-orange-50 dark:bg-orange-900/20 rounded-lg p-5 border border-orange-200 dark:border-orange-800 md:col-span-2">
-                    <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-2 flex items-center gap-2">
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-lg p-5 border border-indigo-200 dark:border-indigo-800 md:col-span-2">
+                    <h5 className="font-semibold text-indigo-900 dark:text-indigo-100 mb-2 flex items-center gap-2">
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                       </svg>
                       Comply with policy and audits
                     </h5>
-                    <p className="text-sm text-orange-800 dark:text-orange-200">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
                       Many standards require regular network discovery and evidence of remediation.
                     </p>
                   </div>
@@ -1472,93 +1422,93 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
 
               {/* How we help */}
               <div className="space-y-4">
-                <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 flex items-center gap-3">
+                <h4 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                   <div className="w-1 h-8 bg-orange-500 rounded"></div>
                   How we help — our Network Scanning service (high level)
                 </h4>
-                <p className="text-orange-800 dark:text-orange-200 leading-relaxed">
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
                   We perform carefully controlled, authorized network discovery and probing using proven methods. Key steps in our process:
                 </p>
                 <div className="space-y-3">
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       1
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Scope & Authorization</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We document exactly which IPs, ranges, and hostnames are in scope and get written permission. This prevents accidental scanning of third-party networks.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Scope & Authorization</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We document exactly which IPs, ranges, and hostnames are in scope and get written permission. This prevents accidental scanning of third-party networks.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       2
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Host discovery</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We determine which addresses are live and responding on the network (both IPv4 and IPv6 if applicable). This builds the initial inventory of active hosts.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Host discovery</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We determine which addresses are live and responding on the network (both IPv4 and IPv6 if applicable). This builds the initial inventory of active hosts.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       3
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Reachability & latency checks</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We measure basic responsiveness and packet loss to surface network health issues and transient connectivity problems.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Reachability & latency checks</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We measure basic responsiveness and packet loss to surface network health issues and transient connectivity problems.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       4
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Port and service enumeration</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">For each live host we probe the range of network ports to find which are open and accept connections. For every open port we attempt to identify the service and version that's running (for example, web servers, SSH, database listeners, remote admin interfaces, etc.).</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Port and service enumeration</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">For each live host we probe the range of network ports to find which are open and accept connections. For every open port we attempt to identify the service and version that's running (for example, web servers, SSH, database listeners, remote admin interfaces, etc.).</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       5
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Service fingerprinting & banner analysis</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We collect non-invasive service metadata (protocol banners, protocol behaviors) to determine software types and versions — crucial for correlating known vulnerabilities.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Service fingerprinting & banner analysis</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We collect non-invasive service metadata (protocol banners, protocol behaviors) to determine software types and versions — crucial for correlating known vulnerabilities.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       6
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Stealth and timing considerations</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We tune probes to be respectful of network performance and intrusion detection systems. For production environments we use conservative probe rates and schedule scans during agreed maintenance windows where necessary.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Stealth and timing considerations</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We tune probes to be respectful of network performance and intrusion detection systems. For production environments we use conservative probe rates and schedule scans during agreed maintenance windows where necessary.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       7
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Network path & topology mapping</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We analyze routing and hops between the scanning point and targets to detect firewalls, load balancers, or routing anomalies that could affect security posture.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Network path & topology mapping</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We analyze routing and hops between the scanning point and targets to detect firewalls, load balancers, or routing anomalies that could affect security posture.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       8
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Contextual vulnerability correlation</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">Where we identify specific software versions or exposed services, we cross-reference with known vulnerabilities and provide an evidence-backed assessment of risk.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Contextual vulnerability correlation</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">Where we identify specific software versions or exposed services, we cross-reference with known vulnerabilities and provide an evidence-backed assessment of risk.</p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
+                  <div className="flex items-start gap-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600">
                     <div className="flex-shrink-0 w-8 h-8 bg-orange-500 text-white rounded-full flex items-center justify-center font-bold">
                       9
                     </div>
                     <div className="flex-1">
-                      <h5 className="font-semibold text-orange-900 dark:text-orange-100 mb-1">Prioritization and remediation guidance</h5>
-                      <p className="text-sm text-orange-800 dark:text-orange-200">We don't just list findings — we prioritize them, explain business impact, and provide practical remediation steps.</p>
+                      <h5 className="font-semibold text-gray-900 dark:text-white mb-1">Prioritization and remediation guidance</h5>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">We don't just list findings — we prioritize them, explain business impact, and provide practical remediation steps.</p>
                     </div>
                   </div>
                 </div>
@@ -2071,47 +2021,6 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                   })()}
                 </div>
               )}
-
-              {/* AI Suggestions Section */}
-              <div ref={aiSuggestionRef} className="mt-6">
-                {(aiSuggestions || aiError || isLoadingTgpt) && (
-                  <div className="bg-white dark:bg-slate-800 rounded-lg p-6 border border-gray-200 dark:border-slate-600">
-                    <div className="flex items-center space-x-3 mb-4">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                        </svg>
-                      </div>
-                      <h5 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Suggestions</h5>
-                    </div>
-                    
-                    {isLoadingTgpt ? (
-                      <div className="flex items-center justify-center py-8">
-                        <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                        <span className="ml-3 text-gray-600 dark:text-gray-400">Generating AI suggestions...</span>
-                      </div>
-                    ) : aiError ? (
-                      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                        <p className="text-sm text-red-600 dark:text-red-400">{aiError}</p>
-                      </div>
-                    ) : aiSuggestions ? (
-                      <div className="space-y-4">
-                        <div className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                          <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-words">
-                            {aiSuggestions}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
-                          Click the AI Suggestions button to get AI-powered recommendations based on your scan results.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
 
               {/* Raw Results - TGPT JSON and Kali Raw Results */}
               {scanResults && scanResults.success && (

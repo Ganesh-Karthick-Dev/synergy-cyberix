@@ -1,0 +1,12 @@
+{
+  "id": "log_1762247089241_3purus4ni",
+  "timestamp": "2025-11-04T09:04:49.241Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "htt",
+  "status": "failed",
+  "startTime": "2025-11-04T09:02:49.241Z",
+  "endTime": "2025-11-04T09:04:49.241Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}

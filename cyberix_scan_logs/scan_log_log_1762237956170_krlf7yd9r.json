@@ -1,0 +1,12 @@
+{
+  "id": "log_1762237956170_krlf7yd9r",
+  "timestamp": "2025-11-04T06:32:36.170Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "webnox.in",
+  "status": "started",
+  "startTime": "2025-11-04T06:32:36.169Z",
+  "endTime": null,
+  "duration": null,
+  "result": "Scan initiated"
+}

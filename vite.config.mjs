@@ -4,14 +4,14 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: './', // Use relative paths for Electron compatibility
   plugins: [
     react(),
     tailwindcss(),
   ],
   server: {
     port: 3000,
-    strictPort: false,
+    strictPort: true, // Enforce port 3000
+    host: true, // Allow external connections
   },
   build: {
     outDir: 'dist',

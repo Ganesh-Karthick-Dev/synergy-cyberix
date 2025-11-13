@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
   "scanConfiguration": {
     "defaultDistro": "kali-linux",
@@ -105,3 +106,112 @@
   }
 }
 
+=======
+{
+  "scanConfiguration": {
+    "defaultDistro": "kali-linux",
+    "outputDirectory": "./temp-scans",
+    "baselineDirectory": "./maldef-baselines",
+    "autoInstallTools": true,
+    "updateClamavOnStart": true
+  },
+  "scanTypes": {
+    "web": {
+      "enabled": true,
+      "tools": {
+        "nikto": true,
+        "wapiti": true,
+        "wpscan": true
+      }
+    },
+    "malware": {
+      "enabled": true,
+      "tools": {
+        "clamav": true,
+        "yara": true
+      },
+      "yaraRulesPath": "/opt/maldef/rules/sample_web_malware.yar"
+    },
+    "rootkit": {
+      "enabled": false,
+      "tools": {
+        "rkhunter": true,
+        "chkrootkit": true
+      },
+      "note": "Requires server/filesystem access"
+    },
+    "system": {
+      "enabled": false,
+      "tools": {
+        "lynis": true
+      },
+      "note": "Requires server/filesystem access"
+    },
+    "defacement": {
+      "enabled": true,
+      "baselineUpdateInterval": "24h",
+      "alertOnChange": true
+    }
+  },
+  "scheduling": {
+    "enabled": false,
+    "schedules": [
+      {
+        "name": "Daily Website Scan",
+        "target": "https://example.com",
+        "cron": "0 2 * * *",
+        "scanTypes": {
+          "web": true,
+          "malware": true,
+          "defacement": true
+        }
+      },
+      {
+        "name": "Weekly Full Scan",
+        "target": "https://example.com",
+        "cron": "0 3 * * 0",
+        "scanTypes": {
+          "web": true,
+          "malware": true,
+          "rootkit": true,
+          "system": true,
+          "defacement": true
+        }
+      }
+    ]
+  },
+  "baselineManagement": {
+    "targets": [
+      {
+        "url": "https://example.com",
+        "baselineFile": "./maldef-baselines/example.com_baseline.json",
+        "checkInterval": "1h",
+        "alertOnChange": true
+      }
+    ]
+  },
+  "notifications": {
+    "enabled": false,
+    "email": {
+      "smtp": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "secure": false,
+        "auth": {
+          "user": "user@example.com",
+          "pass": "password"
+        }
+      },
+      "to": ["admin@example.com"],
+      "onFindings": true,
+      "onDefacement": true
+    }
+  },
+  "reporting": {
+    "format": ["json", "html", "pdf"],
+    "retentionDays": 30,
+    "includeConsoleOutput": true
+  }
+}
+
+>>>>>>> 331ec0e3c7b3fff536c041ed33509bd64d2e19d9

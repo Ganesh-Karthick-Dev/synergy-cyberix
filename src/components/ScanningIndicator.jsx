@@ -1,13 +1,9 @@
 import { useScanning } from '../context/ScanningContext'
-import { useContext } from 'react'
-import { GlobalScanContext } from '../context/GlobalScanContext'
+import { useGlobalScanState } from '../context/GlobalScanContext'
 
 function ScanningIndicator() {
   const { scanStatus, abortScan } = useScanning()
-  
-  // Safely get activeScans with fallback - use useContext directly to avoid hook error
-  const globalScanContext = useContext(GlobalScanContext)
-  const activeScans = globalScanContext?.activeScans || []
+  const { activeScans } = useGlobalScanState()
 
   if (!scanStatus.isScanning) return null
   

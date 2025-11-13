@@ -27,12 +27,7 @@ import {
   ShieldCheck,
   AlertCircle,
   List,
-  Sliders,
-  Layers,
-  ShoppingCart,
-  Ban,
-  FileCheck,
-  ShieldX
+  Sliders
 } from 'lucide-react'
 import ServerScanning from './components/ServerScanning'
 import ScanningIndicator from './components/ScanningIndicator'
@@ -44,7 +39,7 @@ import ChatBot from './components/ChatBot'
 
 import PhishingDetection from './components/PhishingDetection'
 import APIScanner from './components/APIScanner'
-import WebsiteSecurityAudit from './components/WebsiteSecurityAudit'
+import SecurityAnalyzer from './components/SecurityAnalyzer'
 import MalwareDefacementMonitor from './components/MalwareDefacementMonitor'
 
 function Dashboard({ onLogout }) {
@@ -67,6 +62,18 @@ function Dashboard({ onLogout }) {
           window.cyberGuard.removeNotificationClickedListener(handler)
         }
       }
+    }
+  }, [])
+
+  // Check URL parameters for view (e.g., after OAuth redirect)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const viewParam = urlParams.get('view')
+    if (viewParam) {
+      setActiveView(viewParam)
+      // Clean up URL by removing the view parameter
+      const newUrl = window.location.pathname + (window.location.search.replace(/[?&]view=[^&]*/, '').replace(/^&/, '?') || '')
+      window.history.replaceState({}, '', newUrl)
     }
   }, [])
 
@@ -125,22 +132,22 @@ function Dashboard({ onLogout }) {
     { 
       id: 'wordpress-shield', 
       name: 'WordPress Cloud Shield', 
-      icon: <Layers className="w-5 h-5" strokeWidth={2.5} />
+      icon: <Globe className="w-5 h-5" />
     },
     { 
       id: 'shopify-shield', 
       name: 'Shopify Cloud Shield', 
-      icon: <ShoppingCart className="w-5 h-5" strokeWidth={2.5} />
+      icon: <Store className="w-5 h-5" />
     },
     {
       id: 'website-audit',
       name: 'Website Security Audit',
-      icon: <FileSearch className="w-5 h-5" strokeWidth={2.5} />
+      icon: <ShieldCheck className="w-5 h-5" />
     },
     {
       id: 'phishing-scan',
-      name: 'Phishing & Brand Abuse Detection',
-      icon: <AlertTriangle className="w-5 h-5" strokeWidth={2.5} />
+      name: 'Phishing Detection',
+      icon: <AlertCircle className="w-5 h-5" />
     },
     {
       id: 'api-scan',
@@ -177,7 +184,7 @@ function Dashboard({ onLogout }) {
       case 'phishing-scan':
         return <PhishingDetection />
       case 'api-scan':
-        return <APIScanner />
+        return <APIScanner onNavigate={(view) => setActiveView(view)} />
       // case 'security':
       //   return <SecurityCenter />
       case 'malware-defacement':
@@ -192,7 +199,7 @@ function Dashboard({ onLogout }) {
       case 'shopify-shield':
         return <ShopifyCloudShield />
       case 'website-audit':
-        return <WebsiteSecurityAudit />
+        return <SecurityAnalyzer />
       case 'settings':
         return <SettingsPanel />
       default:
@@ -245,7 +252,7 @@ function Dashboard({ onLogout }) {
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
-          <div className="p-6 bg-gray-50 dark:bg-slate-900 w-full max-w-full overflow-x-hidden" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+          <div className="p-6 bg-gray-50 dark:bg-slate-900">
             {renderContent()}
           </div>
         </main>

@@ -3,58 +3,12 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { app, BrowserWindow, ipcMain, dialog, shell, Notification } = require('electron');
 const { spawn } = require('child_process');
-const { detectPlatform, checkWslInstalled, installWsl, installUbuntu, verifyUbuntuInstalled } = require('./osCheck');
+const { detectPlatform, checkWslInstalled, installWsl } = require('./osCheck');
 require('dotenv').config();
-const wslHelper = require(path.join(__dirname, '..', 'utils', 'wslHelper'));
+const wslHelper = require('../utils/wslHelper');
+const toolInstaller = require('../setup/toolInstaller');
 
-// Load toolInstaller with error handling for packaged app
-let toolInstaller;
-try {
-  toolInstaller = require(path.join(__dirname, '..', 'setup', 'toolInstaller'));
-} catch (error) {
-  console.error('[MAIN] Failed to load toolInstaller:', error.message);
-  console.error('[MAIN] __dirname:', __dirname);
-  console.error('[MAIN] Attempted path:', path.join(__dirname, '..', 'setup', 'toolInstaller'));
-  // Try alternative paths as fallback
-  try {
-    toolInstaller = require('./setup/toolInstaller');
-  } catch (e2) {
-    try {
-      toolInstaller = require('../setup/toolInstaller');
-    } catch (e3) {
-      console.error('[MAIN] All attempts to load toolInstaller failed');
-      throw new Error(`Cannot find toolInstaller module. Please ensure src/setup/toolInstaller.js is included in the build. Original error: ${error.message}`);
-    }
-  }
-}
-
-// Properly detect production mode - use app.isPackaged for Electron apps
-// app.isPackaged is true when the app is packaged/distributed
-const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
-
-// File-based logging for debugging (works even when console isn't visible)
-const logFile = path.join(app.getPath('userData'), 'cyberix-debug.log');
-function logToFile(message) {
-  try {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}\n`;
-    fs.appendFileSync(logFile, logMessage, 'utf8');
-  } catch (err) {
-    // Silently fail if logging fails
-  }
-}
-
-// Log startup info
-logToFile(`=== Cyberix Startup ===`);
-logToFile(`isDev: ${isDev}`);
-logToFile(`app.isPackaged: ${app.isPackaged}`);
-logToFile(`NODE_ENV: ${process.env.NODE_ENV || 'undefined'}`);
-logToFile(`__dirname: ${__dirname}`);
-logToFile(`app.getAppPath(): ${app.getAppPath()}`);
-logToFile(`process.resourcesPath: ${process.resourcesPath || 'undefined'}`);
-
-console.log('[MAIN] Debug log file:', logFile);
-console.log('[MAIN] isDev:', isDev, 'app.isPackaged:', app.isPackaged);
+const isDev = process.env.NODE_ENV !== 'production';
 
 // Secure password storage functions
 function getPasswordFilePath() {
@@ -173,26 +127,39 @@ function clearStoredPassword() {
 }
 
 // Helper: check if Kali Linux is installed in WSL
-function checkKaliInstalled() {
-  // Method 1: Check with wsl --status (most reliable)
+async function checkKaliInstalled() {
+  // First, check if we're on native Kali Linux
   try {
-    const sp = require('child_process').spawnSync('wsl', ['--status'], { 
+    const { detectKaliEnvironment } = require('./osCheck');
+    const env = await detectKaliEnvironment();
+
+    if (env.type === 'native-kali') {
+      console.log('✅ Native Kali Linux detected - no installation needed');
+      return true;
+    }
+  } catch (e) {
+    console.log('Environment detection error:', e.message);
+  }
+
+  // Method 1: Check with wsl --status (for Windows WSL users)
+  try {
+    const sp = require('child_process').spawnSync('wsl', ['--status'], {
       encoding: 'utf8',
       timeout: 5000 // Reduced timeout
     });
-    
+
     if (sp.status === 0) {
       const rawOutput = (sp.stdout || '').trim();
       // Clean up Unicode null characters that Windows PowerShell sometimes adds
       const output = rawOutput.replace(/\u0000/g, '');
       console.log('WSL status output:', output); // Debug logging
-      
+
       // Check if Kali Linux is mentioned in the status
       const lowerOutput = output.toLowerCase();
-      const hasKali = lowerOutput.includes('kali-linux') || 
+      const hasKali = lowerOutput.includes('kali-linux') ||
                      lowerOutput.includes('kali_linux') ||
                      lowerOutput.includes('kali');
-      
+
       if (hasKali) {
         console.log('✅ Kali detected via wsl --status'); // Debug logging
         return true;
@@ -539,31 +506,10 @@ async function installKaliLinux(event = null) {
   });
 }
 
-// Global icon path for notifications
-const iconPath = path.join(__dirname, '..', 'assets', 'logo', 'icons8-security-shield-64.png');
+// Global icon path for notifications - Use the original Cybersecurity Research icon
+const iconPath = path.join(__dirname, '..', 'assets', 'Cybersecurity-research-02.png');
 
 async function createMainWindow() {
-  // Resolve preload script path - handle both dev and production
-  let preloadPath = path.join(__dirname, 'preload.js');
-  if (!fs.existsSync(preloadPath)) {
-    // Try alternative paths for packaged app
-    const altPreloadPaths = [
-      path.join(app.getAppPath(), 'src', 'main', 'preload.js'),
-      path.join(__dirname, '..', 'main', 'preload.js'),
-      path.join(process.resourcesPath, 'app', 'src', 'main', 'preload.js')
-    ];
-    for (const altPath of altPreloadPaths) {
-      if (fs.existsSync(altPath)) {
-        preloadPath = altPath;
-        console.log('[MAIN] Using preload path:', preloadPath);
-        break;
-      }
-    }
-  }
-  
-  if (!fs.existsSync(preloadPath)) {
-    console.warn('[MAIN] ⚠️ Preload script not found, continuing without it');
-  }
 
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -575,11 +521,17 @@ async function createMainWindow() {
     title: 'Cyberix',
     show: false,
     webPreferences: {
-      preload: fs.existsSync(preloadPath) ? preloadPath : undefined,
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false,
-      enableRemoteModule: false
+      // webSecurity: false is required for this cybersecurity scanning app to:
+      // - Load local files and resources
+      // - Bypass CORS restrictions for security scanning
+      // - Access local network resources
+      // WARNING: This disables web security features. Only use in trusted environments.
+      // Note: This will trigger an Electron security warning about allowRunningInsecureContent,
+      // which is expected and suppressed in the console message handler below.
+      webSecurity: false
     }
   });
 
@@ -588,43 +540,73 @@ async function createMainWindow() {
     mainWindow.show()
   })
 
-  // Log all console messages for debugging
+  // Suppress harmless DevTools console warnings (Autofill API errors and Electron security warnings)
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
     // Filter out harmless DevTools Autofill warnings
     if (message.includes('Autofill.enable') || message.includes('Autofill.setAddresses')) {
       return; // Suppress these warnings
     }
-    // Log important messages
-    if (level >= 2) { // Error or warning
-      console.log(`[RENDERER ${level === 3 ? 'ERROR' : 'WARN'}]`, message);
+    // Suppress Electron security warnings about allowRunningInsecureContent in development
+    // These warnings are expected when webSecurity is disabled for security scanning purposes
+    if (message.includes('Electron Security Warning') && message.includes('allowRunningInsecureContent')) {
+      return; // Suppress this warning - it's expected for this cybersecurity scanning app
     }
+    // Allow other console messages to pass through
   });
-  
-  // Open DevTools automatically in production for debugging (remove in final release)
-  if (!isDev) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
-  }
 
   // In development, load from Vite dev server
   if (isDev) {
     // Try multiple ports that Vite might use
-    const ports = [3000, 5173, 6977, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6978];
+    const ports = [3000, 5173, 6969, 6970, 6971, 6972, 6973, 6974, 6975, 6976, 6977, 6978];
     let loaded = false;
-    
-    for (const port of ports) {
-      try {
+
+    // Function to try loading from a port with proper promise handling
+    const tryLoadPort = (port) => {
+      return new Promise((resolve) => {
         const url = `http://localhost:${port}/`;
         console.log(`Trying to load from: ${url}`);
-        await mainWindow.loadURL(url);
+
+        // Set up event listeners before loading
+        const onFinishLoad = () => {
+          console.log(`✅ Successfully loaded from port ${port}`);
+          cleanup();
+          resolve(true);
+        };
+
+        const onFailLoad = (event, errorCode, errorDescription) => {
+          console.log(`❌ Failed to load from port ${port}: ${errorDescription} (${errorCode})`);
+          cleanup();
+          resolve(false);
+        };
+
+        const cleanup = () => {
+          mainWindow.webContents.removeListener('did-finish-load', onFinishLoad);
+          mainWindow.webContents.removeListener('did-fail-load', onFailLoad);
+        };
+
+        mainWindow.webContents.once('did-finish-load', onFinishLoad);
+        mainWindow.webContents.once('did-fail-load', onFailLoad);
+
+        // Load the URL
+        mainWindow.loadURL(url);
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          cleanup();
+          resolve(false);
+        }, 5000);
+      });
+    };
+
+    // Try ports sequentially
+    for (const port of ports) {
+      const success = await tryLoadPort(port);
+      if (success) {
         loaded = true;
-        console.log(`✅ Successfully loaded from port ${port}`);
         break;
-      } catch (error) {
-        console.log(`❌ Failed to load from port ${port}:`, error.message);
-        continue;
       }
     }
-    
+
     if (!loaded) {
       console.log('❌ Failed to load from any port, showing error page');
       mainWindow.loadURL(`data:text/html,
@@ -638,6 +620,7 @@ async function createMainWindow() {
               <li>The Vite server is running on one of these ports: ${ports.join(', ')}</li>
               <li>Check the terminal for the correct port number</li>
             </ul>
+            <p><strong>Expected port:</strong> 5173 (Vite default)</p>
             <p><strong>Current time:</strong> ${new Date().toLocaleString()}</p>
             <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Retry</button>
           </body>
@@ -651,209 +634,21 @@ async function createMainWindow() {
       console.log('Page loaded, checking for errors...');
     });
   } else {
-    // In production, load from dist directory (Vite build output)
-    // __dirname points to src/main in the packaged app, so we go up to app root then into dist
-    const appPath = app.getAppPath();
-    const indexFile = path.join(appPath, 'dist', 'index.html');
-    
-    console.log('[MAIN] Production mode - Loading index.html');
-    logToFile('[MAIN] Production mode - Loading index.html');
-    console.log('[MAIN] App path:', appPath);
-    logToFile(`[MAIN] App path: ${appPath}`);
-    console.log('[MAIN] __dirname:', __dirname);
-    logToFile(`[MAIN] __dirname: ${__dirname}`);
-    console.log('[MAIN] Index file path:', indexFile);
-    logToFile(`[MAIN] Index file path: ${indexFile}`);
-    console.log('[MAIN] Index file exists:', fs.existsSync(indexFile));
-    logToFile(`[MAIN] Index file exists: ${fs.existsSync(indexFile)}`);
-    
-    // Try multiple paths in order of likelihood
-    const possiblePaths = [
-      path.join(appPath, 'dist', 'index.html'), // Standard packaged location
-      path.join(__dirname, '..', '..', 'dist', 'index.html'), // If __dirname is src/main
-      path.join(__dirname, '..', 'dist', 'index.html'), // Alternative
-      path.join(appPath, 'index.html'), // Root level
-    ];
-    
-    let loaded = false;
-    for (const filePath of possiblePaths) {
-      console.log('[MAIN] Checking path:', filePath);
-      logToFile(`[MAIN] Checking path: ${filePath}`);
-      if (fs.existsSync(filePath)) {
-        console.log('[MAIN] ✅ Found index.html at:', filePath);
-        logToFile(`[MAIN] ✅ Found index.html at: ${filePath}`);
-        try {
-          // Use loadFile which handles path resolution correctly
-          mainWindow.loadFile(filePath);
-          loaded = true;
-          console.log('[MAIN] ✅ Successfully loaded index.html');
-          logToFile('[MAIN] ✅ Successfully loaded index.html');
-          break;
-        } catch (error) {
-          console.error('[MAIN] Failed to load file:', error);
-          logToFile(`[MAIN] Failed to load file: ${error.message} ${error.stack}`);
-          // Try loadURL as fallback
-          try {
-            // Convert Windows path to file:// URL format
-            let fileUrl = filePath.replace(/\\/g, '/');
-            // Ensure proper file:// URL format (file:/// for absolute paths)
-            if (!fileUrl.startsWith('file://')) {
-              if (process.platform === 'win32') {
-                fileUrl = `file:///${fileUrl}`;
-              } else {
-                fileUrl = `file://${fileUrl}`;
-              }
-            }
-            console.log('[MAIN] Trying loadURL with:', fileUrl);
-            logToFile(`[MAIN] Trying loadURL with: ${fileUrl}`);
-            await mainWindow.loadURL(fileUrl);
-            loaded = true;
-            logToFile('[MAIN] ✅ Successfully loaded via loadURL');
-            break;
-          } catch (error2) {
-            console.error('[MAIN] loadURL also failed:', error2);
-            logToFile(`[MAIN] loadURL also failed: ${error2.message} ${error2.stack}`);
-            continue;
-          }
-        }
-      } else {
-        logToFile(`[MAIN] Path does not exist: ${filePath}`);
-      }
-    }
-    
-    if (!loaded) {
-      console.error('[MAIN] ❌ index.html not found in any expected location');
-      logToFile('[MAIN] ❌ index.html not found in any expected location');
-      logToFile(`[MAIN] Tried paths: ${possiblePaths.join(', ')}`);
-      
-      // List files in app path for debugging
-      try {
-        const appPathFiles = fs.readdirSync(appPath);
-        logToFile(`[MAIN] Files in app path: ${appPathFiles.join(', ')}`);
-        console.log('[MAIN] Files in app path:', appPathFiles);
-        
-        // Check if dist folder exists
-        const distPath = path.join(appPath, 'dist');
-        if (fs.existsSync(distPath)) {
-          const distFiles = fs.readdirSync(distPath);
-          logToFile(`[MAIN] Files in dist folder: ${distFiles.join(', ')}`);
-          console.log('[MAIN] Files in dist folder:', distFiles);
-        } else {
-          logToFile('[MAIN] dist folder does not exist in app path');
-          console.log('[MAIN] dist folder does not exist');
-        }
-      } catch (err) {
-        logToFile(`[MAIN] Error listing files: ${err.message}`);
-      }
-      
-      // Show detailed error page with log file location
-      const errorHtml = `
-        <html>
-          <head><title>Cyberix - Loading Error</title></head>
-          <body style="font-family: 'Poppins', sans-serif; padding: 20px; background: #1a1a1a; color: white;">
-            <h1>🚨 Cyberix Loading Error</h1>
-            <p>The application files could not be found. This indicates a build configuration issue.</p>
-            <p><strong>App path:</strong> ${appPath}</p>
-            <p><strong>__dirname:</strong> ${__dirname}</p>
-            <p><strong>Tried paths:</strong></p>
-            <ul>
-              ${possiblePaths.map(p => `<li>${p}</li>`).join('')}
-            </ul>
-            <p>Please rebuild the application using <code>npm run build:exe</code></p>
-            <p><strong>Debug log file:</strong> <code>${logFile}</code></p>
-            <p>Check this file for detailed error information.</p>
-          </body>
-        </html>
-      `;
-      mainWindow.loadURL(`data:text/html,${encodeURIComponent(errorHtml)}`);
-    }
+    const indexFile = path.join(__dirname, '..', 'renderer', 'index.html');
+    mainWindow.loadFile(indexFile);
   }
 
-  // Comprehensive error handling
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    console.error('[MAIN] ❌ Failed to load:', errorDescription)
-    logToFile(`[MAIN] ❌ Failed to load: ${errorDescription}`);
-    console.error('[MAIN] Error code:', errorCode)
-    logToFile(`[MAIN] Error code: ${errorCode}`);
-    console.error('[MAIN] URL:', validatedURL)
-    logToFile(`[MAIN] URL: ${validatedURL}`);
-    console.error('[MAIN] Is main frame:', isMainFrame)
-    logToFile(`[MAIN] Is main frame: ${isMainFrame}`);
-    
-    if (!isMainFrame) {
-      return; // Ignore sub-frame failures
-    }
-    
+  // For debugging
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Failed to load:', errorDescription)
     if (isDev) {
       setTimeout(() => {
         console.log('Attempting to reload from current Vite port...')
+        // Try to reload from the current Vite port (default: 3000)
         mainWindow.loadURL('http://localhost:3000/')
       }, 1000)
-    } else {
-      // Show error in window
-      mainWindow.loadURL(`data:text/html,
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Cyberix - Load Error</title>
-            <meta charset="UTF-8">
-            <style>
-              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: #1a1a1a; color: #fff; }
-              h1 { color: #ff4444; }
-              .error-box { background: #2a2a2a; padding: 20px; border-radius: 8px; margin: 20px 0; }
-              code { background: #1a1a1a; padding: 2px 6px; border-radius: 4px; }
-            </style>
-          </head>
-          <body>
-            <h1>🚨 Failed to Load Application</h1>
-            <div class="error-box">
-              <p><strong>Error:</strong> ${errorDescription}</p>
-              <p><strong>Error Code:</strong> ${errorCode}</p>
-              <p><strong>URL:</strong> <code>${validatedURL}</code></p>
-            </div>
-            <p>Check the console (DevTools) for more details.</p>
-            <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 20px;">🔄 Retry</button>
-          </body>
-        </html>
-      `);
     }
-  });
-  
-  // Handle page load completion
-  mainWindow.webContents.on('did-finish-load', () => {
-    console.log('[MAIN] ✅ Page finished loading');
-    logToFile('[MAIN] ✅ Page finished loading');
-    // Inject error handler to catch React errors
-    mainWindow.webContents.executeJavaScript(`
-      (function() {
-        window.addEventListener('error', function(e) {
-          console.error('[RENDERER] Global error:', e.error, e.message, e.filename, e.lineno);
-        });
-        window.addEventListener('unhandledrejection', function(e) {
-          console.error('[RENDERER] Unhandled promise rejection:', e.reason);
-        });
-        console.log('[RENDERER] Error handlers installed');
-      })();
-    `).catch(err => console.error('[MAIN] Failed to inject error handlers:', err));
-  });
-  
-  // Handle renderer process crashes
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
-    console.error('[MAIN] ❌ Renderer process crashed:', details);
-    logToFile(`[MAIN] ❌ Renderer process crashed: ${JSON.stringify(details)}`);
-    mainWindow.loadURL(`data:text/html,
-      <!DOCTYPE html>
-      <html>
-        <head><title>Cyberix - Crash</title></head>
-        <body style="font-family: sans-serif; padding: 40px; background: #1a1a1a; color: #fff;">
-          <h1>🚨 Application Crashed</h1>
-          <p>Reason: ${details.reason}</p>
-          <p>Exit Code: ${details.exitCode}</p>
-          <button onclick="location.reload()" style="padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">🔄 Reload</button>
-        </body>
-      </html>
-    `);
-  });
+  })
 
   return mainWindow;
 }
@@ -3113,37 +2908,6 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
     return { success: true, message: 'Wapiti handlers are working' }
   })
   
-  // Helper function to test WSL connection with retry
-  const testWslConnection = async (maxRetries = 3) => {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`[WSL] Testing WSL connection (attempt ${attempt}/${maxRetries})...`)
-        const { exec } = require('child_process')
-        const { promisify } = require('util')
-        const execAsync = promisify(exec)
-        
-        // Test with a simple command that has a short timeout
-        await execAsync('wsl echo "WSL connection test"', { 
-          timeout: 10000, // 10 second timeout
-          maxBuffer: 1024 
-        })
-        console.log('[WSL] ✅ WSL connection test successful')
-        return true
-      } catch (error) {
-        console.log(`[WSL] ❌ WSL connection test failed (attempt ${attempt}/${maxRetries}):`, error.message)
-        if (attempt < maxRetries) {
-          const waitTime = attempt * 2000 // Exponential backoff: 2s, 4s, 6s
-          console.log(`[WSL] ⏳ Waiting ${waitTime}ms before retry...`)
-          await new Promise(resolve => setTimeout(resolve, waitTime))
-        } else {
-          console.log('[WSL] ❌ All WSL connection tests failed')
-          return false
-        }
-      }
-    }
-    return false
-  }
-
   console.log('[WAPITI] Registering wapiti:start handler...')
   ipcMain.handle('wapiti:start', async (event, url) => {
     console.log('[WAPITI] wapiti:start handler called with url:', url)
@@ -3156,77 +2920,22 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
         event.sender.send('wapiti:progress', { stage: 'error', message: 'WSL is required for Wapiti scans' })
         return { error: 'WSL is required for Wapiti scans' }
       }
-      
-      // Test WSL connection before starting scan
-      event.sender.send('wapiti:progress', { stage: 'info', message: 'Testing WSL connection...' })
-      const wslConnected = await testWslConnection(3)
-      if (!wslConnected) {
-        const errorMsg = 'WSL connection timeout. Please ensure WSL is running. Try restarting WSL or your computer if the issue persists.'
-        event.sender.send('wapiti:progress', { stage: 'error', message: errorMsg })
-        return { error: errorMsg }
-      }
-      
       const tempDir = path.join(process.cwd(), 'temp-scans')
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true })
       }
       const scanFile = path.join(tempDir, 'local_scan.json')
       const wslPath = tempDir.replace(/\\/g, '/').replace(/^([A-Z]):/, (match, drive) => `/mnt/${drive.toLowerCase()}`)
-      const wapitiCmd = `wapiti -u "${url}" -d 3 -m xss,sql -f json -o local_scan.json --max-scan-time 1800 --skip .jpg --skip .jpeg --skip .png --skip .webp`
+      const wapitiCmd = `wapiti -u "${url}" -d 3 -m xss,sql -f json -o local_scan.json --max-scan-time 300 --skip .jpg --skip .jpeg --skip .png --skip .webp`
       event.sender.send('wapiti:progress', { stage: 'starting', message: `Starting Wapiti scan for ${url}...` })
       event.sender.send('wapiti:progress', { stage: 'info', message: `Command: ${wapitiCmd}` })
       const wslCommand = `cd "${wslPath}" && ${wapitiCmd}`
-      
-      // Spawn with error handling for WSL connection issues
-      let spawnTimeout = null
-      let spawnStarted = false
-      
-      try {
-        wapitiScanChild = spawn('wsl', ['bash', '-c', wslCommand], {
-          stdio: ['pipe', 'pipe', 'pipe']
-        })
-        
-        // Set a timeout to detect if spawn fails to start
-        spawnTimeout = setTimeout(() => {
-          if (!spawnStarted && wapitiScanChild) {
-            console.log('[WAPITI] Spawn timeout - process may not have started')
-            event.sender.send('wapiti:progress', { stage: 'warning', message: 'WSL process is taking longer than expected to start...' })
-          }
-        }, 15000) // 15 second warning
-        
-        // Mark as started when we get first data or process starts
-        wapitiScanChild.stdout.once('data', () => {
-          spawnStarted = true
-          if (spawnTimeout) {
-            clearTimeout(spawnTimeout)
-            spawnTimeout = null
-          }
-        })
-        
-        wapitiScanChild.stderr.once('data', () => {
-          spawnStarted = true
-          if (spawnTimeout) {
-            clearTimeout(spawnTimeout)
-            spawnTimeout = null
-          }
-        })
-        
-      } catch (spawnError) {
-        if (spawnTimeout) {
-          clearTimeout(spawnTimeout)
-          spawnTimeout = null
-        }
-        if (spawnError.message && spawnError.message.includes('HCS_E_CONNECTION_TIMEOUT')) {
-          const errorMsg = 'WSL connection timeout when starting scan. Please ensure WSL is running properly. Try: wsl --shutdown then wsl in PowerShell to restart WSL.'
-          event.sender.send('wapiti:progress', { stage: 'error', message: errorMsg })
-          return { error: errorMsg }
-        }
-        throw spawnError
-      }
-      
+      wapitiScanChild = spawn('wsl', ['bash', '-c', wslCommand], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
       let interruptionTimeout = null
       let autoInterruptTimeout = null
-      const maxScanTime = 30 * 60 * 1000 // 30 minutes (1800000ms) - WordPress/Shopify scans can take 20-30 minutes
+      const maxScanTime = 5 * 60 * 1000 // 5 minutes
       let reportRetryTimeout = null
       
       const checkForInterruption = (data) => {
@@ -3308,10 +3017,10 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
         }
       }
       
-      // Auto-interrupt after 30 minutes (WordPress/Shopify scans can take 20-30 minutes)
+      // Auto-interrupt after 5 minutes
       autoInterruptTimeout = setTimeout(() => {
         if (wapitiScanChild && !wapitiInterrupted && !wapitiReportGenerated) {
-          event.sender.send('wapiti:progress', { stage: 'warning', message: 'Scan has been running for 30 minutes. Interrupting to generate report...' })
+          event.sender.send('wapiti:progress', { stage: 'warning', message: 'Scan has been running for 5 minutes. Interrupting to generate report...' })
           
           // Send Ctrl+C (SIGINT) to interrupt the scan
           try {
@@ -3347,10 +3056,6 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
       // This timeout is now handled by autoInterruptTimeout above
       wapitiScanChild.on('close', (code) => {
         // Clear all timeouts
-        if (spawnTimeout) {
-          clearTimeout(spawnTimeout)
-          spawnTimeout = null
-        }
         if (interruptionTimeout) {
           clearTimeout(interruptionTimeout)
           interruptionTimeout = null
@@ -3364,61 +3069,39 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
           reportRetryTimeout = null
         }
         
-        // Always try to read the report file if it exists, even if exit code is not 0
-        // This handles cases where scan was interrupted but report was still generated
-        const checkForReport = async () => {
-          // Wait a bit longer for report generation if it was interrupted
-          if (wapitiInterrupted && !wapitiReportGenerated) {
-            await new Promise(resolve => setTimeout(resolve, 3000)) // Wait 3 seconds for report generation
-          }
-          
+        if (code === 0 || wapitiReportGenerated) {
           if (fs.existsSync(scanFile)) {
             event.sender.send('wapiti:progress', { stage: 'info', message: 'Reading scan results from file...' })
-            try {
-              const reportContent = fs.readFileSync(scanFile, 'utf8')
-              let scanResults = null
+            setTimeout(async () => {
               try {
-                scanResults = JSON.parse(reportContent)
-                event.sender.send('wapiti:progress', { stage: 'success', message: 'Scan results parsed successfully!' })
-              } catch (parseError) {
-                scanResults = { raw: reportContent }
-              }
-              event.sender.send('wapiti:done', { 
-                success: true, 
-                results: scanResults,
-                rawJson: reportContent
-              })
-            } catch (readError) {
-              event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to read report: ${readError.message}` })
-              event.sender.send('wapiti:done', { error: `Failed to read report: ${readError.message}` })
-            }
-          } else {
-            // If report doesn't exist and scan was interrupted, it might still be generating
-            if (wapitiInterrupted) {
-              // Wait a bit more and check again
-              setTimeout(async () => {
-                if (fs.existsSync(scanFile)) {
-                  await checkForReport()
-                } else {
-                  event.sender.send('wapiti:done', { error: 'Scan was interrupted but report file was not generated. The scan may have been stopped before completion.' })
+                const reportContent = fs.readFileSync(scanFile, 'utf8')
+                let scanResults = null
+                try {
+                  scanResults = JSON.parse(reportContent)
+                  event.sender.send('wapiti:progress', { stage: 'success', message: 'Scan results parsed successfully!' })
+                } catch (parseError) {
+                  scanResults = { raw: reportContent }
                 }
-              }, 5000) // Wait 5 more seconds
-            } else {
-              event.sender.send('wapiti:done', { error: 'Scan completed but report file not found' })
-            }
+                event.sender.send('wapiti:done', { 
+                  success: true, 
+                  results: scanResults,
+                  rawJson: reportContent
+                })
+              } catch (readError) {
+                event.sender.send('wapiti:progress', { stage: 'error', message: `Failed to read report: ${readError.message}` })
+                event.sender.send('wapiti:done', { error: `Failed to read report: ${readError.message}` })
+              }
+            }, 1000)
+          } else {
+            event.sender.send('wapiti:done', { error: 'Scan completed but report file not found' })
           }
+        } else {
+          event.sender.send('wapiti:done', { error: `Scan process exited with code ${code}` })
         }
-        
-        // Start checking for report
-        setTimeout(checkForReport, 1000)
         wapitiScanChild = null
       })
       wapitiScanChild.on('error', (error) => {
         // Clear all timeouts
-        if (spawnTimeout) {
-          clearTimeout(spawnTimeout)
-          spawnTimeout = null
-        }
         if (interruptionTimeout) {
           clearTimeout(interruptionTimeout)
           interruptionTimeout = null
@@ -3432,19 +3115,8 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
           reportRetryTimeout = null
         }
         
-        let errorMessage = error.message
-        // Provide helpful error messages for common WSL errors
-        if (error.message && (error.message.includes('HCS_E_CONNECTION_TIMEOUT') || error.message.includes('connection timeout'))) {
-          errorMessage = 'WSL connection timeout. The WSL service may not be running. Please try:\n1. Open PowerShell as Administrator\n2. Run: wsl --shutdown\n3. Run: wsl\n4. Then try the scan again'
-        } else if (error.message && error.message.includes('ENOENT')) {
-          errorMessage = 'WSL command not found. Please ensure WSL is installed and available in your PATH.'
-        } else if (error.message && error.message.includes('timeout')) {
-          errorMessage = 'WSL operation timed out. The WSL service may be unresponsive. Try restarting WSL or your computer.'
-        }
-        
-        console.log('[WAPITI] Process error:', errorMessage)
-        event.sender.send('wapiti:progress', { stage: 'error', message: `Process error: ${errorMessage}` })
-        event.sender.send('wapiti:done', { error: errorMessage })
+        event.sender.send('wapiti:progress', { stage: 'error', message: `Process error: ${error.message}` })
+        event.sender.send('wapiti:done', { error: error.message })
         wapitiScanChild = null
       })
       return { ok: true }
@@ -3506,599 +3178,6 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
     } catch (e) {
       event.sender.send('websiteAudit:done', { error: e?.message || String(e) })
       return { error: e?.message || String(e) }
-    }
-  })
-
-  // Website Security Audit - Enhanced Scan with 5 Commands
-  ipcMain.handle('websiteSecurityAudit:start', async (event, payload) => {
-    try {
-      const { url, credentials, password } = typeof payload === 'object' ? payload : { url: payload, credentials: null, password: null }
-      const { exec } = require('child_process')
-      const { promisify } = require('util')
-      const execAsync = promisify(exec)
-      
-      if (!password) {
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'error',
-          message: 'WSL password is required',
-          type: 'error'
-        })
-        return { success: false, error: 'WSL password is required' }
-      }
-
-      const targetUrl = url.startsWith('http') ? url : `https://${url}`
-      const wslPrefix = 'wsl -u root'
-      
-      // Helper function to execute WSL commands
-      const executeCommand = async (command, timeout = 300000) => {
-        try {
-          const fullCommand = `${wslPrefix} bash -c "${command.replace(/"/g, '\\"')}"`
-          const { stdout, stderr } = await execAsync(fullCommand, {
-            maxBuffer: 10 * 1024 * 1024,
-            timeout: timeout,
-            windowsHide: true
-          })
-          return { 
-            success: true, 
-            stdout: stdout || '', 
-            stderr: stderr || '', 
-            error: null 
-          }
-        } catch (error) {
-          return { 
-            success: false, 
-            stdout: error.stdout || '', 
-            stderr: error.stderr || '', 
-            error: error.message
-          }
-        }
-      }
-
-      // Helper function to call tgpt for parsing
-      const parseWithTgpt = async (rawOutput, commandName) => {
-        try {
-          const prompt = `We executed a security scan command and got the following raw result:
-
-${rawOutput}
-
-Please decode this raw result to a user understandable form and return as JSON. The JSON should include:
-- whatWeDid: Explanation of what the scan command does
-- whatWeGot: Explanation of what the results mean
-- summary: Summary of findings
-- findings: Array of detailed findings
-- recommendations: Array of recommendations
-
-Return ONLY valid JSON. No additional text, no markdown formatting - just the JSON object.`
-
-          event.sender.send('websiteSecurityAudit:progress', {
-            stage: 'analyzing',
-            message: `Analyzing ${commandName} results...`,
-            type: 'info',
-            command: 'Analysis',
-            output: ''
-          })
-
-          const { spawn } = require('child_process')
-          return new Promise((resolve, reject) => {
-            const wslProcess = spawn('wsl', ['bash', '-c', 'tgpt'], {
-              stdio: ['pipe', 'pipe', 'pipe'],
-              maxBuffer: 10 * 1024 * 1024,
-              shell: false
-            })
-            
-            let stdout = ''
-            let stderr = ''
-            
-            wslProcess.stdin.write(prompt, 'utf8')
-            wslProcess.stdin.end()
-            
-            wslProcess.stdout.on('data', (data) => {
-              stdout += data.toString()
-            })
-            
-            wslProcess.stderr.on('data', (data) => {
-              stderr += data.toString()
-            })
-            
-            const timeout = setTimeout(() => {
-              wslProcess.kill()
-              reject(new Error('Analysis timeout after 5 minutes'))
-            }, 300000)
-            
-            wslProcess.on('close', (code) => {
-              clearTimeout(timeout)
-              
-              if (stdout || code === 0) {
-                // Try to parse JSON from output
-                try {
-                  let cleanedOutput = stdout.replace(/^```(?:json)?\s*\n?/gm, '').replace(/\n?```\s*$/gm, '')
-                  const jsonMatch = cleanedOutput.match(/\{[\s\S]*\}/)
-                  if (jsonMatch) {
-                    const parsed = JSON.parse(jsonMatch[0])
-                    resolve({ success: true, parsed })
-                  } else {
-                    resolve({ success: true, parsed: JSON.parse(cleanedOutput) })
-                  }
-                } catch (parseError) {
-                  resolve({ success: false, error: 'Failed to parse analysis result', raw: stdout })
-                }
-              } else {
-                resolve({ success: false, error: `Process exited with code ${code}`, raw: stderr })
-              }
-            })
-            
-            wslProcess.on('error', (error) => {
-              clearTimeout(timeout)
-              reject(error)
-            })
-          })
-        } catch (error) {
-          return { success: false, error: error.message }
-        }
-      }
-
-      const results = {
-        command1: null,
-        command2: null,
-        command3: null,
-        command4: null,
-        command5: null,
-        screenshots: []
-      }
-
-      // Helper function to capture screenshots using Puppeteer
-      const captureScreenshots = async (url, credentials = null) => {
-        try {
-          const puppeteer = require('puppeteer')
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          })
-          const page = await browser.newPage()
-          await page.setViewport({ width: 1920, height: 1080 })
-          
-          // Navigate to the URL
-          await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 })
-          
-          // Handle authentication if credentials provided
-          if (credentials && credentials.username && credentials.password) {
-            try {
-              // Try to find login form elements
-              await page.waitForSelector('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"], input[id*="user"], input[id*="login"]', { timeout: 5000 })
-              
-              // Fill username
-              await page.type('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"], input[id*="user"], input[id*="login"]', credentials.username, { delay: 100 })
-              
-              // Fill password
-              await page.waitForSelector('input[type="password"]', { timeout: 5000 })
-              await page.type('input[type="password"]', credentials.password, { delay: 100 })
-              
-              // Submit form
-              await page.click('button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("Sign in")').catch(() => {
-                // If click doesn't work, try pressing Enter
-                page.keyboard.press('Enter')
-              })
-              
-              // Wait for navigation after login
-              await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 }).catch(() => {})
-            } catch (authError) {
-              console.log('Authentication attempt failed or not needed:', authError.message)
-            }
-          }
-          
-          // Wait a bit for page to fully load
-          await new Promise(resolve => setTimeout(resolve, 2000))
-          
-          // Capture screenshot
-          const screenshot = await page.screenshot({ 
-            fullPage: true,
-            encoding: 'base64'
-          })
-          
-          await browser.close()
-          
-          const screenshotData = {
-            url: url,
-            timestamp: Date.now(),
-            base64: screenshot.toString('base64')
-          }
-          
-          results.screenshots.push(screenshotData)
-          
-          // Send screenshot to frontend
-          event.sender.send('websiteSecurityAudit:progress', {
-            stage: 'screenshot',
-            message: 'Screenshot captured successfully',
-            type: 'success',
-            command: 'Screenshot Capture',
-            screenshot: screenshotData,
-            progress: 0
-          })
-          
-          return screenshotData
-        } catch (error) {
-          console.error('Screenshot capture error:', error)
-          event.sender.send('websiteSecurityAudit:progress', {
-            stage: 'screenshot',
-            message: `Screenshot capture failed: ${error.message}`,
-            type: 'warning',
-            command: 'Screenshot Capture',
-            progress: 0
-          })
-          return null
-        }
-      }
-
-      // Capture screenshots before starting the scan
-      if (credentials && credentials.username && credentials.password) {
-        await captureScreenshots(targetUrl, credentials)
-      } else {
-        await captureScreenshots(targetUrl)
-      }
-
-      // Command 1: testssl.sh
-      try {
-        // Generate unique filename with full timestamp
-        const timestamp = Date.now()
-        const dateStr = new Date(timestamp).toISOString().replace(/[:.]/g, '-').replace('T', '_')
-        const uniqueFileName = `ssl-tls-scan-${dateStr}.json`
-        const jsonFilePath = `/tmp/${uniqueFileName}`
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Running SSL/TLS analysis...',
-          type: 'info',
-          command: 'SSL/TLS Analysis',
-          commandText: `./testssl.sh -oj ${jsonFilePath} ${targetUrl}`,
-          output: '',
-          progress: 0
-        })
-
-        // Execute command from /cybrix/testssl.sh directory with unique filename
-        const testsslCommand = `cd /cybrix/testssl.sh && ./testssl.sh -oj ${jsonFilePath} ${targetUrl}`
-        const testsslResult = await executeCommand(testsslCommand, 600000)
-        
-        // Log command execution
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'SSL/TLS analysis command executed',
-          type: 'info',
-          command: 'SSL/TLS Analysis',
-          commandText: `./testssl.sh -oj ${jsonFilePath} ${targetUrl}`,
-          output: testsslResult.stdout + testsslResult.stderr,
-          progress: 0
-        })
-        
-        if (testsslResult.success) {
-          // Read the JSON file using the saved unique filename
-          const readJsonCommand = `cat ${jsonFilePath}`
-          const jsonResult = await executeCommand(readJsonCommand, 30000)
-          
-          if (jsonResult.success && jsonResult.stdout) {
-            try {
-              const jsonData = JSON.parse(jsonResult.stdout)
-              results.command1 = {
-                success: true,
-                raw: jsonResult.stdout,
-                parsed: jsonData
-              }
-              
-              event.sender.send('websiteSecurityAudit:progress', {
-                stage: 'completed',
-                message: 'SSL/TLS analysis completed',
-                type: 'success',
-                command: 'SSL/TLS Analysis',
-                commandText: `./testssl.sh -oj ${jsonFilePath} ${targetUrl}`,
-                output: jsonResult.stdout.substring(0, 5000), // Limit output size
-                progress: 20,
-                result: results.command1
-              })
-            } catch (parseError) {
-              results.command1 = {
-                success: false,
-                error: 'Failed to parse JSON',
-                raw: jsonResult.stdout
-              }
-            }
-          } else {
-            results.command1 = {
-              success: false,
-              error: 'Failed to read JSON file',
-              raw: testsslResult.stdout
-            }
-          }
-        } else {
-          results.command1 = {
-            success: false,
-            error: testsslResult.error || 'Command failed',
-            raw: testsslResult.stdout + testsslResult.stderr
-          }
-        }
-      } catch (error) {
-        results.command1 = {
-          success: false,
-          error: error.message,
-          raw: ''
-        }
-      }
-
-      // Command 2: nikto
-      try {
-        const niktoCommand = `cd // && nikto -h ${targetUrl} -o /tmp/nikto-webnox.xml -Format xml`
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Running web server analysis...',
-          type: 'info',
-          command: 'Web Server Analysis',
-          commandText: `nikto -h ${targetUrl} -o /tmp/nikto-webnox.xml -Format xml`,
-          output: '',
-          progress: 20
-        })
-
-        const niktoResult = await executeCommand(niktoCommand, 600000)
-        const rawOutput = niktoResult.stdout + niktoResult.stderr
-        
-        // Log command execution result
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Web server analysis command executed',
-          type: 'info',
-          command: 'Web Server Analysis',
-          commandText: `nikto -h ${targetUrl} -o /tmp/nikto-webnox.xml -Format xml`,
-          output: rawOutput.substring(0, 10000), // Limit output size
-          progress: 20
-        })
-        
-        if (niktoResult.success) {
-          const parsed = await parseWithTgpt(rawOutput, 'Web Server Analysis')
-          results.command2 = {
-            success: true,
-            raw: rawOutput,
-            parsed: parsed.success ? parsed.parsed : { error: parsed.error, raw: parsed.raw }
-          }
-        } else {
-          const parsed = await parseWithTgpt(rawOutput, 'Web Server Analysis')
-          results.command2 = {
-            success: false,
-            error: niktoResult.error || 'Command failed',
-            raw: rawOutput,
-            parsed: parsed.success ? parsed.parsed : { error: parsed.error, raw: parsed.raw }
-          }
-        }
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'completed',
-          message: 'Web server analysis completed',
-          type: 'success',
-          command: 'Web Server Analysis',
-          commandText: `nikto -h ${targetUrl} -o /tmp/nikto-webnox.xml -Format xml`,
-          output: '',
-          progress: 40,
-          result: results.command2
-        })
-      } catch (error) {
-        results.command2 = {
-          success: false,
-          error: error.message,
-          raw: ''
-        }
-      }
-
-      // Command 3: curl -I
-      try {
-        const curlCommand = `cd // && curl -I ${targetUrl}`
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Analyzing HTTP headers...',
-          type: 'info',
-          command: 'HTTP Headers Analysis',
-          commandText: `curl -I ${targetUrl}`,
-          output: '',
-          progress: 40
-        })
-
-        const curlResult = await executeCommand(curlCommand, 60000)
-        const rawOutput = curlResult.stdout + curlResult.stderr
-        
-        // Log command execution result
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'HTTP headers analysis command executed',
-          type: 'info',
-          command: 'HTTP Headers Analysis',
-          commandText: `curl -I ${targetUrl}`,
-          output: rawOutput,
-          progress: 40
-        })
-        
-        const parsed = await parseWithTgpt(rawOutput, 'HTTP Headers Analysis')
-        
-        results.command3 = {
-          success: curlResult.success,
-          raw: rawOutput,
-          parsed: parsed.success ? parsed.parsed : { error: parsed.error, raw: parsed.raw }
-        }
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'completed',
-          message: 'HTTP headers analysis completed',
-          type: 'success',
-          command: 'HTTP Headers Analysis',
-          commandText: `curl -I ${targetUrl}`,
-          output: '',
-          progress: 60,
-          result: results.command3
-        })
-      } catch (error) {
-        results.command3 = {
-          success: false,
-          error: error.message,
-          raw: ''
-        }
-      }
-
-      // Command 4: host + geoiplookup
-      try {
-        const domainName = url.replace(/^https?:\/\//, '').split('/')[0]
-        const hostCommand = `cd // && host ${domainName}`
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Resolving domain and analyzing location...',
-          type: 'info',
-          command: 'Domain & Location Analysis',
-          commandText: `host ${domainName}`,
-          output: '',
-          progress: 60
-        })
-
-        const hostResult = await executeCommand(hostCommand, 30000)
-        
-        // Log host command result
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Domain resolution command executed',
-          type: 'info',
-          command: 'Domain & Location Analysis',
-          commandText: `host ${domainName}`,
-          output: hostResult.stdout + hostResult.stderr,
-          progress: 60
-        })
-        
-        let ipAddress = null
-        if (hostResult.success) {
-          const ipMatch = hostResult.stdout.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/)
-          if (ipMatch) {
-            ipAddress = ipMatch[1]
-          }
-        }
-        
-        let geoResult = { success: false, stdout: '', stderr: '' }
-        if (ipAddress) {
-          const geoCommand = `cd // && geoiplookup ${ipAddress}`
-          
-          event.sender.send('websiteSecurityAudit:progress', {
-            stage: 'running',
-            message: 'Running geolocation lookup...',
-            type: 'info',
-            command: 'Domain & Location Analysis',
-            commandText: `geoiplookup ${ipAddress}`,
-            output: '',
-            progress: 60
-          })
-          
-          geoResult = await executeCommand(geoCommand, 30000)
-          
-          // Log geo command result
-          event.sender.send('websiteSecurityAudit:progress', {
-            stage: 'running',
-            message: 'Geolocation lookup command executed',
-            type: 'info',
-            command: 'Domain & Location Analysis',
-            commandText: `geoiplookup ${ipAddress}`,
-            output: geoResult.stdout + geoResult.stderr,
-            progress: 60
-          })
-        }
-        
-        const combinedOutput = `Host Resolution:\n${hostResult.stdout}\n\nGeoIP Lookup:\n${geoResult.stdout || geoResult.stderr}`
-        const parsed = await parseWithTgpt(combinedOutput, 'Domain & Location Analysis')
-        
-        results.command4 = {
-          success: hostResult.success && geoResult.success,
-          ipAddress: ipAddress,
-          raw: combinedOutput,
-          parsed: parsed.success ? parsed.parsed : { error: parsed.error, raw: parsed.raw }
-        }
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'completed',
-          message: 'Domain & location analysis completed',
-          type: 'success',
-          command: 'Domain & Location Analysis',
-          commandText: `host ${domainName} && geoiplookup ${ipAddress || 'N/A'}`,
-          output: '',
-          progress: 80,
-          result: results.command4
-        })
-      } catch (error) {
-        results.command4 = {
-          success: false,
-          error: error.message,
-          raw: ''
-        }
-      }
-
-      // Command 5: traceroute
-      try {
-        const domainName = url.replace(/^https?:\/\//, '').split('/')[0]
-        const tracerouteCommand = `cd // && traceroute ${domainName}`
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Tracing network path...',
-          type: 'info',
-          command: 'Network Path Analysis',
-          commandText: `traceroute ${domainName}`,
-          output: '',
-          progress: 80
-        })
-
-        const tracerouteResult = await executeCommand(tracerouteCommand, 300000)
-        const rawOutput = tracerouteResult.stdout + tracerouteResult.stderr
-        
-        // Log command execution result
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'running',
-          message: 'Network path analysis command executed',
-          type: 'info',
-          command: 'Network Path Analysis',
-          commandText: `traceroute ${domainName}`,
-          output: rawOutput.substring(0, 10000), // Limit output size
-          progress: 80
-        })
-        
-        const parsed = await parseWithTgpt(rawOutput, 'Network Path Analysis')
-        
-        results.command5 = {
-          success: tracerouteResult.success,
-          raw: rawOutput,
-          parsed: parsed.success ? parsed.parsed : { error: parsed.error, raw: parsed.raw }
-        }
-        
-        event.sender.send('websiteSecurityAudit:progress', {
-          stage: 'completed',
-          message: 'Network path analysis completed',
-          type: 'success',
-          command: 'Network Path Analysis',
-          commandText: `traceroute ${domainName}`,
-          output: '',
-          progress: 100,
-          result: results.command5
-        })
-      } catch (error) {
-        results.command5 = {
-          success: false,
-          error: error.message,
-          raw: ''
-        }
-      }
-
-      // Send completion
-      event.sender.send('websiteSecurityAudit:done', {
-        success: true,
-        results: results
-      })
-
-      return { success: true, results: results }
-    } catch (error) {
-      event.sender.send('websiteSecurityAudit:done', {
-        success: false,
-        error: error.message
-      })
-      return { success: false, error: error.message }
     }
   })
 
@@ -4419,15 +3498,6 @@ ipcMain.handle('notification:getCount', async () => {
   });
 
   // File system handlers (register early, before app.whenReady)
-  ipcMain.handle('fs:getUserDataPath', async () => {
-    try {
-      return app.getPath('userData');
-    } catch (error) {
-      console.error('Error getting userData path:', error);
-      return null;
-    }
-  });
-
   ipcMain.handle('fs:getInstallPath', async () => {
     try {
       // Check setup config for install path
@@ -4458,46 +3528,14 @@ ipcMain.handle('notification:getCount', async () => {
 
   ipcMain.handle('fs:ensureDirectoryExists', async (event, dirPath) => {
     try {
-      // Ensure dirPath is a string
-      if (!dirPath || typeof dirPath !== 'string') {
-        const errorMsg = `Invalid dirPath: ${typeof dirPath} - ${JSON.stringify(dirPath)}`;
-        logToFile(`[MAIN] ${errorMsg}`);
-        console.error('[MAIN]', errorMsg);
-        // If dirPath is invalid, use userData as fallback
-        const userDataPath = app.getPath('userData');
-        if (!fs.existsSync(userDataPath)) {
-          fs.mkdirSync(userDataPath, { recursive: true });
-        }
-        return { success: true, created: false, path: userDataPath, warning: 'Invalid path provided, using userData' };
+      if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+        return { success: true, created: true };
       }
-
-      // Check if path is inside app.asar (read-only) and redirect to userData
-      let safePath = dirPath;
-      const appPath = app.getAppPath();
-      const userDataPath = app.getPath('userData');
-      
-      // If path contains app.asar or is inside the app directory, redirect to userData
-      if (dirPath.includes('app.asar') || (typeof dirPath === 'string' && dirPath.startsWith(appPath))) {
-        // Extract the relative path and use it in userData
-        const relativePath = dirPath.replace(/.*[\\/](?:app\.asar[\\/])?/, '');
-        safePath = path.join(userDataPath, relativePath);
-        logToFile(`[MAIN] Redirected path from ${dirPath} to ${safePath}`);
-      }
-      
-      // Normalize path separators
-      safePath = path.normalize(safePath);
-      
-      if (!fs.existsSync(safePath)) {
-        fs.mkdirSync(safePath, { recursive: true });
-        logToFile(`[MAIN] Created directory: ${safePath}`);
-        return { success: true, created: true, path: safePath };
-      }
-      return { success: true, created: false, path: safePath };
+      return { success: true, created: false };
     } catch (error) {
       console.error('Error ensuring directory exists:', error);
-      logToFile(`[MAIN] Error ensuring directory: ${error.message}`);
-      // Return error instead of throwing to prevent crashes
-      return { success: false, error: error.message, path: null };
+      throw error;
     }
   });
 
@@ -4920,10 +3958,7 @@ ipcMain.handle('notification:getCount', async () => {
     console.error('[MALDEF] ✗ CRITICAL: Failed to register handler!')
     console.error('[MALDEF] Error:', e.message)
     console.error('[MALDEF] Stack:', e.stack)
-    // Still try to register a minimal handler to prevent "No handler registered" error
-    ipcMain.handle('maldef:start', async (event, url, options = {}) => {
-      return { error: `Handler registration failed: ${e.message}` }
-    })
+    // Don't register a fallback handler - let the main registration handle this
   }
   
   // Verify handler registration
@@ -4931,11 +3966,20 @@ ipcMain.handle('notification:getCount', async () => {
   console.log('[MALDEF] Handler should be registered now. Check console for errors above.')
 
 app.whenReady().then(async () => {
-    console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
-    logToFile('📱 [MAIN] app.whenReady() - Starting application...');
+  console.log('📱 [MAIN] app.whenReady() - Window created, registering window-dependent handlers...');
+
+  // Set dock icon for Linux (and macOS)
+  if (process.platform === 'linux' || process.platform === 'darwin') {
+    try {
+      app.setIcon(iconPath);
+      console.log('✅ [MAIN] Dock icon set successfully');
+    } catch (error) {
+      console.log('⚠️ [MAIN] Could not set dock icon:', error.message);
+    }
+  }
+
   const win = await createMainWindow();
   mainWindowInstance = win;
-  logToFile('📱 [MAIN] Main window created successfully');
 
   // Auto-check and install Kali Linux if missing on Windows
   if (process.platform === 'win32') {
@@ -4945,7 +3989,7 @@ app.whenReady().then(async () => {
         const hasWsl = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
         
         if (hasWsl) {
-          const hasKali = checkKaliInstalled();
+          const hasKali = await checkKaliInstalled();
           if (!hasKali) {
             console.log('⚠️ [STARTUP] Kali Linux not detected. Starting auto-installation...');
             
@@ -5018,9 +4062,8 @@ app.whenReady().then(async () => {
       console.log('Dialog result:', result);
       
       if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-        const selectedPath = result.filePaths[0];
-        console.log('Selected directory:', selectedPath);
-        return selectedPath; // Return the first path as a string, not the array
+        console.log('Selected directory:', result.filePaths[0]);
+        return result.filePaths;
       }
       
       console.log('No directory selected or dialog cancelled');
@@ -5134,156 +4177,10 @@ app.whenReady().then(async () => {
     }
   });
 
-  // WSL Cyberix folder setup handlers
-  ipcMain.handle('wsl:setupCyberixFolder', async (event) => {
-    try {
-      logToFile('[WSL] Setting up Cyberix folder in /root/cyberix');
-      
-      // Create /root/cyberix folder - use wslHelper (no wsl prefix needed)
-      const result = await wslHelper.runWSLAsRoot('mkdir -p /root/cyberix');
-      
-      if (result.success) {
-        logToFile('[WSL] Cyberix folder created successfully');
-        return { success: true, message: 'Cyberix folder created' };
-      } else {
-        logToFile(`[WSL] Folder creation failed: ${result.error || 'Unknown error'}`);
-        // Return success anyway so setup can continue (folder might already exist)
-        return { success: true, message: 'Folder creation attempted (may already exist)', warning: result.error };
-      }
-    } catch (error) {
-      logToFile(`[WSL] Error setting up Cyberix folder: ${error.message}`);
-      console.error('Error setting up Cyberix folder:', error);
-      // Return success with warning instead of throwing
-      return { success: true, message: 'Folder setup attempted', warning: error.message };
-    }
-  });
-
-  ipcMain.handle('wsl:cloneRepository', async (event, repoName) => {
-    try {
-      logToFile(`[WSL] Cloning repository: ${repoName}`);
-      
-      // Repository URLs
-      const repos = {
-        fluxploider: 'https://github.com/almandin/fuxploider.git', // Note: repo name is fuxploider but we call it fluxploider
-        testssl: 'https://github.com/drwetter/testssl.sh.git'
-      };
-
-      const repoUrl = repos[repoName];
-      if (!repoUrl) {
-        return { success: false, message: `Unknown repository: ${repoName}`, warning: true };
-      }
-
-      // For fluxploider, the actual repo folder is 'fuxploider' but we want to clone it as 'fluxploider'
-      const targetDir = `/root/cyberix/${repoName}`;
-      const actualRepoName = repoName === 'fluxploider' ? 'fuxploider' : repoName;
-      
-      // Check if already cloned (check both possible names) - use wslHelper (no wsl prefix)
-      const checkResult = await wslHelper.runWSLAsRoot(`(test -d ${targetDir} || test -d /root/cyberix/${actualRepoName}) && echo exists || echo notexists`);
-      
-      if (checkResult.success && checkResult.stdout.trim() === 'exists') {
-        logToFile(`[WSL] Repository ${repoName} already exists, skipping clone`);
-        return { success: true, message: `${repoName} already cloned`, skipped: true };
-      }
-
-      // Clone repository - use wslHelper (no wsl prefix)
-      const cloneResult = await wslHelper.runWSLAsRoot(`cd /root/cyberix && git clone ${repoUrl} ${repoName}`);
-      
-      if (cloneResult.success) {
-        logToFile(`[WSL] Repository ${repoName} cloned successfully`);
-        return { success: true, message: `${repoName} cloned successfully` };
-      } else {
-        logToFile(`[WSL] Clone failed: ${cloneResult.error || 'Unknown error'}`);
-        // Return success with warning so setup can continue
-        return { success: true, message: `${repoName} clone attempted`, warning: cloneResult.error || 'Clone failed' };
-      }
-    } catch (error) {
-      logToFile(`[WSL] Error cloning repository ${repoName}: ${error.message}`);
-      console.error(`Error cloning repository ${repoName}:`, error);
-      // Return success with warning instead of throwing
-      return { success: true, message: `${repoName} clone attempted`, warning: error.message };
-    }
-  });
-
-  ipcMain.handle('wsl:setupPythonVenv', async (event) => {
-    try {
-      logToFile('[WSL] Setting up Python virtual environment');
-      
-      const venvPath = '/root/cyberix/.venv';
-      
-      // Check if venv already exists - use wslHelper (no wsl prefix)
-      const checkResult = await wslHelper.runWSLAsRoot(`test -d ${venvPath} && echo exists || echo notexists`);
-      
-      if (checkResult.success && checkResult.stdout.trim() === 'exists') {
-        logToFile('[WSL] Python venv already exists, skipping creation');
-        return { success: true, message: 'Python venv already exists', skipped: true };
-      }
-
-      // Create virtual environment - use wslHelper (no wsl prefix)
-      const venvResult = await wslHelper.runWSLAsRoot('cd /root/cyberix && python3 -m venv .venv');
-      
-      if (!venvResult.success) {
-        logToFile(`[WSL] Venv creation failed: ${venvResult.error || 'Unknown error'}`);
-        // Continue anyway - venv might already exist or can be created later
-        return { success: true, message: 'Python venv setup attempted', warning: venvResult.error || 'Venv creation failed' };
-      }
-
-      // Upgrade pip in venv - use wslHelper (no wsl prefix)
-      const pipResult = await wslHelper.runWSLAsRoot('cd /root/cyberix && source .venv/bin/activate && pip3 install --upgrade pip');
-      
-      if (!pipResult.success) {
-        logToFile(`[WSL] Pip upgrade failed (non-critical): ${pipResult.error || 'Unknown error'}`);
-        // This is non-critical, continue anyway
-      }
-      
-      logToFile('[WSL] Python virtual environment setup complete');
-      return { success: true, message: 'Python venv setup complete' };
-    } catch (error) {
-      logToFile(`[WSL] Error setting up Python venv: ${error.message}`);
-      console.error('Error setting up Python venv:', error);
-      // Return success with warning instead of throwing
-      return { success: true, message: 'Python venv setup attempted', warning: error.message };
-    }
-  });
-
   // IPC: expose OS helpers
   ipcMain.handle('os:getPlatform', async () => detectPlatform());
   ipcMain.handle('os:checkWsl', async () => {
     try { return await checkWslInstalled(); } catch { return false; }
-  });
-  
-  // WSL distribution management
-  ipcMain.handle('wsl:getDistro', async () => {
-    try {
-      return await wslHelper.getWSLDistro();
-    } catch (error) {
-      logToFile(`[WSL] Error getting distro: ${error.message}`);
-      return 'kali-linux'; // Fallback
-    }
-  });
-  
-  ipcMain.handle('wsl:listDistributions', async () => {
-    try {
-      return await wslHelper.listDistributions();
-    } catch (error) {
-      logToFile(`[WSL] Error listing distributions: ${error.message}`);
-      return { success: false, distributions: [] };
-    }
-  });
-  
-  ipcMain.handle('wsl:setDefaultDistro', async (event, distroName) => {
-    try {
-      logToFile(`[WSL] Setting default distribution to: ${distroName}`);
-      const result = await wslHelper.setDefaultDistro(distroName);
-      if (result.success) {
-        logToFile(`[WSL] Default distribution set successfully`);
-      } else {
-        logToFile(`[WSL] Failed to set default distribution: ${result.error}`);
-      }
-      return result;
-    } catch (error) {
-      logToFile(`[WSL] Error setting default distro: ${error.message}`);
-      return { success: false, error: error.message };
-    }
   });
 
   ipcMain.handle('os:installWsl', async (event) => {
@@ -5298,79 +4195,54 @@ app.whenReady().then(async () => {
     });
   });
 
-  ipcMain.handle('os:installUbuntu', async (event) => {
-    logToFile('[WSL] Starting Ubuntu installation...');
-    return await new Promise((resolve) => {
-      installUbuntu(
-        (line) => {
-          logToFile(`[WSL] Ubuntu install log: ${line}`);
-          if (event?.sender && !event.sender.isDestroyed()) {
-            event.sender.send('os:ubuntuInstallLog', line);
-          }
-        },
-        (ok) => {
-          logToFile(`[WSL] Ubuntu installation completed with result: ${ok}`);
-          if (event?.sender && !event.sender.isDestroyed()) {
-            event.sender.send('os:ubuntuInstallDone', ok);
-          }
-          resolve(ok);
-        }
-      );
-    });
-  });
-
-  ipcMain.handle('os:verifyUbuntu', async () => {
-    try {
-      logToFile('[WSL] Starting Ubuntu verification...');
-      const result = await verifyUbuntuInstalled();
-      logToFile(`[WSL] Ubuntu verification result: ${result}`);
-      return result;
-    } catch (error) {
-      logToFile(`[WSL] Error verifying Ubuntu: ${error.message}`);
-      console.error('[WSL] Verification error:', error);
-      return false;
-    }
-  });
-
-  ipcMain.handle('os:installKaliLinux', async (event) => {
-    logToFile('[WSL] Starting Kali Linux installation...');
-    try {
-      // The local installKaliLinux function handles progress updates via event.sender
-      const result = await installKaliLinux(event);
-      logToFile(`[WSL] Kali Linux installation completed with result: ${result}`);
-      if (event?.sender && !event.sender.isDestroyed()) {
-        event.sender.send('os:kaliInstallDone', result);
-      }
-      return result;
-    } catch (error) {
-      logToFile(`[WSL] Kali Linux installation error: ${error.message}`);
-      if (event?.sender && !event.sender.isDestroyed()) {
-        event.sender.send('os:kaliInstallDone', false);
-      }
-      return false;
-    }
-  });
-
   // Note: WSL handlers (wsl:install, wsl:createUser, wsl:validateCredentials) 
   // are registered BEFORE app.whenReady() at lines 608-841
 
   // Kali Linux management
-  ipcMain.handle('kali:check', () => {
-    return checkKaliInstalled();
+  ipcMain.handle('kali:check', async () => {
+    return await checkKaliInstalled();
+  });
+
+  // Environment detection for frontend
+  ipcMain.handle('environment:check', async () => {
+    try {
+      const env = await detectKaliEnvironment();
+      return env;
+    } catch (error) {
+      console.log('Environment detection error:', error.message);
+      return { type: 'unknown', distro: null };
+    }
   });
 
   ipcMain.handle('kali:install', async (event) => {
     console.log('🚀 [KALI-INSTALL-HANDLER] Starting Kali Linux installation via IPC...');
-    
+
+    // First check if we're already on native Kali Linux
+    try {
+      const { detectKaliEnvironment } = require('./osCheck');
+      const env = await detectKaliEnvironment();
+
+      if (env.type === 'native-kali') {
+        console.log('✅ [KALI-INSTALL-HANDLER] Already running on native Kali Linux - no installation needed');
+        if (event.sender && !event.sender.isDestroyed()) {
+          event.sender.send('kali:installProgress', 'Already running on Kali Linux!');
+          event.sender.send('kali:installComplete', true);
+        }
+        return true;
+      }
+    } catch (e) {
+      console.log('Environment detection error:', e.message);
+    }
+
     // Update UI to show installation in progress
     if (event.sender && !event.sender.isDestroyed()) {
       event.sender.send('kali:installProgress', 'Starting Kali Linux installation...');
     }
-    
+
     try {
       // Pass event to installKaliLinux so it can send progress updates
       const result = await installKaliLinux(event);
-      
+
       if (result) {
         // Installation successful - update UI
         if (event.sender && !event.sender.isDestroyed()) {
@@ -5384,7 +4256,7 @@ app.whenReady().then(async () => {
         }
         console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation failed');
       }
-      
+
       return result;
     } catch (error) {
       console.log('❌ [KALI-INSTALL-HANDLER] Kali Linux installation error:', error.message);
@@ -5450,8 +4322,8 @@ app.whenReady().then(async () => {
     
     const requiredTools = [
       'jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb',
-      'amass','john','medusa','mitmproxy','socat','fail2ban',
-      'curl','wget','wapiti','pip3','geoiplookup'
+      'amass','john','medusa','zaproxy','mitmproxy','socat','fail2ban',
+      'curl','wget','wapiti','pip3'
     ];
   
     const goTools = ['ffuf','nuclei','dalfox','go'];
@@ -5625,8 +4497,8 @@ app.whenReady().then(async () => {
     
     const requiredTools = [
       'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
-      'amass', 'john', 'medusa', 'mitmproxy', 'socat', 'fail2ban', 
-      'curl', 'wget', 'wapiti', 'sslscan', 'dnstwist', 'geoiplookup'
+      'amass', 'john', 'medusa', 'zaproxy', 'mitmproxy', 'socat', 'fail2ban', 
+      'curl', 'wget', 'wapiti', 'sslscan', 'dnstwist'
     ];
 
     const goTools = [
@@ -5706,9 +4578,9 @@ app.whenReady().then(async () => {
           if (tool === 'amass') {
             // Install amass via snap
             installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S snap install amass"`;
-          } else if (tool === 'geoiplookup') {
-            // Install geoip-bin package for geoiplookup command
-            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S apt install -y geoip-bin"`;
+          } else if (tool === 'zaproxy') {
+            // Install zaproxy via snap with classic flag
+            installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S snap install zaproxy --classic"`;
           } else if (tool === 'ffuf') {
             // Install ffuf with proper setup and symlink
             installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${password}' | sudo -S apt update && apt install -y golang git && go install github.com/ffuf/ffuf/v2@latest && ln -sf /root/go/bin/ffuf /usr/local/bin/ffuf && ffuf --version"`;
@@ -5819,7 +4691,7 @@ app.whenReady().then(async () => {
   }
 
   // Helper: quick preflight to check WSL, Kali, and nmap availability
-  function detectWslAndNmap() {
+  async function detectWslAndNmap() {
     const result = { hasWsl: false, hasKali: false, wslNmap: false, winNmap: false, details: [] };
     try {
       const sp = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' });
@@ -5829,7 +4701,7 @@ app.whenReady().then(async () => {
         result.details.push('WSL is present. Distributions:\n' + distributions);
         
         // Check if Kali is installed
-        result.hasKali = checkKaliInstalled();
+        result.hasKali = await checkKaliInstalled();
         if (result.hasKali) {
           result.details.push('✅ Kali Linux is installed in WSL.');
         } else {
@@ -5889,7 +4761,7 @@ app.whenReady().then(async () => {
       event.sender.send('scan:progress', { stage: 'error', message: 'Scanner not built. Run npm run build:ts' });
       return { error: 'Scanner not built' };
     }
-    const pre = detectWslAndNmap();
+    const pre = await detectWslAndNmap();
     for (const d of pre.details) {
       event.sender.send('scan:progress', { stage: 'preflight', message: d });
     }
@@ -5909,7 +4781,7 @@ app.whenReady().then(async () => {
       if (installKali.response === 0) {
         const kaliInstalled = await installKaliLinux();
         if (kaliInstalled) {
-          pre.hasKali = checkKaliInstalled(); // Re-check to confirm
+          pre.hasKali = await checkKaliInstalled(); // Re-check to confirm
           // Re-check nmap after Kali installation
           const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
           if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
@@ -6228,211 +5100,207 @@ app.whenReady().then(async () => {
 
   // WSL Root Password Management
   ipcMain.handle('wsl:testRootCredentials', async (event, password) => {
-    console.log('🔐 [WSL-ROOT-AUTH] ===== HANDLER CALLED =====');
-    console.log('🔐 [WSL-ROOT-AUTH] IPC Handler wsl:testRootCredentials invoked');
-    console.log('🔐 [WSL-ROOT-AUTH] Event sender:', event.sender);
-    console.log('🔐 [WSL-ROOT-AUTH] Password parameter:', password);
-    
+    console.log('🔐 [PLATFORM-AUTH] ===== HANDLER CALLED =====');
+    console.log('🔐 [PLATFORM-AUTH] IPC Handler wsl:testRootCredentials invoked');
+    console.log('🔐 [PLATFORM-AUTH] Event sender:', event.sender);
+    console.log('🔐 [PLATFORM-AUTH] Password parameter:', password);
+
     const startTime = Date.now();
-    console.log('🔐 [WSL-ROOT-AUTH] Starting root credential verification...');
-    console.log('🔐 [WSL-ROOT-AUTH] Timestamp:', new Date().toISOString());
-    console.log('🔐 [WSL-ROOT-AUTH] Password length:', password ? password.length : 0);
-    
+    console.log('🔐 [PLATFORM-AUTH] Starting root credential verification...');
+    console.log('🔐 [PLATFORM-AUTH] Timestamp:', new Date().toISOString());
+    console.log('🔐 [PLATFORM-AUTH] Password length:', password ? password.length : 0);
+
     try {
+      const { detectKaliEnvironment } = require('./osCheck');
+      const env = await detectKaliEnvironment();
+      console.log('🔐 [PLATFORM-AUTH] Detected environment:', env);
+
       const { exec } = require('child_process');
       const { promisify } = require('util');
       const execAsync = promisify(exec);
-      
-      // Step 1: Execute wsl command
-      console.log('🔐 [WSL-ROOT-AUTH] Step 1: Executing wsl command...');
-      const wslCommand = 'wsl';
-      console.log('🔐 [WSL-ROOT-AUTH] WSL command:', wslCommand);
-      
-      // Step 2: Run sudo su command
-      console.log('🔐 [WSL-ROOT-AUTH] Step 2: Running sudo su command...');
-      const sudoSuCommand = 'sudo su';
-      console.log('🔐 [WSL-ROOT-AUTH] Sudo su command:', sudoSuCommand);
-      
-      // Step 3: Provide user password
-      console.log('🔐 [WSL-ROOT-AUTH] Step 3: Providing user password...');
-      console.log('🔐 [WSL-ROOT-AUTH] Password length:', password.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
-      
-      // Use interactive approach: wsl with expect-like behavior
-      // This approach simulates the manual process: wsl -> sudo su -> password -> whoami
-      const testCommand = `wsl -e bash -c "echo '${password}' | sudo -S whoami"`;
-      console.log('🔐 [WSL-ROOT-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
-      console.log('🔐 [WSL-ROOT-AUTH] Full final command (DEBUG):', testCommand);
-      console.log('🔐 [WSL-ROOT-AUTH] Using: wsl -e bash -c with sudo -S whoami');
-      
-      // First, test if WSL is working at all
-      console.log('🔐 [WSL-ROOT-AUTH] Testing basic WSL connectivity...');
-      try {
-        const basicTest = await execAsync('wsl echo "WSL is working"');
-        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test result:', basicTest.stdout.trim());
-      } catch (basicError) {
-        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test failed:', basicError.message);
-        return { 
-          success: false, 
-          error: 'WSL is not working properly: ' + basicError.message,
-          debug: { basicError: basicError.message }
-        };
-      }
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Executing final command...');
-      console.log('🔐 [WSL-ROOT-AUTH] Command timeout: 10000ms');
-      
-      // Add timeout to prevent hanging
-      const { stdout, stderr } = await Promise.race([
-        execAsync(testCommand),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
-        )
-      ]);
-      const duration = Date.now() - startTime;
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Command execution completed in', duration, 'ms');
-      console.log('🔐 [WSL-ROOT-AUTH] ===== EXECUTION RESULTS =====');
-      console.log('🔐 [WSL-ROOT-AUTH] STDOUT:', JSON.stringify(stdout));
-      console.log('🔐 [WSL-ROOT-AUTH] STDERR:', JSON.stringify(stderr));
-      console.log('🔐 [WSL-ROOT-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
-      console.log('🔐 [WSL-ROOT-AUTH] STDERR (trimmed):', JSON.stringify(stderr.trim()));
-      
-      const output = stdout.trim();
-      const errorOutput = stderr.trim();
-      
-      console.log('🔐 [WSL-ROOT-AUTH] ===== ANALYSIS =====');
-      console.log('🔐 [WSL-ROOT-AUTH] Raw output length:', output.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Raw error length:', errorOutput.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Output contains "root":', output.includes('root'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "Authentication failure":', errorOutput.includes('Authentication failure'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "sudo":', errorOutput.includes('sudo'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "su":', errorOutput.includes('su'));
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Checking if output equals "root"...');
-      console.log('🔐 [WSL-ROOT-AUTH] Output === "root":', output === 'root');
-      
-      if (output === 'root') {
-        console.log('✅ [WSL-ROOT-AUTH] WSL root credentials VALID');
-        console.log('✅ [WSL-ROOT-AUTH] Authentication successful');
-        return { success: true, debug: { duration, stdout, stderr } };
-      } else {
-        console.log('❌ [WSL-ROOT-AUTH] First method failed, trying alternative approach...');
-        
-        // Alternative approach: Try with expect-like behavior using printf
-        console.log('🔐 [WSL-ROOT-AUTH] Alternative: Trying printf approach...');
-        const altCommand = `wsl -e bash -c "printf '${password}\\n' | sudo -S whoami"`;
-        console.log('🔐 [WSL-ROOT-AUTH] Alternative command (DEBUG):', altCommand.replace(password, '***'));
-        console.log('🔐 [WSL-ROOT-AUTH] Full alternative command (DEBUG):', altCommand);
-        
+
+      if (env.type === 'native-kali') {
+        // Native Kali Linux - test sudo access
+        console.log('🔐 [PLATFORM-AUTH] Native Kali Linux detected - testing sudo access');
+        console.log('🔐 [PLATFORM-AUTH] Step 1: Testing sudo whoami...');
+        console.log('🔐 [PLATFORM-AUTH] Password length:', password.length);
+        console.log('🔐 [PLATFORM-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
+
+        const testCommand = `echo '${password}' | sudo -S whoami`;
+        console.log('🔐 [PLATFORM-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
+
         try {
-          console.log('🔐 [WSL-ROOT-AUTH] Executing alternative command with timeout...');
-          const { stdout: altStdout, stderr: altStderr } = await Promise.race([
-            execAsync(altCommand),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Alternative command timeout after 10 seconds')), 10000)
+          console.log('🔐 [PLATFORM-AUTH] Executing sudo test...');
+          const { stdout, stderr } = await Promise.race([
+            execAsync(testCommand),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
             )
           ]);
-          const altOutput = altStdout.trim();
-          
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDOUT:', JSON.stringify(altStdout));
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDERR:', JSON.stringify(altStderr));
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative output (trimmed):', JSON.stringify(altOutput));
-          
-          if (altOutput === 'root') {
-            console.log('✅ [WSL-ROOT-AUTH] Alternative method SUCCESS - WSL root credentials VALID');
-            return { success: true, debug: { duration, stdout: altStdout, stderr: altStderr, method: 'alternative' } };
+
+          const duration = Date.now() - startTime;
+          const output = stdout.trim();
+          const errorOutput = stderr.trim();
+
+          console.log('🔐 [PLATFORM-AUTH] Command execution completed in', duration, 'ms');
+          console.log('🔐 [PLATFORM-AUTH] STDOUT:', JSON.stringify(output));
+          console.log('🔐 [PLATFORM-AUTH] STDERR:', JSON.stringify(errorOutput));
+
+          if (output === 'root') {
+            console.log('✅ [PLATFORM-AUTH] Native Kali sudo credentials VALID');
+            return { success: true, debug: { duration, stdout, stderr, environment: env } };
           } else {
-            console.log('❌ [WSL-ROOT-AUTH] Both methods failed');
-            console.log('❌ [WSL-ROOT-AUTH] Expected output: "root"');
-            console.log('❌ [WSL-ROOT-AUTH] Method 1 output:', JSON.stringify(output));
-            console.log('❌ [WSL-ROOT-AUTH] Method 2 output:', JSON.stringify(altOutput));
-            console.log('❌ [WSL-ROOT-AUTH] Authentication failed');
-            return { 
-              success: false, 
-              error: 'Invalid root password', 
-              debug: { 
-                duration, 
-                method1: { stdout, stderr, output },
-                method2: { stdout: altStdout, stderr: altStderr, output: altOutput },
-                expected: 'root'
-              } 
+            console.log('❌ [PLATFORM-AUTH] Native Kali sudo authentication failed');
+            return {
+              success: false,
+              error: 'Invalid sudo password on native Kali Linux',
+              debug: { duration, stdout, stderr, output, environment: env }
             };
           }
-        } catch (altError) {
-          console.log('❌ [WSL-ROOT-AUTH] Alternative method also failed:', altError.message);
-          console.log('❌ [WSL-ROOT-AUTH] Trying third method: direct sudo su approach...');
-          
-          // Third approach: Try to simulate the exact manual process
+        } catch (error) {
+          console.log('❌ [PLATFORM-AUTH] Native Kali sudo test failed:', error.message);
+          return {
+            success: false,
+            error: 'Sudo access failed on native Kali Linux: ' + error.message,
+            debug: { error: error.message, environment: env }
+          };
+        }
+
+      } else if (env.type === 'wsl-kali') {
+        // Windows WSL Kali - original WSL logic
+        console.log('🔐 [PLATFORM-AUTH] WSL Kali detected - using WSL authentication');
+        console.log('🔐 [PLATFORM-AUTH] Step 1: Executing wsl command...');
+        const wslCommand = 'wsl';
+        console.log('🔐 [PLATFORM-AUTH] WSL command:', wslCommand);
+
+        console.log('🔐 [PLATFORM-AUTH] Step 2: Running sudo su command...');
+        const sudoSuCommand = 'sudo su';
+        console.log('🔐 [PLATFORM-AUTH] Sudo su command:', sudoSuCommand);
+
+        console.log('🔐 [PLATFORM-AUTH] Step 3: Providing user password...');
+        console.log('🔐 [PLATFORM-AUTH] Password length:', password.length);
+        console.log('🔐 [PLATFORM-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
+
+        const testCommand = `wsl -e bash -c "echo '${password}' | sudo -S whoami"`;
+        console.log('🔐 [PLATFORM-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
+        console.log('🔐 [PLATFORM-AUTH] Using: wsl -e bash -c with sudo -S whoami');
+
+        // First, test if WSL is working at all
+        console.log('🔐 [PLATFORM-AUTH] Testing basic WSL connectivity...');
+        try {
+          const basicTest = await execAsync('wsl echo "WSL is working"');
+          console.log('🔐 [PLATFORM-AUTH] Basic WSL test result:', basicTest.stdout.trim());
+        } catch (basicError) {
+          console.log('🔐 [PLATFORM-AUTH] Basic WSL test failed:', basicError.message);
+          return {
+            success: false,
+            error: 'WSL is not working properly: ' + basicError.message,
+            debug: { basicError: basicError.message, environment: env }
+          };
+        }
+      
+        console.log('🔐 [PLATFORM-AUTH] Executing WSL final command...');
+        console.log('🔐 [PLATFORM-AUTH] Command timeout: 10000ms');
+
+        // Add timeout to prevent hanging
+        const { stdout, stderr } = await Promise.race([
+          execAsync(testCommand),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
+          )
+        ]);
+        const duration = Date.now() - startTime;
+
+        console.log('🔐 [PLATFORM-AUTH] Command execution completed in', duration, 'ms');
+        console.log('🔐 [PLATFORM-AUTH] ===== EXECUTION RESULTS =====');
+        console.log('🔐 [PLATFORM-AUTH] STDOUT:', JSON.stringify(stdout));
+        console.log('🔐 [PLATFORM-AUTH] STDERR:', JSON.stringify(stderr));
+        console.log('🔐 [PLATFORM-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
+        console.log('🔐 [PLATFORM-AUTH] STDERR (trimmed):', JSON.stringify(stderr.trim()));
+
+        const output = stdout.trim();
+        const errorOutput = stderr.trim();
+
+        console.log('🔐 [PLATFORM-AUTH] ===== ANALYSIS =====');
+        console.log('🔐 [PLATFORM-AUTH] Raw output length:', output.length);
+        console.log('🔐 [PLATFORM-AUTH] Raw error length:', errorOutput.length);
+        console.log('🔐 [PLATFORM-AUTH] Output contains "root":', output.includes('root'));
+        console.log('🔐 [PLATFORM-AUTH] Error contains "Authentication failure":', errorOutput.includes('Authentication failure'));
+        console.log('🔐 [PLATFORM-AUTH] Error contains "sudo":', errorOutput.includes('sudo'));
+        console.log('🔐 [PLATFORM-AUTH] Error contains "su":', errorOutput.includes('su'));
+
+        console.log('🔐 [PLATFORM-AUTH] Checking if output equals "root"...');
+        console.log('🔐 [PLATFORM-AUTH] Output === "root":', output === 'root');
+
+        if (output === 'root') {
+          console.log('✅ [PLATFORM-AUTH] WSL root credentials VALID');
+          console.log('✅ [PLATFORM-AUTH] Authentication successful');
+          return { success: true, debug: { duration, stdout, stderr, environment: env } };
+        } else {
+          console.log('❌ [PLATFORM-AUTH] First method failed, trying alternative approach...');
+
+          // Alternative approach: Try with expect-like behavior using printf
+          console.log('🔐 [PLATFORM-AUTH] Alternative: Trying printf approach...');
+          const altCommand = `wsl -e bash -c "printf '${password}\\n' | sudo -S whoami"`;
+          console.log('🔐 [PLATFORM-AUTH] Alternative command (DEBUG):', altCommand.replace(password, '***'));
+
           try {
-            const thirdCommand = `wsl -e bash -c "echo '${password}' | sudo -S su -c 'whoami'"`;
-            console.log('🔐 [WSL-ROOT-AUTH] Third command (DEBUG):', thirdCommand.replace(password, '***'));
-            
-            const { stdout: thirdStdout, stderr: thirdStderr } = await Promise.race([
-              execAsync(thirdCommand),
-              new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Third method timeout after 10 seconds')), 10000)
+            console.log('🔐 [PLATFORM-AUTH] Executing alternative command with timeout...');
+            const { stdout: altStdout, stderr: altStderr } = await Promise.race([
+              execAsync(altCommand),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Alternative command timeout after 10 seconds')), 10000)
               )
             ]);
-            
-            const thirdOutput = thirdStdout.trim();
-            console.log('🔐 [WSL-ROOT-AUTH] Third method STDOUT:', JSON.stringify(thirdStdout));
-            console.log('🔐 [WSL-ROOT-AUTH] Third method STDERR:', JSON.stringify(thirdStderr));
-            console.log('🔐 [WSL-ROOT-AUTH] Third method output (trimmed):', JSON.stringify(thirdOutput));
-            
-            if (thirdOutput === 'root') {
-              console.log('✅ [WSL-ROOT-AUTH] Third method SUCCESS - WSL root credentials VALID');
-              return { success: true, debug: { duration, stdout: thirdStdout, stderr: thirdStderr, method: 'third' } };
+            const altOutput = altStdout.trim();
+
+            console.log('🔐 [PLATFORM-AUTH] Alternative STDOUT:', JSON.stringify(altStdout));
+            console.log('🔐 [PLATFORM-AUTH] Alternative STDERR:', JSON.stringify(altStderr));
+            console.log('🔐 [PLATFORM-AUTH] Alternative output (trimmed):', JSON.stringify(altOutput));
+
+            if (altOutput === 'root') {
+              console.log('✅ [PLATFORM-AUTH] Alternative method SUCCESS - WSL root credentials VALID');
+              return { success: true, debug: { duration, stdout: altStdout, stderr: altStderr, method: 'alternative', environment: env } };
             } else {
-              console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
-              return { 
-                success: false, 
-                error: 'Invalid root password - all authentication methods failed', 
-                debug: { 
-                  duration, 
+              console.log('❌ [PLATFORM-AUTH] Both methods failed');
+              return {
+                success: false,
+                error: 'Invalid WSL root password',
+                debug: {
+                  duration,
                   method1: { stdout, stderr, output },
-                  method2: { error: altError.message },
-                  method3: { stdout: thirdStdout, stderr: thirdStderr, output: thirdOutput },
-                  expected: 'root'
-                } 
+                  method2: { stdout: altStdout, stderr: altStderr, output: altOutput },
+                  expected: 'root',
+                  environment: env
+                }
               };
             }
-          } catch (thirdError) {
-            console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
-            return { 
-              success: false, 
-              error: 'Invalid root password - all authentication methods failed', 
-              debug: { 
-                duration, 
-                method1: { stdout, stderr, output },
-                method2: { error: altError.message },
-                method3: { error: thirdError.message },
-                expected: 'root'
-              } 
+          } catch (altError) {
+            console.log('❌ [PLATFORM-AUTH] Alternative method also failed:', altError.message);
+            return {
+              success: false,
+              error: 'WSL authentication failed: ' + altError.message,
+              debug: { error: altError.message, environment: env }
             };
           }
         }
+
+      } else {
+        // Other environments
+        console.log('❌ [PLATFORM-AUTH] Unsupported environment:', env.type);
+        return {
+          success: false,
+          error: `Unsupported environment: ${env.type}. Only WSL Kali and native Kali Linux are supported.`,
+          debug: { environment: env }
+        };
       }
+
     } catch (error) {
-      const duration = Date.now() - startTime;
-      console.log('❌ [WSL-ROOT-AUTH] WSL root credential test FAILED');
-      console.log('❌ [WSL-ROOT-AUTH] Error type:', error.constructor.name);
-      console.log('❌ [WSL-ROOT-AUTH] Error message:', error.message);
-      console.log('❌ [WSL-ROOT-AUTH] Error code:', error.code);
-      console.log('❌ [WSL-ROOT-AUTH] Error signal:', error.signal);
-      console.log('❌ [WSL-ROOT-AUTH] Error stack:', error.stack);
-      console.log('❌ [WSL-ROOT-AUTH] Duration before error:', duration, 'ms');
-      
-      return { 
-        success: false, 
-        error: error.message, 
-        debug: { 
-          duration, 
-          errorType: error.constructor.name,
-          errorCode: error.code,
-          errorSignal: error.signal,
-          errorStack: error.stack
-        } 
+      console.log('❌ [PLATFORM-AUTH] Fatal error:', error.message);
+      return {
+        success: false,
+        error: 'Authentication process failed: ' + error.message,
+        debug: { error: error.message }
       };
     }
   });
@@ -6462,13 +5330,42 @@ app.whenReady().then(async () => {
   // Global storage for WSL credentials (in-memory only)
   let storedWslRootPassword = null;
 
-  // Load stored credentials on startup
-  const loadStoredCredentials = async () => {
+  // Load stored credentials on startup (synchronous for initialization)
+  const loadStoredCredentials = () => {
     try {
-      // This would load from secure storage in a production environment
-      // For now, we'll start with empty credentials
-      console.log('🔐 Loading stored WSL credentials...');
-      storedWslRootPassword = null;
+      const os = require('os');
+      const platform = os.platform();
+
+      if (platform === 'linux') {
+        // Check if we're on Kali Linux by looking for common indicators
+        const fs = require('fs');
+        let isKali = false;
+
+        try {
+          if (fs.existsSync('/etc/os-release')) {
+            const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+            if (osRelease.toLowerCase().includes('kali')) {
+              isKali = true;
+            }
+          }
+        } catch (e) {
+          // Ignore file read errors
+        }
+
+        if (isKali) {
+          console.log('🔐 Loading stored sudo credentials for native Kali...');
+          storedWslRootPassword = null; // Will be set by user when needed
+        } else {
+          console.log('🔐 Loading stored credentials for Linux...');
+          storedWslRootPassword = null;
+        }
+      } else if (platform === 'win32') {
+        console.log('🔐 Loading stored WSL credentials...');
+        storedWslRootPassword = loadStoredPassword();
+      } else {
+        console.log('🔐 Loading stored credentials for', platform, '...');
+        storedWslRootPassword = null;
+      }
     } catch (error) {
       console.error('Failed to load stored credentials:', error);
     }
@@ -6601,22 +5498,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Install missing tools handler
-  ipcMain.handle('tools:installMissing', async (event, missingTools) => {
-    try {
-      console.log('🔧 [TOOL-INSTALL] Installing missing tools:', missingTools);
-      
-      if (!storedWslRootPassword) {
-        return { success: false, error: 'WSL root password not available' };
-      }
-      
-      const result = await checkAndInstallRequiredTools(storedWslRootPassword, event);
-      return result;
-    } catch (error) {
-      console.log('❌ [TOOL-INSTALL] Failed to install tools:', error.message);
-      return { success: false, error: error.message };
-    }
-  });
+  // Install missing tools handler - REMOVED: Duplicate handler, using cursor-installer version instead
 
   // Check and install tgpt
   ipcMain.handle('tools:checkAndInstallTgpt', async (event, password) => {
@@ -6796,7 +5678,7 @@ app.whenReady().then(async () => {
         'theharvester': 'python3-theharvester',
         'amass': 'amass',
         'metasploit-framework': 'metasploit-framework',
-        'geoiplookup': 'geoip-bin'
+        'zaproxy': 'zaproxy'
       };
       
       let installCommand;
@@ -6841,9 +5723,9 @@ app.whenReady().then(async () => {
         } else if (toolName === 'metasploit-framework') {
           // Install metasploit CLI only via apt (lighter installation)
         installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt-get install -y metasploit-framework"`;
-        } else if (toolName === 'geoiplookup') {
-          // Install geoip-bin package for geoiplookup command
-          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S apt install -y geoip-bin"`;
+        } else if (toolName === 'zaproxy') {
+          // Install zaproxy via snap
+          installCommand = `wsl -e bash -c "export DEBIAN_FRONTEND=noninteractive && echo '${usePassword}' | sudo -S snap install zaproxy"`;
         }
         
         console.log(`🔧 [SINGLE-TOOL-INSTALL] Special command: ${installCommand.replace(usePassword, '***')}`);
@@ -8267,23 +7149,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Malware & Defacement orchestrated scan
-  ipcMain.handle('maldef:start', async (event, url) => {
-    try {
-      const { runMaldefScan } = require(path.join(__dirname, '..', 'maldef', 'orchestrator.js'))
-      const outRoot = path.join(process.cwd(), 'temp-scans')
-      const report = await runMaldefScan(url, {
-        outRoot,
-        onProgress: (u) => event.sender.send('maldef:progress', u)
-      })
-      event.sender.send('maldef:done', report)
-      return { ok: true }
-    } catch (e) {
-      event.sender.send('maldef:progress', { stage: 'error', message: e?.message || String(e) })
-      event.sender.send('maldef:done', null)
-      return { error: e?.message || String(e) }
-    }
-  })
+  // Malware & Defacement orchestrated scan - REMOVED: Duplicate handler
 
 
   app.on('activate', async () => {

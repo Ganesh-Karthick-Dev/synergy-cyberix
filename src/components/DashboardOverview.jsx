@@ -90,14 +90,12 @@ function DashboardOverview() {
   }
 
   return (
-    <div className="space-y-6 w-full max-w-full overflow-x-hidden" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+    <div className="space-y-6">
       {/* Comprehensive Security Scanner Section - Moved to Top */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="w-full max-w-full overflow-x-hidden"
-        style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}
       >
         <ComprehensiveSecurityScanner />
       </motion.div>

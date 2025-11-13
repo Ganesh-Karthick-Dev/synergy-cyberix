@@ -1,0 +1,12 @@
+{
+  "id": "log_1760096804000_7xj2ku578",
+  "timestamp": "2025-10-10T11:46:44.000Z",
+  "scanType": "port",
+  "scanName": "Port Scan",
+  "target": "https://wordpress.com/",
+  "status": "completed",
+  "startTime": "2025-10-10T11:46:44.000Z",
+  "endTime": "2025-10-10T11:46:44.000Z",
+  "duration": 0,
+  "result": "Scan completed - 0 open ports found"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "log_1762238252447_jr1jg9nv5",
+  "timestamp": "2025-11-04T06:37:32.447Z",
+  "scanType": "network",
+  "scanName": "Network Scan",
+  "target": "webno",
+  "status": "failed",
+  "startTime": "2025-11-04T06:35:32.447Z",
+  "endTime": "2025-11-04T06:37:32.447Z",
+  "duration": 120000,
+  "result": "Network scan failed"
+}
