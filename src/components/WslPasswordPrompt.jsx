@@ -6,8 +6,12 @@ import {
   testWslRootCredentials,
   storeWslRootPassword,
   getDefaultWslUsername,
-  hasWslCredentials 
+  hasWslCredentials,
+  getWslCredentials
 } from '../utils/wslPasswordManager';
+import { getSecurePassword } from '../utils/securePasswordStorage';
+import InvalidCredentialsDialog from './InvalidCredentialsDialog';
+import WslUserCreationDialog from './WslUserCreationDialog';
 
 const WslPasswordPrompt = ({ isOpen, onClose, onSuccess }) => {
   const { showSuccess, showError, dismissToast } = useToast();
@@ -16,11 +20,15 @@ const WslPasswordPrompt = ({ isOpen, onClose, onSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [detectedUsername, setDetectedUsername] = useState('root');
   const [isRootMode, setIsRootMode] = useState(true);
+  const [showInvalidCredsDialog, setShowInvalidCredsDialog] = useState(false);
+  const [showUserCreationDialog, setShowUserCreationDialog] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       // Auto-detect WSL username when dialog opens
       loadDefaultUsername();
+      // Auto-fetch stored password
+      loadStoredPassword();
     }
   }, [isOpen]);
 
@@ -33,6 +41,51 @@ const WslPasswordPrompt = ({ isOpen, onClose, onSuccess }) => {
       console.error('Failed to load default username:', error);
       setDetectedUsername('root');
     }
+  };
+
+  const loadStoredPassword = async () => {
+    try {
+      // Try to get stored password from secure storage
+      const storedPassword = getSecurePassword();
+      if (storedPassword) {
+        console.log('🔐 [WSL-PROMPT] Found stored password, auto-filling...');
+        setPassword(storedPassword);
+        return;
+      }
+      
+      // Try to get from WSL credentials
+      const storedCreds = getWslCredentials();
+      if (storedCreds && storedCreds.password) {
+        console.log('🔐 [WSL-PROMPT] Found stored WSL credentials, auto-filling...');
+        setPassword(storedCreds.password);
+        if (storedCreds.username) {
+          setDetectedUsername(storedCreds.username);
+        }
+      }
+    } catch (error) {
+      console.log('🔐 [WSL-PROMPT] No stored password found:', error.message);
+    }
+  };
+
+  const handleCreateNewUser = async () => {
+    setShowInvalidCredsDialog(false);
+    setShowUserCreationDialog(true);
+  };
+
+  const handleUserCreationSuccess = (username, password) => {
+    setShowUserCreationDialog(false);
+    setDetectedUsername(username);
+    setPassword(password);
+    // Auto-test the newly created credentials
+    setTimeout(() => {
+      handleTestCredentials();
+    }, 500);
+  };
+
+  const handleTryAgain = () => {
+    setShowInvalidCredsDialog(false);
+    setPassword('');
+    // Focus will return to password field automatically
   };
 
   const handleTestCredentials = async () => {
@@ -117,8 +170,9 @@ const WslPasswordPrompt = ({ isOpen, onClose, onSuccess }) => {
         } else {
           console.log('🔐 [WSL-PROMPT] ===== PASSWORD INVALID =====');
           console.log('🔐 [WSL-PROMPT] ❌ Root password is invalid');
-          console.log('🔐 [WSL-PROMPT] ❌ Showing error message to user');
-          showError('Invalid WSL root password. Please check your password.');
+          console.log('🔐 [WSL-PROMPT] ❌ Showing invalid credentials dialog');
+          setIsTesting(false);
+          setShowInvalidCredsDialog(true);
         }
       } else {
         // Test regular user password
@@ -171,8 +225,9 @@ const WslPasswordPrompt = ({ isOpen, onClose, onSuccess }) => {
         } else {
           console.log('🔐 [WSL-PROMPT] ===== PASSWORD INVALID (USER MODE) =====');
           console.log('🔐 [WSL-PROMPT] ❌ User password is invalid');
-          console.log('🔐 [WSL-PROMPT] ❌ Showing error message to user');
-          showError('Invalid WSL password. Please check your password.');
+          console.log('🔐 [WSL-PROMPT] ❌ Showing invalid credentials dialog');
+          setIsTesting(false);
+          setShowInvalidCredsDialog(true);
         }
       }
     } catch (error) {
@@ -318,6 +373,22 @@ const WslPasswordPrompt = ({ isOpen, onClose, onSuccess }) => {
           </div>
         </div>
       </div>
+
+      {/* Invalid Credentials Dialog */}
+      <InvalidCredentialsDialog
+        isOpen={showInvalidCredsDialog}
+        onClose={() => setShowInvalidCredsDialog(false)}
+        onTryAgain={handleTryAgain}
+        onCreateNewUser={handleCreateNewUser}
+        username={isRootMode ? 'root' : detectedUsername}
+      />
+
+      {/* User Creation Dialog */}
+      <WslUserCreationDialog
+        isOpen={showUserCreationDialog}
+        onClose={() => setShowUserCreationDialog(false)}
+        onSuccess={handleUserCreationSuccess}
+      />
     </div>
   );
 };

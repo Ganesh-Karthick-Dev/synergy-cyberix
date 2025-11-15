@@ -31,7 +31,7 @@ async function generateHash(distro, target, onProgress = null) {
     onProgress?.({ stage: 'hashing', message: `Generating hash for ${target}...`, command, tool: 'hash' })
     
     const args = ['-d', distro, '--', 'sh', '-lc', command]
-    const child = spawn('wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('C:\\Windows\\System32\\wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
     
     let stdout = ''
     let stderr = ''

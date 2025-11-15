@@ -61,6 +61,14 @@ export const ToastProvider = ({ children }) => {
     return addToast(message, 'alert', options);
   }, [addToast]);
 
+  const showWarning = useCallback((message, options = {}) => {
+    return addToast(message, 'warning', options);
+  }, [addToast]);
+
+  const showInfo = useCallback((message, options = {}) => {
+    return addToast(message, 'info', options);
+  }, [addToast]);
+
   const showSecondary = useCallback((message, options = {}) => {
     return addToast(message, 'secondary', options);
   }, [addToast]);
@@ -82,6 +90,8 @@ export const ToastProvider = ({ children }) => {
     showError,
     showSuccess, 
     showAlert,
+    showWarning,
+    showInfo,
     showSecondary,
     showLoading,
     updateToast,

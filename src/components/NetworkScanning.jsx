@@ -205,8 +205,8 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
       setConsoleLog(prev => [...prev, '📋 Converting results with AI...'])
       setConsoleLog(prev => [...prev, '📋 Prompt length: ' + prompt.length + ' characters'])
       
-      // Log the actual prompt being sent to TGPT in the UI console
-      setConsoleLog(prev => [...prev, '📝 TGPT Prompt:'])
+      // Log the actual prompt being sent to AI in the UI console
+      setConsoleLog(prev => [...prev, '📝 AI Analysis Prompt:'])
       // Split prompt into lines and log each line (limit to first 50 lines to avoid overwhelming)
       const promptLines = prompt.split('\n')
       const linesToLog = promptLines.slice(0, 50)
@@ -368,49 +368,102 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
 
     try {
       const doc = new jsPDF()
-      let yPos = 20
       const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
       const margin = 15
+      const borderMargin = 5 // Small border margin
       const maxWidth = pageWidth - 2 * margin
+      const footerY = pageHeight - 15
+      let yPos = 20
+      let isFirstPage = true
+
+      // Helper function to draw page border - make it visible
+      const drawPageBorder = () => {
+        doc.setDrawColor(100, 100, 100) // Darker gray border for visibility
+        doc.setLineWidth(1) // Thicker line for visibility
+        doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
+      }
+
+      // Helper function to draw footer
+      const drawFooter = (pageNum, totalPages) => {
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(128, 128, 128)
+        // Left footer
+        doc.text('Cyberix - A Webnox Product', margin, footerY, { align: 'left' })
+        // Right footer - page number
+        doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, footerY, { align: 'right' })
+      }
 
       // Helper function to add new page if needed
       const checkNewPage = (requiredSpace = 10) => {
-        if (yPos > 280) {
+        if (yPos + requiredSpace > footerY - 10) {
+          // Draw border and footer on current page before adding new one
+          drawPageBorder()
+          const currentPage = doc.internal.getNumberOfPages()
+          drawFooter(currentPage, currentPage) // Will update total later
+          
           doc.addPage()
+          isFirstPage = false
           yPos = 20
         }
       }
 
-      // Title
-      doc.setFontSize(20)
+      // Calculate scan metadata
+      const startTime = scanTimer?.startTime ? new Date(scanTimer.startTime) : new Date()
+      const completedTime = scanTimer?.completedTime || new Date()
+      const duration = scanTimer?.elapsed || (completedTime - startTime) / 1000 // in seconds
+      const durationMinutes = Math.floor(duration / 60)
+      const durationSeconds = Math.floor(duration % 60)
+      const durationText = `${durationMinutes}m ${durationSeconds}s`
+      
+      // First Page Header - Scan Information
+      doc.setFontSize(18)
       doc.setFont('helvetica', 'bold')
-      doc.text('Network Scan Security Report', margin, yPos)
-      yPos += 10
+      doc.setTextColor(0, 0, 0)
+      const scanName = 'Network Scan Security Report'
+      doc.text(scanName, margin, yPos, { align: 'left' })
+      yPos += 8
 
-      // Scan Info
-      doc.setFontSize(12)
+      doc.setFontSize(10)
       doc.setFont('helvetica', 'normal')
-      doc.text(`Target: ${scanResults.target || target}`, margin, yPos)
-      yPos += 7
-      if (scanResults.extractedIP) {
-        doc.text(`IP Address: ${scanResults.extractedIP}`, margin, yPos)
-        yPos += 7
-      }
-      doc.text(`Scan Date: ${new Date().toLocaleString()}`, margin, yPos)
-      yPos += 10
+      
+      // Scan Info Table with proper date/time formatting
+      const infoItems = [
+        { label: 'Scan Name:', value: scanName },
+        { label: 'Total Time Taken:', value: durationText },
+        { label: 'Started Date & Time:', value: formatDateTime(startTime) },
+        { label: 'Completed Date & Time:', value: formatDateTime(completedTime) },
+        { label: 'URL Tested:', value: scanResults.target || target || 'N/A' }
+      ]
+
+      infoItems.forEach((item, idx) => {
+        checkNewPage(7)
+        doc.setFont('helvetica', 'bold')
+        doc.text(item.label, margin, yPos)
+        doc.setFont('helvetica', 'normal')
+        const valueX = margin + 50
+        const valueLines = doc.splitTextToSize(item.value, maxWidth - 50)
+        valueLines.forEach((line, lineIdx) => {
+          doc.text(line, valueX, yPos + (lineIdx * 5))
+        })
+        yPos += Math.max(5, valueLines.length * 5) + 2
+      })
+      
+      yPos += 5
 
       // Get analyzed results
       const analyzedResults = scanResults?.results?.json?.analyzedResults
       if (analyzedResults && Object.keys(analyzedResults).length > 0) {
-        // Command configs in order
+        // Command configs matching UI order
         const commandConfigs = [
-          { key: 'whatweb', title: 'Web Technology Detection' },
-          { key: 'ping', title: 'Network Connectivity Test' },
-          { key: 'host', title: 'DNS Record Lookup' },
-          { key: 'hping', title: 'Advanced Packet Testing' },
-          { key: 'nmapSn', title: 'Host Discovery Analysis' },
-          { key: 'nmapFast', title: 'Quick Port Scan' },
-          { key: 'nmapFull', title: 'Comprehensive Port Scan' }
+          { key: 'whatweb', title: 'Web Technology & Framework Analysis', description: 'Comprehensive web technology fingerprinting and detection.' },
+          { key: 'ping', title: 'Network Connectivity & Latency Assessment', description: 'ICMP connectivity test to verify network reachability.' },
+          { key: 'host', title: 'DNS Resolution & Record Analysis', description: 'DNS lookup to resolve domain names to IP addresses.' },
+          { key: 'hping', title: 'Advanced Network Packet Analysis', description: 'Advanced packet crafting tool for network testing.' },
+          { key: 'nmapSn', title: 'Network Host Discovery & Enumeration', description: 'Network host discovery scan to identify active hosts.' },
+          { key: 'nmapFast', title: 'Rapid Port Scanning & Service Detection', description: 'Quick port scan to identify open ports and services.' },
+          { key: 'nmapFull', title: 'Comprehensive Port Scanning & Analysis', description: 'Comprehensive port scan with detailed service detection.' }
         ]
 
         // Export each command result
@@ -421,46 +474,177 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
           checkNewPage(20)
           yPos += 5
 
-          // Command Title
-          doc.setFontSize(16)
+          // Command Title and Description (matching UI)
+          doc.setFontSize(14)
           doc.setFont('helvetica', 'bold')
+          doc.setTextColor(0, 0, 0)
           doc.text(config.title, margin, yPos)
-          yPos += 8
+          yPos += 6
+          
+          if (config.description) {
+            doc.setFontSize(9)
+            doc.setFont('helvetica', 'normal')
+            doc.setTextColor(100, 100, 100)
+            const descLines = doc.splitTextToSize(config.description, maxWidth)
+            descLines.forEach(line => {
+              checkNewPage(5)
+              doc.text(line, margin, yPos)
+              yPos += 4
+            })
+            yPos += 5
+          }
 
-          doc.setFontSize(11)
-          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(0, 0, 0)
 
-          // What We Did
+          // Analysis Overview (What We Did) - Enhanced parsing
           if (analyzed.whatWeDid) {
             checkNewPage(15)
+            doc.setFontSize(11)
             doc.setFont('helvetica', 'bold')
-            doc.text('What We Did:', margin, yPos)
+            doc.text('Analysis Overview', margin, yPos)
             yPos += 6
+            
+            doc.setFontSize(9)
             doc.setFont('helvetica', 'normal')
-            const whatWeDidText = typeof analyzed.whatWeDid === 'string' ? analyzed.whatWeDid : JSON.stringify(analyzed.whatWeDid)
-            const whatWeDidLines = doc.splitTextToSize(whatWeDidText, maxWidth)
-            whatWeDidLines.forEach(line => {
-              checkNewPage(7)
-              doc.text(line, margin, yPos)
-              yPos += 6
-            })
+            
+            // Parse whatWeDid
+            let whatWeDidData = analyzed.whatWeDid
+            if (typeof whatWeDidData === 'string') {
+              try {
+                const trimmed = whatWeDidData.trim()
+                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                  whatWeDidData = JSON.parse(trimmed)
+                }
+              } catch (e) {
+                // Keep as string
+              }
+            }
+            
+            if (typeof whatWeDidData === 'object' && whatWeDidData !== null && !Array.isArray(whatWeDidData) && !whatWeDidData._text) {
+              // Display as key-value pairs
+              Object.entries(whatWeDidData).forEach(([key, value]) => {
+                const keyLower = key.toLowerCase()
+                if (['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) ||
+                    keyLower.includes('command') || keyLower.includes('cmd')) {
+                  return // Skip command-related keys
+                }
+                
+                checkNewPage(6)
+                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
+                const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
+                doc.setFont('helvetica', 'bold')
+                doc.setFontSize(8)
+                doc.text(formattedKey + ':', margin, yPos)
+                doc.setFont('helvetica', 'normal')
+                const valueLines = doc.splitTextToSize(displayValue, maxWidth - 50)
+                valueLines.forEach((line, lineIdx) => {
+                  checkNewPage(5)
+                  doc.text(line, margin + 5, yPos + (lineIdx * 4))
+                })
+                yPos += Math.max(4, valueLines.length * 4) + 2
+              })
+            } else {
+              const whatWeDidText = whatWeDidData._text || (typeof whatWeDidData === 'string' ? whatWeDidData : JSON.stringify(whatWeDidData))
+              const lines = doc.splitTextToSize(whatWeDidText, maxWidth)
+              lines.forEach((line, lineIdx) => {
+                checkNewPage(5)
+                doc.text(line, margin, yPos + (lineIdx * 4))
+              })
+              yPos += lines.length * 4 + 2
+            }
             yPos += 3
           }
 
-          // What We Got
+          // Key Findings (What We Got) - Enhanced to show all details even for errors like 403
           if (analyzed.whatWeGot) {
             checkNewPage(15)
+            doc.setFontSize(11)
             doc.setFont('helvetica', 'bold')
-            doc.text('What We Got:', margin, yPos)
+            doc.text('Key Findings', margin, yPos)
             yPos += 6
+            
+            doc.setFontSize(9)
             doc.setFont('helvetica', 'normal')
-            const whatWeGotText = typeof analyzed.whatWeGot === 'string' ? analyzed.whatWeGot : JSON.stringify(analyzed.whatWeGot)
-            const whatWeGotLines = doc.splitTextToSize(whatWeGotText, maxWidth)
-            whatWeGotLines.forEach(line => {
-              checkNewPage(7)
-              doc.text(line, margin, yPos)
-              yPos += 6
-            })
+            
+            // Parse whatWeGot - handle both string and object formats
+            let whatWeGotData = analyzed.whatWeGot
+            if (typeof whatWeGotData === 'string') {
+              try {
+                const trimmed = whatWeGotData.trim()
+                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                  whatWeGotData = JSON.parse(trimmed)
+                }
+              } catch (e) {
+                // Keep as string if parsing fails
+              }
+            }
+            
+            // Display as key-value pairs if it's an object
+            if (typeof whatWeGotData === 'object' && whatWeGotData !== null && !Array.isArray(whatWeGotData) && !whatWeGotData._text) {
+              // Display all key-value pairs - don't filter out any data
+              Object.entries(whatWeGotData).forEach(([key, value]) => {
+                const keyLower = key.toLowerCase()
+                // Only skip command-related keys, but show everything else including status codes, errors, etc.
+                if (['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) ||
+                    keyLower.includes('command') || keyLower.includes('cmd')) {
+                  return // Skip command-related keys
+                }
+                
+                checkNewPage(6)
+                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
+                
+                // Handle JSON strings in values
+                let parsedValue = value
+                if (typeof value === 'string') {
+                  const trimmed = value.trim()
+                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                    try {
+                      parsedValue = JSON.parse(trimmed)
+                    } catch (e) {
+                      // Keep as string if parsing fails
+                    }
+                  }
+                }
+                
+                // Format arrays and objects
+                let displayValue = parsedValue
+                if (Array.isArray(parsedValue)) {
+                  displayValue = parsedValue.map((item, idx) => {
+                    if (typeof item === 'object' && item !== null) {
+                      return JSON.stringify(item)
+                    }
+                    return String(item)
+                  }).join(', ')
+                } else if (typeof parsedValue === 'object' && parsedValue !== null) {
+                  displayValue = JSON.stringify(parsedValue)
+                } else {
+                  displayValue = String(parsedValue)
+                }
+                
+                doc.setFont('helvetica', 'bold')
+                doc.setFontSize(8)
+                doc.text(formattedKey + ':', margin, yPos)
+                doc.setFont('helvetica', 'normal')
+                const valueLines = doc.splitTextToSize(displayValue, maxWidth - 50)
+                valueLines.forEach((line, lineIdx) => {
+                  checkNewPage(5)
+                  doc.text(line, margin + 5, yPos + (lineIdx * 4))
+                })
+                yPos += Math.max(4, valueLines.length * 4) + 2
+              })
+            } else {
+              // If it's a string or _text property, display as text
+              const whatWeGotText = whatWeGotData._text || (typeof whatWeGotData === 'string' ? whatWeGotData : JSON.stringify(whatWeGotData))
+              const lines = doc.splitTextToSize(whatWeGotText, maxWidth)
+              lines.forEach((line, lineIdx) => {
+                checkNewPage(5)
+                doc.text(line, margin, yPos + (lineIdx * 4))
+              })
+              yPos += lines.length * 4 + 2
+            }
             yPos += 3
           }
 
@@ -482,23 +666,139 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
             yPos += 3
           }
 
-          // Ports (for port scans)
+          // Port Details (for port scans) - Enhanced table view matching UI
           if ((config.key === 'nmapFast' || config.key === 'nmapFull') && analyzed.ports && Array.isArray(analyzed.ports) && analyzed.ports.length > 0) {
-            checkNewPage(15)
+            checkNewPage(25)
+            
+            // Sort ports: Open first, then Filtered, then Closed
+            const sortedPorts = [...analyzed.ports].sort((a, b) => {
+              const stateOrder = { 'open': 1, 'filtered': 2, 'closed': 3, 'unknown': 4 }
+              const aState = (a.state || 'unknown').toLowerCase()
+              const bState = (b.state || 'unknown').toLowerCase()
+              return (stateOrder[aState] || 99) - (stateOrder[bState] || 99)
+            })
+            
+            // Count ports by state
+            const openPorts = sortedPorts.filter(p => (p.state || '').toLowerCase() === 'open')
+            const filteredPorts = sortedPorts.filter(p => (p.state || '').toLowerCase() === 'filtered')
+            const closedPorts = sortedPorts.filter(p => (p.state || '').toLowerCase() === 'closed')
+            
+            doc.setFontSize(11)
             doc.setFont('helvetica', 'bold')
-            doc.text(`Port Details (${analyzed.ports.length} ports):`, margin, yPos)
-            yPos += 6
+            doc.text(`Port Details (${analyzed.ports.length} ports)`, margin, yPos)
+            yPos += 8
+            
+            // Show port counts
+            doc.setFontSize(9)
             doc.setFont('helvetica', 'normal')
-            analyzed.ports.forEach(port => {
-              checkNewPage(7)
+            if (openPorts.length > 0) {
+              doc.setFont('helvetica', 'bold')
+              doc.setTextColor(0, 150, 0) // Green for open
+              doc.text(`Open: ${openPorts.length}`, margin, yPos)
+              doc.setTextColor(0, 0, 0)
+              doc.setFont('helvetica', 'normal')
+            }
+            if (filteredPorts.length > 0) {
+              doc.setFont('helvetica', 'bold')
+              doc.setTextColor(200, 150, 0) // Yellow/Orange for filtered
+              doc.text(`Filtered: ${filteredPorts.length}`, margin + 40, yPos)
+              doc.setTextColor(0, 0, 0)
+              doc.setFont('helvetica', 'normal')
+            }
+            if (closedPorts.length > 0) {
+              doc.setFont('helvetica', 'bold')
+              doc.setTextColor(200, 0, 0) // Red for closed
+              doc.text(`Closed: ${closedPorts.length}`, margin + 90, yPos)
+              doc.setTextColor(0, 0, 0)
+              doc.setFont('helvetica', 'normal')
+            }
+            yPos += 8
+            
+            // Table setup
+            const colWidths = {
+              port: 25,
+              state: 35,
+              service: 60,
+              version: 50
+            }
+            const tableStartX = margin
+            const rowHeight = 6
+            const headerHeight = 7
+            
+            // Draw table header with background
+            checkNewPage(headerHeight + 2)
+            doc.setFillColor(255, 200, 150) // Light orange background
+            doc.rect(tableStartX, yPos - headerHeight + 2, maxWidth, headerHeight, 'F')
+            
+            doc.setFontSize(9)
+            doc.setFont('helvetica', 'bold')
+            doc.setTextColor(0, 0, 0)
+            doc.text('Port', tableStartX + 2, yPos)
+            doc.text('State', tableStartX + colWidths.port + 2, yPos)
+            doc.text('Service', tableStartX + colWidths.port + colWidths.state + 2, yPos)
+            doc.text('Version', tableStartX + colWidths.port + colWidths.state + colWidths.service + 2, yPos)
+            
+            // Draw header border
+            doc.setDrawColor(200, 150, 100)
+            doc.setLineWidth(0.5)
+            doc.line(tableStartX, yPos - headerHeight + 2, tableStartX + maxWidth, yPos - headerHeight + 2)
+            doc.line(tableStartX, yPos + 2, tableStartX + maxWidth, yPos + 2)
+            
+            yPos += 3
+            
+            // Draw table rows
+            doc.setFontSize(8)
+            doc.setFont('helvetica', 'normal')
+            
+            sortedPorts.forEach((port, idx) => {
+              checkNewPage(rowHeight + 2)
+              
               const portNum = port.port || port.number || port.portNumber || 'N/A'
-              const state = port.state || 'unknown'
+              const state = (port.state || 'unknown').toLowerCase()
               const service = port.service || (typeof port.service === 'object' ? port.service?.name : 'N/A')
               const version = port.version || (typeof port.service === 'object' ? port.service?.version : 'N/A')
-              doc.text(`Port ${portNum}: ${state} - ${service} ${version ? `(${version})` : ''}`, margin + 5, yPos)
-              yPos += 6
+              
+              // Draw row border
+              doc.setDrawColor(220, 220, 220)
+              doc.setLineWidth(0.3)
+              doc.line(tableStartX, yPos, tableStartX + maxWidth, yPos)
+              
+              // Port number (monospace font for better alignment)
+              doc.setFont('courier', 'normal')
+              doc.text(String(portNum), tableStartX + 2, yPos)
+              
+              // State with color coding
+              doc.setFont('helvetica', 'bold')
+              if (state === 'open') {
+                doc.setTextColor(0, 150, 0) // Green
+              } else if (state === 'filtered') {
+                doc.setTextColor(200, 150, 0) // Yellow/Orange
+              } else if (state === 'closed') {
+                doc.setTextColor(200, 0, 0) // Red
+              } else {
+                doc.setTextColor(100, 100, 100) // Gray
+              }
+              doc.text(state.charAt(0).toUpperCase() + state.slice(1), tableStartX + colWidths.port + 2, yPos)
+              doc.setTextColor(0, 0, 0)
+              
+              // Service
+              doc.setFont('helvetica', 'normal')
+              const serviceText = String(service).substring(0, 25) // Limit length
+              doc.text(serviceText, tableStartX + colWidths.port + colWidths.state + 2, yPos)
+              
+              // Version
+              const versionText = String(version).substring(0, 20) // Limit length
+              doc.text(versionText, tableStartX + colWidths.port + colWidths.state + colWidths.service + 2, yPos)
+              
+              yPos += rowHeight
             })
-            yPos += 3
+            
+            // Draw bottom border
+            doc.setDrawColor(200, 150, 100)
+            doc.setLineWidth(0.5)
+            doc.line(tableStartX, yPos, tableStartX + maxWidth, yPos)
+            
+            yPos += 5
           }
 
           // Findings
@@ -607,15 +907,12 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
         }
       }
 
-      // Footer
+      // Draw borders and footers on all pages
       const totalPages = doc.internal.getNumberOfPages()
       for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i)
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(128, 128, 128)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, 285, { align: 'center' })
-        doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, 285, { align: 'right' })
+        drawPageBorder()
+        drawFooter(i, totalPages)
       }
 
       // Save PDF
@@ -1114,22 +1411,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
             result: resultSummary
           })
           
-          // Send desktop push notification
-          if (isSuccess && window.cyberGuard?.showNotification) {
-            try {
-              window.cyberGuard.showNotification({
-                title: 'Network Scan Completed',
-                body: `Network scan completed successfully for ${target}. ${openPorts} open ports found.`,
-                viewId: 'network-scan'
-              }).catch(err => {
-                console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
-              })
-            } catch (err) {
-              console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
-            }
-          }
-          
-          // Note: Global scan completion is handled in GlobalScanContext
+          // Note: Notification is handled by GlobalScanContext to avoid duplicates
           // We just need to clear the local reference
           if (currentScanIdRef.current) {
             currentScanIdRef.current = null
@@ -1569,16 +1851,21 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
       )}
 
 
-      {/* Scan Results */}
+      {/* Scan Results - Enhanced UI */}
       {scanResults && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">
-              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span>Scan Results</span>
-            </h3>
+        <div className="bg-gradient-to-br from-white to-gray-50 dark:from-slate-800 dark:to-slate-900 rounded-2xl shadow-xl border-2 border-gray-200 dark:border-slate-700 p-8 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Network Scan Results</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Comprehensive security analysis report</p>
+              </div>
+            </div>
           </div>
           
           {scanResults.error ? (
@@ -1608,29 +1895,39 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                 </p>
               </div>
 
-              {/* Network Scan Security Report Section Header */}
+              {/* Network Scan Security Report Section Header - Enhanced */}
               {scanResults?.results?.json?.analyzedResults && Object.keys(scanResults.results.json.analyzedResults).length > 0 && (
-                <div className="mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-3xl font-bold text-gray-900 dark:text-white">Network Scan Security Report</h3>
+                <div className="mb-8 pb-6 border-b-2 border-orange-200 dark:border-orange-800">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                    <div className="flex items-center space-x-4">
+                      <div className="p-4 bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl shadow-lg">
+                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-4xl font-extrabold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">Network Security Analysis Report</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">Detailed security assessment and vulnerability analysis</p>
+                      </div>
+                    </div>
                     <div className="flex items-center gap-3">
                       <button
                         onClick={handleExportPDF}
-                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+                        className="px-5 py-3 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        Export
+                        Export PDF
                       </button>
                       <button
                         onClick={handleAISuggestion}
-                        className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2"
+                        className="px-5 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl font-semibold transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                         </svg>
-                        AI Suggestion
+                        AI Suggestions
                       </button>
                     </div>
                   </div>
@@ -1641,7 +1938,42 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
               {scanResults?.results?.json?.analyzedResults && Object.keys(scanResults.results.json.analyzedResults).length > 0 && (
                 <div className="space-y-6">
                   {(() => {
-                    const analyzedResults = scanResults.results.json.analyzedResults;
+                    // Helper function to recursively parse JSON strings in the analyzed results
+                    const parseJsonStrings = (obj) => {
+                      if (!obj || typeof obj !== 'object') return obj;
+                      
+                      if (Array.isArray(obj)) {
+                        return obj.map(item => parseJsonStrings(item));
+                      }
+                      
+                      const parsed = {};
+                      for (const [key, value] of Object.entries(obj)) {
+                        if (typeof value === 'string') {
+                          const trimmed = value.trim();
+                          // Try to parse if it looks like JSON
+                          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                              (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                            try {
+                              parsed[key] = parseJsonStrings(JSON.parse(trimmed));
+                            } catch (e) {
+                              // If parsing fails, keep as string
+                              parsed[key] = value;
+                            }
+                          } else {
+                            parsed[key] = value;
+                          }
+                        } else if (typeof value === 'object' && value !== null) {
+                          parsed[key] = parseJsonStrings(value);
+                        } else {
+                          parsed[key] = value;
+                        }
+                      }
+                      return parsed;
+                    };
+                    
+                    // Parse any JSON strings in the analyzed results
+                    const rawAnalyzedResults = scanResults.results.json.analyzedResults;
+                    const analyzedResults = parseJsonStrings(rawAnalyzedResults);
                     
                     // Helper function to render a command result card
                     const renderCommandCard = (analyzed, config) => {
@@ -1655,97 +1987,663 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                       };
                       
                       return (
-                        <div key={config.key} className={`${colors.bg} ${colors.border} rounded-xl border-2 p-6 shadow-lg`}>
-                          <div className="flex items-start gap-4 mb-4 pb-4 border-b border-orange-200 dark:border-orange-800">
-                            <div className={`p-3 ${colors.iconBg} rounded-xl`}>
-                              <span className="text-3xl">{config.icon}</span>
+                        <div key={config.key} className={`${colors.bg} ${colors.border} rounded-2xl border-2 p-8 shadow-2xl hover:shadow-3xl transition-all duration-300 transform hover:-translate-y-1`}>
+                          {/* Scan Name and Description - At Top */}
+                          <div className="flex items-start gap-5 mb-8 pb-6 border-b-2 border-orange-200 dark:border-orange-800">
+                            <div className={`p-4 ${colors.iconBg} rounded-2xl shadow-lg`}>
+                              <span className="text-4xl">{config.icon}</span>
                             </div>
                             <div className="flex-1">
-                              <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 mb-2">{config.title}</h4>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">{config.description}</p>
+                              <h4 className="text-2xl font-extrabold text-orange-900 dark:text-orange-100 mb-3">{config.title}</h4>
+                              <p className="text-base text-gray-700 dark:text-gray-300 leading-relaxed">{config.description}</p>
                             </div>
                           </div>
                           
-                          {/* What We Did & What We Got */}
-                          {(analyzed.whatWeDid || analyzed.whatWeGot) && (
-                            <div className="mb-6 space-y-3">
-                              {analyzed.whatWeDid && (
-                                <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
-                                  <h5 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">What We Did</h5>
-                                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                                    {typeof analyzed.whatWeDid === 'string' ? analyzed.whatWeDid : 
-                                     typeof analyzed.whatWeDid === 'object' ? JSON.stringify(analyzed.whatWeDid, null, 2) : 
-                                     String(analyzed.whatWeDid)}
-                                  </p>
+                          {/* Scan Summary - With Total Findings, Recommendations, Vulnerabilities, and Status */}
+                          {analyzed.summary && (() => {
+                            // Parse summary if it's a string
+                            let summaryData = analyzed.summary;
+                            if (typeof summaryData === 'string') {
+                              try {
+                                const trimmed = summaryData.trim();
+                                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                  summaryData = JSON.parse(trimmed);
+                                }
+                              } catch (e) {
+                                // If parsing fails, skip summary display
+                                return null;
+                              }
+                            }
+                            
+                            if (!summaryData || typeof summaryData !== 'object' || Array.isArray(summaryData)) {
+                              return null;
+                            }
+                            
+                            const summaryEntries = Object.entries(summaryData).filter(([key, value]) => {
+                              // Skip if value is null, undefined, or empty object/array
+                              if (value === null || value === undefined) return false;
+                              if (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) return false;
+                              if (Array.isArray(value) && value.length === 0) return false;
+                              
+                              // Filter out command-related keys
+                              const keyLower = key.toLowerCase();
+                              if (['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) ||
+                                  keyLower.includes('command') || keyLower.includes('cmd')) {
+                                return false;
+                              }
+                              
+                              return true;
+                            });
+                            
+                            // Extract specific summary fields
+                            const totalFindings = summaryData.totalFindings || 
+                                                  (Array.isArray(analyzed.findings) ? analyzed.findings.length : 0) ||
+                                                  (analyzed.findings && typeof analyzed.findings === 'object' ? Object.keys(analyzed.findings).length : 0) ||
+                                                  0;
+                            const totalRecommendations = summaryData.totalRecommendations || 
+                                                         (Array.isArray(analyzed.recommendations) ? analyzed.recommendations.length : 0) ||
+                                                         0;
+                            const totalVulnerabilities = summaryData.totalVulnerabilities || 
+                                                         (Array.isArray(analyzed.vulnerabilities) ? analyzed.vulnerabilities.length : 0) ||
+                                                         0;
+                            const status = summaryData.status || summaryData.Status || 'moderate';
+                            
+                            // Determine status color
+                            const statusColor = status.toLowerCase() === 'safe' ? 'text-green-600 dark:text-green-400' :
+                                                status.toLowerCase() === 'high risk' || status.toLowerCase() === 'highrisk' ? 'text-red-600 dark:text-red-400' :
+                                                'text-orange-600 dark:text-orange-400';
+                            const statusBg = status.toLowerCase() === 'safe' ? 'bg-green-100 dark:bg-green-900/30' :
+                                            status.toLowerCase() === 'high risk' || status.toLowerCase() === 'highrisk' ? 'bg-red-100 dark:bg-red-900/30' :
+                                            'bg-orange-100 dark:bg-orange-900/30';
+                            
+                            return (
+                              <div className="mb-8 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl p-6 border-2 border-orange-200 dark:border-orange-800 shadow-lg">
+                                <div className="flex items-center gap-2 mb-4">
+                                  <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                  </svg>
+                                  <h5 className="text-lg font-bold text-orange-900 dark:text-orange-100">Scan Summary</h5>
                                 </div>
-                              )}
-                              {analyzed.whatWeGot && (
-                                <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
-                                  <h5 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">What We Got</h5>
-                                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                                    {typeof analyzed.whatWeGot === 'string' ? analyzed.whatWeGot : 
-                                     typeof analyzed.whatWeGot === 'object' ? JSON.stringify(analyzed.whatWeGot, null, 2) : 
-                                     String(analyzed.whatWeGot)}
-                                  </p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm">
+                                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                      Total Findings
+                                    </div>
+                                    <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                                      {totalFindings}
+                                    </div>
+                                  </div>
+                                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm">
+                                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                      Total Recommendations
+                                    </div>
+                                    <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                                      {totalRecommendations}
+                                    </div>
+                                  </div>
+                                  <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm">
+                                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                      Total Vulnerabilities
+                                    </div>
+                                    <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                                      {totalVulnerabilities}
+                                    </div>
+                                  </div>
+                                  <div className={`bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm ${statusBg}`}>
+                                    <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                      Status
+                                    </div>
+                                    <div className={`text-2xl font-bold ${statusColor}`}>
+                                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                                    </div>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          )}
+                              </div>
+                            );
+                          })()}
                           
-                          {/* Summary - Display ALL summary properties dynamically */}
-                          {analyzed.summary && typeof analyzed.summary === 'object' && (
-                            <div className="mb-6 bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800">
-                              <h5 className="text-lg font-semibold text-orange-900 dark:text-orange-100 mb-3">Summary</h5>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {Object.entries(analyzed.summary).map(([key, value]) => {
-                                  // Skip if value is null, undefined, or empty object/array
-                                  if (value === null || value === undefined || 
-                                      (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
-                                      (Array.isArray(value) && value.length === 0)) {
-                                    return null;
+                          {/* What We Did & What We Got - Show only once, after Summary */}
+                          {(analyzed.whatWeDid || analyzed.whatWeGot) && (() => {
+                            // Helper function to parse and format data
+                            const parseAndFormat = (data) => {
+                              if (!data) return null;
+                              
+                              // If it's already an object, return it
+                              if (typeof data === 'object' && !Array.isArray(data)) {
+                                return data;
+                              }
+                              
+                              // If it's a string, try to parse as JSON
+                              if (typeof data === 'string') {
+                                // Check if it looks like JSON
+                                const trimmed = data.trim();
+                                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                  try {
+                                    return JSON.parse(trimmed);
+                                  } catch (e) {
+                                    // If parsing fails, return as plain text
+                                    return { _text: data };
                                   }
-                                  
-                                  // Format key name (convert camelCase to Title Case)
-                                  const formattedKey = key
-                                    .replace(/([A-Z])/g, ' $1')
-                                    .replace(/^./, str => str.toUpperCase())
-                                    .trim();
-                                  
-                                  // Handle different value types
-                                  let displayValue = value;
-                                  if (typeof value === 'boolean') {
-                                    displayValue = value ? 'Yes' : 'No';
-                                  } else if (typeof value === 'object' && !Array.isArray(value)) {
-                                    displayValue = JSON.stringify(value, null, 2);
-                                  } else if (Array.isArray(value)) {
-                                    displayValue = value.length;
+                                }
+                                // If it's plain text, return as text
+                                return { _text: data };
+                              }
+                              
+                              return { _text: String(data) };
+                            };
+                            
+                            const whatWeDidData = parseAndFormat(analyzed.whatWeDid);
+                            const whatWeGotData = parseAndFormat(analyzed.whatWeGot);
+                            
+                            return (
+                              <div className="mb-8 space-y-4">
+                                {whatWeDidData && (
+                                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-5 border-2 border-blue-200 dark:border-blue-800 shadow-md">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <h5 className="text-sm font-bold text-blue-900 dark:text-blue-100">Analysis Overview</h5>
+                                    </div>
+                                    {whatWeDidData._text ? (
+                                      <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {whatWeDidData._text}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {Object.entries(whatWeDidData)
+                                          .filter(([key]) => {
+                                            const keyLower = key.toLowerCase();
+                                            return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                   !keyLower.includes('command') && 
+                                                   !keyLower.includes('cmd');
+                                          })
+                                          .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 pb-2 border-b border-blue-200 dark:border-blue-700 last:border-0">
+                                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide min-w-[120px]">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {whatWeGotData && (
+                                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl p-5 border-2 border-green-200 dark:border-green-800 shadow-md">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <h5 className="text-sm font-bold text-green-900 dark:text-green-100">Key Findings</h5>
+                                    </div>
+                                    {whatWeGotData._text ? (
+                                      <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {whatWeGotData._text}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {Object.entries(whatWeGotData)
+                                          .filter(([key]) => {
+                                            const keyLower = key.toLowerCase();
+                                            return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                   !keyLower.includes('command') && 
+                                                   !keyLower.includes('cmd');
+                                          })
+                                          .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col gap-2 pb-2 border-b border-green-200 dark:border-green-700 last:border-0">
+                                            <span className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <div className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {(() => {
+                                                // First, try to parse if it's a JSON string
+                                                let parsedValue = value;
+                                                if (typeof value === 'string') {
+                                                  const trimmed = value.trim();
+                                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                                    try {
+                                                      parsedValue = JSON.parse(trimmed);
+                                                    } catch (e) {
+                                                      // If parsing fails, keep as string
+                                                      parsedValue = value;
+                                                    }
+                                                  }
+                                                }
+                                                
+                                                // Handle arrays - display as formatted list
+                                                if (Array.isArray(parsedValue)) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1">
+                                                      {parsedValue.map((item, idx) => (
+                                                        <div key={idx} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                          {typeof item === 'object' && item !== null ? (
+                                                            <div className="space-y-2">
+                                                              {Object.entries(item).map(([subKey, subValue]) => (
+                                                                <div key={subKey} className="flex items-start gap-2">
+                                                                  <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                                    {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                                  </span>
+                                                                  <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                                    {Array.isArray(subValue) ? (
+                                                                      <div className="space-y-1">
+                                                                        {subValue.map((arrItem, arrIdx) => (
+                                                                          <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                            {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : typeof subValue === 'object' && subValue !== null ? (
+                                                                      <div className="space-y-1">
+                                                                        {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                          <div key={nestedKey} className="flex gap-2">
+                                                                            <span className="font-medium">{nestedKey}:</span>
+                                                                            <span>{String(nestedValue)}</span>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : String(subValue)}
+                                                                  </span>
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          ) : (
+                                                            <span>{String(item)}</span>
+                                                          )}
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle objects - display as key-value pairs
+                                                if (typeof parsedValue === 'object' && parsedValue !== null) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                      {Object.entries(parsedValue).map(([subKey, subValue]) => (
+                                                        <div key={subKey} className="flex items-start gap-2">
+                                                          <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                            {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                          </span>
+                                                          <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                            {Array.isArray(subValue) ? (
+                                                              <div className="space-y-1">
+                                                                {subValue.map((arrItem, arrIdx) => (
+                                                                  <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                    {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : typeof subValue === 'object' && subValue !== null ? (
+                                                              <div className="space-y-1">
+                                                                {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                  <div key={nestedKey} className="flex gap-2">
+                                                                    <span className="font-medium">{nestedKey}:</span>
+                                                                    <span>{String(nestedValue)}</span>
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : String(subValue)}
+                                                          </span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle primitives
+                                                return <span>{String(parsedValue)}</span>;
+                                              })()}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          
+                          {/* Row Layout: Findings (Left) and Recommendations (Right) */}
+                          <div className="mb-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Findings - Left Side */}
+                            {analyzed.findings && Array.isArray(analyzed.findings) && analyzed.findings.length > 0 && (() => {
+                            // Extract keys from whatWeGot to avoid duplication
+                            const whatWeGotKeys = new Set();
+                            if (analyzed.whatWeGot) {
+                              let whatWeGotData = analyzed.whatWeGot;
+                              // Parse if it's a JSON string
+                              if (typeof whatWeGotData === 'string') {
+                                try {
+                                  const trimmed = whatWeGotData.trim();
+                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                    whatWeGotData = JSON.parse(trimmed);
                                   }
+                                } catch (e) {
+                                  // Keep as string if parsing fails
+                                }
+                              }
+                              
+                              // Collect all keys from whatWeGot object
+                              if (typeof whatWeGotData === 'object' && whatWeGotData !== null && !Array.isArray(whatWeGotData)) {
+                                Object.keys(whatWeGotData).forEach(key => {
+                                  whatWeGotKeys.add(key.toLowerCase());
+                                  // Also check for common variations
+                                  whatWeGotKeys.add(key.toLowerCase().replace(/\s+/g, ''));
+                                });
+                              }
+                            }
+                            
+                            // Filter findings to exclude duplicates from whatWeGot
+                            const uniqueFindings = analyzed.findings.filter((finding, idx) => {
+                              // Skip if this finding is just repeating whatWeGot data
+                              if (finding.type && whatWeGotKeys.has(finding.type.toLowerCase())) {
+                                return false;
+                              }
+                              if (finding.name && whatWeGotKeys.has(finding.name.toLowerCase())) {
+                                return false;
+                              }
+                              // Check if finding detail matches whatWeGot keys
+                              if (finding.detail) {
+                                const detailLower = String(finding.detail).toLowerCase();
+                                for (const key of whatWeGotKeys) {
+                                  if (detailLower.includes(key)) {
+                                    // Check if this is just a duplicate
+                                    const findingValue = finding.detail || finding.description || '';
+                                    // If whatWeGot already shows this, skip
+                                    return false;
+                                  }
+                                }
+                              }
+                              return true;
+                            });
+                            
+                            // Also filter out findings that are just basic info already shown in Key Findings
+                            const basicInfoKeys = ['status', 'country', 'server', 'ipaddress', 'ip', 'http server', 'title'];
+                            const filteredFindings = uniqueFindings.filter(finding => {
+                              const findingType = (finding.type || finding.name || '').toLowerCase();
+                              const findingDetail = (finding.detail || finding.description || '').toLowerCase();
+                              
+                              // Skip if it's basic info already shown
+                              for (const basicKey of basicInfoKeys) {
+                                if (findingType.includes(basicKey) || findingDetail.includes(basicKey)) {
+                                  // Check if this info is already in whatWeGot
+                                  if (whatWeGotKeys.size > 0) {
+                                    return false; // Skip duplicates
+                                  }
+                                }
+                              }
+                              return true;
+                            });
+                            
+                            if (filteredFindings.length === 0) return null;
+                            
+                            return (
+                              <div className="mb-8">
+                                <div className="flex items-center gap-3 mb-4">
+                                  <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                  </svg>
+                                  <h5 className="text-lg font-bold text-gray-900 dark:text-white">Security Findings</h5>
+                                  <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded-full text-sm font-semibold">
+                                    {filteredFindings.length} {filteredFindings.length === 1 ? 'Finding' : 'Findings'}
+                                  </span>
+                                </div>
+                                <div className="space-y-3">
+                                  {filteredFindings.map((finding, idx) => {
+                                  // Get all properties except type, name, severity, command, commandName (filter out Kali command info)
+                                  const otherProps = Object.entries(finding).filter(([key]) => {
+                                    const keyLower = key.toLowerCase();
+                                    return !['type', 'name', 'severity', 'command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                           !keyLower.includes('command') && 
+                                           !keyLower.includes('cmd');
+                                  });
                                   
                                   return (
-                                    <div key={key}>
-                                      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{formattedKey}</div>
-                                      <div className={`text-lg font-bold ${
-                                        key.toLowerCase().includes('vulnerabilit') || key.toLowerCase().includes('risk') || key.toLowerCase().includes('critical') || key.toLowerCase().includes('high') ?
-                                          (typeof value === 'string' && (value.toLowerCase() === 'critical' || value.toLowerCase() === 'high')) ? 'text-red-600 dark:text-red-400' :
-                                          (typeof value === 'string' && value.toLowerCase() === 'medium') ? 'text-orange-500 dark:text-orange-400' :
-                                          'text-orange-600 dark:text-orange-400' :
-                                        'text-orange-600 dark:text-orange-400'
-                                      }`}>
-                                        {typeof displayValue === 'string' && displayValue.length > 50 ? 
-                                          displayValue.substring(0, 50) + '...' : 
-                                          String(displayValue)}
+                                    <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                      <div className="flex items-start justify-between mb-3">
+                                        <h6 className="text-sm font-semibold text-gray-900 dark:text-white">
+                                          {finding.type || finding.name || `Finding ${idx + 1}`}
+                                        </h6>
+                                        {finding.severity && (
+                                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                            finding.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                                            finding.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
+                                            finding.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
+                                            'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                          }`}>
+                                            {finding.severity.toUpperCase()}
+                                          </span>
+                                        )}
+                                      </div>
+                                      
+                                      {/* Display ALL other properties with proper JSON formatting */}
+                                      <div className="space-y-2">
+                                        {otherProps.map(([key, value]) => {
+                                          if (value === null || value === undefined || 
+                                              (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
+                                              (Array.isArray(value) && value.length === 0)) {
+                                            return null;
+                                          }
+                                          
+                                          // Format key name
+                                          const formattedKey = key
+                                            .replace(/([A-Z])/g, ' $1')
+                                            .replace(/^./, str => str.toUpperCase())
+                                            .trim();
+                                          
+                                          // Parse JSON strings and format properly
+                                          let parsedValue = value;
+                                          if (typeof value === 'string') {
+                                            const trimmed = value.trim();
+                                            if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                                (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                              try {
+                                                parsedValue = JSON.parse(trimmed);
+                                              } catch (e) {
+                                                // Keep as string if parsing fails
+                                                parsedValue = value;
+                                              }
+                                            }
+                                          }
+                                          
+                                          return (
+                                            <div key={key} className="mb-2">
+                                              <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">{formattedKey}</div>
+                                              <div className={`text-sm ${
+                                                key.toLowerCase().includes('description') || key.toLowerCase().includes('details') || key.toLowerCase().includes('info') ?
+                                                  'text-gray-700 dark:text-gray-300' :
+                                                  key.toLowerCase().includes('location') || key.toLowerCase().includes('address') || key.toLowerCase().includes('ip') || key.toLowerCase().includes('url') ?
+                                                    'text-gray-600 dark:text-gray-400 font-mono' :
+                                                    'text-gray-700 dark:text-gray-300'
+                                              }`}>
+                                                {(() => {
+                                                  // Handle arrays - display as formatted list
+                                                  if (Array.isArray(parsedValue)) {
+                                                    return (
+                                                      <div className="space-y-2 mt-1">
+                                                        {parsedValue.map((item, itemIdx) => (
+                                                          <div key={itemIdx} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                            {typeof item === 'object' && item !== null ? (
+                                                              <div className="space-y-2">
+                                                                {Object.entries(item).map(([subKey, subValue]) => (
+                                                                  <div key={subKey} className="flex items-start gap-2">
+                                                                    <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                                      {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                                    </span>
+                                                                    <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                                      {String(subValue)}
+                                                                    </span>
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : (
+                                                              <span>{String(item)}</span>
+                                                            )}
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    );
+                                                  }
+                                                  // Handle objects - display as key-value pairs
+                                                  if (typeof parsedValue === 'object' && parsedValue !== null) {
+                                                    return (
+                                                      <div className="space-y-2 mt-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                        {Object.entries(parsedValue).map(([subKey, subValue]) => (
+                                                          <div key={subKey} className="flex items-start gap-2">
+                                                            <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                              {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                            </span>
+                                                            <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                              {String(subValue)}
+                                                            </span>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    );
+                                                  }
+                                                  // Handle primitives
+                                                  return typeof parsedValue === 'string' && parsedValue.length > 500 ? 
+                                                    <div className="whitespace-pre-wrap break-words">{parsedValue}</div> :
+                                                    String(parsedValue);
+                                                })()}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     </div>
                                   );
                                 })}
                               </div>
                             </div>
+                            );
+                          })() || <div></div>}
+                            
+                            {/* Recommendations - Right Side */}
+                            {analyzed.recommendations && Array.isArray(analyzed.recommendations) && analyzed.recommendations.length > 0 ? (
+                              <div>
+                                <div className="flex items-center gap-3 mb-4">
+                                  <svg className="w-6 h-6 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  <h5 className="text-lg font-bold text-green-600 dark:text-green-400">Security Recommendations</h5>
+                                </div>
+                                <ul className="space-y-2">
+                                  {analyzed.recommendations.map((rec, idx) => {
+                                    const recText = typeof rec === 'string' ? rec : (rec.description || rec.recommendation || rec.text || JSON.stringify(rec));
+                                    return (
+                                      <li key={idx} className="flex items-start gap-2 bg-green-50 dark:bg-green-900/20 rounded-lg p-3 border border-green-200 dark:border-green-800">
+                                        <span className="text-green-600 dark:text-green-400 mt-1">✓</span>
+                                        <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">{recText}</span>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </div>
+                            ) : (
+                              <div></div>
+                            )}
+                          </div>
+                          
+                          {/* Vulnerabilities - Horizontal Scrollable List View */}
+                          {analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0 && (
+                            <div className="mb-8">
+                              <div className="flex items-center gap-3 mb-4">
+                                <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                <h5 className="text-lg font-bold text-red-600 dark:text-red-400">Security Vulnerabilities</h5>
+                                <span className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 rounded-full text-sm font-semibold">
+                                  {analyzed.vulnerabilities.length} {analyzed.vulnerabilities.length === 1 ? 'Vulnerability' : 'Vulnerabilities'}
+                                </span>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <div className="flex gap-4 pb-4" style={{ minWidth: 'max-content' }}>
+                                  {analyzed.vulnerabilities.map((vuln, idx) => {
+                                    // Filter out command-related keys
+                                    const filteredVuln = Object.entries(vuln).filter(([key]) => {
+                                      const keyLower = key.toLowerCase();
+                                      return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                             !keyLower.includes('command') && 
+                                             !keyLower.includes('cmd');
+                                    });
+                                    
+                                    return (
+                                      <div key={idx} className="flex-shrink-0 w-80 bg-white dark:bg-gray-800 rounded-lg p-5 border-2 border-red-200 dark:border-red-800 shadow-lg">
+                                        <div className="flex items-start justify-between mb-3">
+                                          <h6 className="text-base font-semibold text-gray-900 dark:text-white">
+                                            {vuln.name || vuln.type || `Vulnerability ${idx + 1}`}
+                                          </h6>
+                                          {vuln.severity && (
+                                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                              vuln.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
+                                              vuln.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
+                                              vuln.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
+                                              'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                            }`}>
+                                              {vuln.severity.toUpperCase()}
+                                            </span>
+                                          )}
+                                        </div>
+                                        
+                                        {vuln.description && (
+                                          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">
+                                            {vuln.description}
+                                          </p>
+                                        )}
+                                        
+                                        {vuln.location && (
+                                          <div className="mb-3">
+                                            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Location</div>
+                                            <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
+                                              {typeof vuln.location === 'string' ? vuln.location : 
+                                               typeof vuln.location === 'object' ? JSON.stringify(vuln.location) : 
+                                               String(vuln.location)}
+                                            </p>
+                                          </div>
+                                        )}
+                                        
+                                        {vuln.solution && (
+                                          <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800">
+                                            <div className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2">Solution</div>
+                                            {vuln.solution.steps && Array.isArray(vuln.solution.steps) ? (
+                                              <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 dark:text-gray-300">
+                                                {vuln.solution.steps.map((step, stepIdx) => (
+                                                  <li key={stepIdx}>{step}</li>
+                                                ))}
+                                              </ol>
+                                            ) : (
+                                              <p className="text-sm text-gray-700 dark:text-gray-300">{typeof vuln.solution === 'string' ? vuln.solution : vuln.solution.description || vuln.solution.recommendations || ''}</p>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
                           )}
                           
-                          {/* Port Grid for Port Scanning Commands */}
+                          {/* Port Grid for Port Scanning Commands - Enhanced */}
                           {(config.key === 'nmapFast' || config.key === 'nmapFull') && analyzed.ports && Array.isArray(analyzed.ports) && analyzed.ports.length > 0 && (
-                            <div className="mb-6">
-                              <h5 className="text-lg font-semibold text-orange-900 dark:text-orange-100 mb-3">Port Details ({analyzed.ports.length} ports)</h5>
+                            <div className="mb-8">
+                              <div className="flex items-center gap-3 mb-4">
+                                <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <h5 className="text-lg font-bold text-orange-900 dark:text-orange-100">Port Details</h5>
+                                <span className="px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200 rounded-full text-sm font-semibold">
+                                  {analyzed.ports.length} {analyzed.ports.length === 1 ? 'Port' : 'Ports'}
+                                </span>
+                              </div>
                               <div className="overflow-x-auto">
                                 <table className="w-full border-collapse bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
                                   <thead>
@@ -1786,91 +2684,49 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                             </div>
                           )}
                           
-                          {/* Findings - Display ALL properties dynamically */}
-                          {analyzed.findings && Array.isArray(analyzed.findings) && analyzed.findings.length > 0 && (
-                            <div className="mb-6">
-                              <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Findings ({analyzed.findings.length})</h5>
-                              <div className="space-y-3">
-                                {analyzed.findings.map((finding, idx) => {
-                                  // Get all properties except type, name, severity (already displayed in header)
-                                  const otherProps = Object.entries(finding).filter(([key]) => 
-                                    !['type', 'name', 'severity'].includes(key.toLowerCase())
-                                  );
-                                  
-                                  return (
-                                    <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-                                      <div className="flex items-start justify-between mb-3">
-                                        <h6 className="font-semibold text-gray-900 dark:text-white">
-                                          {finding.type || finding.name || `Finding ${idx + 1}`}
-                                        </h6>
-                                        {finding.severity && (
-                                          <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                            finding.severity === 'critical' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200' :
-                                            finding.severity === 'high' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-200' :
-                                            finding.severity === 'medium' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200' :
-                                            'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
-                                          }`}>
-                                            {finding.severity.toUpperCase()}
-                                          </span>
-                                        )}
-                                      </div>
-                                      
-                                      {/* Display ALL other properties */}
-                                      <div className="space-y-2">
-                                        {otherProps.map(([key, value]) => {
-                                          if (value === null || value === undefined || 
-                                              (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
-                                              (Array.isArray(value) && value.length === 0)) {
-                                            return null;
-                                          }
-                                          
-                                          // Format key name
-                                          const formattedKey = key
-                                            .replace(/([A-Z])/g, ' $1')
-                                            .replace(/^./, str => str.toUpperCase())
-                                            .trim();
-                                          
-                                          // Format value
-                                          let displayValue = value;
-                                          if (typeof value === 'boolean') {
-                                            displayValue = value ? 'Yes' : 'No';
-                                          } else if (typeof value === 'object' && !Array.isArray(value)) {
-                                            displayValue = JSON.stringify(value, null, 2);
-                                          } else if (Array.isArray(value)) {
-                                            displayValue = value.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
-                                          }
-                                          
-                                          return (
-                                            <div key={key} className="mb-2">
-                                              <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">{formattedKey}</div>
-                                              <div className={`text-sm ${
-                                                key.toLowerCase().includes('description') || key.toLowerCase().includes('details') || key.toLowerCase().includes('info') ?
-                                                  'text-gray-700 dark:text-gray-300' :
-                                                  key.toLowerCase().includes('location') || key.toLowerCase().includes('address') || key.toLowerCase().includes('ip') || key.toLowerCase().includes('url') ?
-                                                    'text-gray-600 dark:text-gray-400 font-mono' :
-                                                    'text-gray-700 dark:text-gray-300'
-                                              }`}>
-                                                {typeof displayValue === 'string' && displayValue.length > 500 ? 
-                                                  <div className="whitespace-pre-wrap break-words">{displayValue}</div> :
-                                                  String(displayValue)}
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          
                           {/* Handle findings as flat object (not array) - e.g., {country: "...", httpServer: "...", ipAddress: "...", title: "..."} */}
-                          {analyzed.findings && !Array.isArray(analyzed.findings) && typeof analyzed.findings === 'object' && Object.keys(analyzed.findings).length > 0 && (
+                          {/* Skip this section if whatWeGot already contains this data */}
+                          {analyzed.findings && !Array.isArray(analyzed.findings) && typeof analyzed.findings === 'object' && Object.keys(analyzed.findings).length > 0 && (() => {
+                            // Check if whatWeGot already contains these findings
+                            if (analyzed.whatWeGot) {
+                              let whatWeGotData = analyzed.whatWeGot;
+                              if (typeof whatWeGotData === 'string') {
+                                try {
+                                  const trimmed = whatWeGotData.trim();
+                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                    whatWeGotData = JSON.parse(trimmed);
+                                  }
+                                } catch (e) {
+                                  // Keep as string
+                                }
+                              }
+                              
+                              // If whatWeGot is an object with similar keys, skip showing findings as object
+                              if (typeof whatWeGotData === 'object' && whatWeGotData !== null && !Array.isArray(whatWeGotData)) {
+                                const whatWeGotKeys = Object.keys(whatWeGotData).map(k => k.toLowerCase());
+                                const findingsKeys = Object.keys(analyzed.findings).map(k => k.toLowerCase());
+                                
+                                // If most keys overlap, skip this section (already shown in Key Findings)
+                                const overlap = findingsKeys.filter(k => whatWeGotKeys.includes(k)).length;
+                                if (overlap >= findingsKeys.length * 0.7) {
+                                  return null; // Skip duplicate display
+                                }
+                              }
+                            }
+                            
+                            return (
                             <div className="mb-6">
                               <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Findings</h5>
                               <div className="space-y-3">
-                                {Object.entries(analyzed.findings).map(([key, value], idx) => {
+                                {Object.entries(analyzed.findings)
+                                  .filter(([key]) => {
+                                    const keyLower = key.toLowerCase();
+                                    return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                           !keyLower.includes('command') && 
+                                           !keyLower.includes('cmd');
+                                  })
+                                  .map(([key, value], idx) => {
                                   if (value === null || value === undefined || 
                                       (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
                                       (Array.isArray(value) && value.length === 0)) {
@@ -1912,90 +2768,512 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                                 })}
                               </div>
                             </div>
-                          )}
+                            );
+                          })()}
                           
-                          {/* Vulnerabilities */}
-                          {analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0 && (
-                            <div className="mb-6">
-                              <h5 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-3">Vulnerabilities ({analyzed.vulnerabilities.length})</h5>
-                              <div className="space-y-4">
-                                {analyzed.vulnerabilities.map((vuln, idx) => (
-                                  <div key={idx} className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800">
-                                    <div className="flex items-start justify-between mb-2">
-                                      <h6 className="font-semibold text-red-900 dark:text-red-100">{vuln.name || `Vulnerability ${idx + 1}`}</h6>
-                                      {vuln.severity && (
-                                        <span className={`px-3 py-1 rounded text-sm font-bold ${
-                                          vuln.severity === 'critical' ? 'bg-red-500 text-white' :
-                                          vuln.severity === 'high' ? 'bg-orange-500 text-white' :
-                                          vuln.severity === 'medium' ? 'bg-yellow-500 text-white' :
-                                          'bg-blue-500 text-white'
-                                        }`}>
-                                          {vuln.severity.toUpperCase()}
-                                        </span>
-                                      )}
+                          {/* What We Did & What We Got section removed - redundant with new template structure */}
+                          {false && (analyzed.whatWeDid || analyzed.whatWeGot) && (() => {
+                            // Helper function to parse and format data
+                            const parseAndFormat = (data) => {
+                              if (!data) return null;
+                              
+                              // If it's already an object, return it
+                              if (typeof data === 'object' && !Array.isArray(data)) {
+                                return data;
+                              }
+                              
+                              // If it's a string, try to parse as JSON
+                              if (typeof data === 'string') {
+                                // Check if it looks like JSON
+                                const trimmed = data.trim();
+                                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                  try {
+                                    return JSON.parse(trimmed);
+                                  } catch (e) {
+                                    // If parsing fails, return as plain text
+                                    return { _text: data };
+                                  }
+                                }
+                                // If it's plain text, return as text
+                                return { _text: data };
+                              }
+                              
+                              return { _text: String(data) };
+                            };
+                            
+                            const whatWeDidData = parseAndFormat(analyzed.whatWeDid);
+                            const whatWeGotData = parseAndFormat(analyzed.whatWeGot);
+                            
+                            return (
+                              <div className="mb-8 space-y-4">
+                                {whatWeDidData && (
+                                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-5 border-2 border-blue-200 dark:border-blue-800 shadow-md">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <h5 className="text-sm font-bold text-blue-900 dark:text-blue-100">Analysis Overview</h5>
                                     </div>
-                                    {vuln.description && (
-                                      <p className="text-sm text-gray-800 dark:text-gray-200 mb-2">
-                                        {typeof vuln.description === 'string' ? vuln.description : 
-                                         typeof vuln.description === 'object' ? JSON.stringify(vuln.description, null, 2) : 
-                                         String(vuln.description)}
+                                    {whatWeDidData._text ? (
+                                      <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {whatWeDidData._text}
                                       </p>
-                                    )}
-                                    {vuln.impact && (
-                                      <div className="mb-2">
-                                        <div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">Impact</div>
-                                        <p className="text-sm text-gray-700 dark:text-gray-300">
-                                          {typeof vuln.impact === 'string' ? vuln.impact : 
-                                           typeof vuln.impact === 'object' ? JSON.stringify(vuln.impact, null, 2) : 
-                                           String(vuln.impact)}
-                                        </p>
-                                      </div>
-                                    )}
-                                    {vuln.location && (
-                                      <div className="mb-2">
-                                        <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">Location</div>
-                                        <p className="text-xs text-gray-600 dark:text-gray-400 font-mono">
-                                          {typeof vuln.location === 'string' ? vuln.location : 
-                                           typeof vuln.location === 'object' ? JSON.stringify(vuln.location) : 
-                                           String(vuln.location)}
-                                        </p>
-                                      </div>
-                                    )}
-                                    {vuln.solution && (
-                                      <div className="mt-3 pt-3 border-t border-red-200 dark:border-red-800">
-                                        <div className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2">Solution</div>
-                                        {vuln.solution.steps && Array.isArray(vuln.solution.steps) ? (
-                                          <ol className="list-decimal list-inside space-y-1 text-sm text-gray-700 dark:text-gray-300">
-                                            {vuln.solution.steps.map((step, stepIdx) => (
-                                              <li key={stepIdx}>{step}</li>
-                                            ))}
-                                          </ol>
-                                        ) : (
-                                          <p className="text-sm text-gray-700 dark:text-gray-300">{typeof vuln.solution === 'string' ? vuln.solution : vuln.solution.recommendations || ''}</p>
-                                        )}
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {Object.entries(whatWeDidData)
+                                          .filter(([key]) => {
+                                            const keyLower = key.toLowerCase();
+                                            return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                   !keyLower.includes('command') && 
+                                                   !keyLower.includes('cmd');
+                                          })
+                                          .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 pb-2 border-b border-blue-200 dark:border-blue-700 last:border-0">
+                                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide min-w-[120px]">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                            </span>
+                                          </div>
+                                        ))}
                                       </div>
                                     )}
                                   </div>
-                                ))}
+                                )}
+                                {whatWeGotData && (
+                                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl p-5 border-2 border-green-200 dark:border-green-800 shadow-md">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <h5 className="text-sm font-bold text-green-900 dark:text-green-100">Key Findings</h5>
+                                    </div>
+                                    {whatWeGotData._text ? (
+                                      <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {whatWeGotData._text}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {Object.entries(whatWeGotData)
+                                          .filter(([key]) => {
+                                            const keyLower = key.toLowerCase();
+                                            return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                   !keyLower.includes('command') && 
+                                                   !keyLower.includes('cmd');
+                                          })
+                                          .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col gap-2 pb-2 border-b border-green-200 dark:border-green-700 last:border-0">
+                                            <span className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <div className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {(() => {
+                                                // First, try to parse if it's a JSON string
+                                                let parsedValue = value;
+                                                if (typeof value === 'string') {
+                                                  const trimmed = value.trim();
+                                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                                    try {
+                                                      parsedValue = JSON.parse(trimmed);
+                                                    } catch (e) {
+                                                      // If parsing fails, keep as string
+                                                      parsedValue = value;
+                                                    }
+                                                  }
+                                                }
+                                                
+                                                // Handle arrays - display as formatted list
+                                                if (Array.isArray(parsedValue)) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1">
+                                                      {parsedValue.map((item, idx) => (
+                                                        <div key={idx} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                          {typeof item === 'object' && item !== null ? (
+                                                            <div className="space-y-2">
+                                                              {Object.entries(item).map(([subKey, subValue]) => (
+                                                                <div key={subKey} className="flex items-start gap-2">
+                                                                  <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                                    {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                                  </span>
+                                                                  <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                                    {Array.isArray(subValue) ? (
+                                                                      <div className="space-y-1">
+                                                                        {subValue.map((arrItem, arrIdx) => (
+                                                                          <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                            {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : typeof subValue === 'object' && subValue !== null ? (
+                                                                      <div className="space-y-1">
+                                                                        {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                          <div key={nestedKey} className="flex gap-2">
+                                                                            <span className="font-medium">{nestedKey}:</span>
+                                                                            <span>{String(nestedValue)}</span>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : String(subValue)}
+                                                                  </span>
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          ) : (
+                                                            <span>{String(item)}</span>
+                                                          )}
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle objects - display as key-value pairs
+                                                if (typeof parsedValue === 'object' && parsedValue !== null) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                      {Object.entries(parsedValue).map(([subKey, subValue]) => (
+                                                        <div key={subKey} className="flex items-start gap-2">
+                                                          <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                            {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                          </span>
+                                                          <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                            {Array.isArray(subValue) ? (
+                                                              <div className="space-y-1">
+                                                                {subValue.map((arrItem, arrIdx) => (
+                                                                  <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                    {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : typeof subValue === 'object' && subValue !== null ? (
+                                                              <div className="space-y-1">
+                                                                {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                  <div key={nestedKey} className="flex gap-2">
+                                                                    <span className="font-medium">{nestedKey}:</span>
+                                                                    <span>{String(nestedValue)}</span>
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : String(subValue)}
+                                                          </span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle primitives
+                                                return <span>{String(parsedValue)}</span>;
+                                              })()}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                           
-                          {/* Recommendations */}
-                          {analyzed.recommendations && Array.isArray(analyzed.recommendations) && analyzed.recommendations.length > 0 && (
-                            <div>
-                              <h5 className="text-lg font-semibold text-green-600 dark:text-green-400 mb-3">Recommendations</h5>
-                              <ul className="space-y-2">
-                                {analyzed.recommendations.map((rec, idx) => {
-                                  const recText = typeof rec === 'string' ? rec : (rec.description || rec.recommendation || rec.text || JSON.stringify(rec));
+                          {/* Handle findings as flat object (not array) - e.g., {country: "...", httpServer: "...", ipAddress: "...", title: "..."} */}
+                          {/* Skip this section if whatWeGot already contains this data */}
+                          {analyzed.findings && !Array.isArray(analyzed.findings) && typeof analyzed.findings === 'object' && Object.keys(analyzed.findings).length > 0 && (() => {
+                            // Check if whatWeGot already contains these findings
+                            if (analyzed.whatWeGot) {
+                              let whatWeGotData = analyzed.whatWeGot;
+                              if (typeof whatWeGotData === 'string') {
+                                try {
+                                  const trimmed = whatWeGotData.trim();
+                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                    whatWeGotData = JSON.parse(trimmed);
+                                  }
+                                } catch (e) {
+                                  // Keep as string
+                                }
+                              }
+                              
+                              // If whatWeGot is an object with similar keys, skip showing findings as object
+                              if (typeof whatWeGotData === 'object' && whatWeGotData !== null && !Array.isArray(whatWeGotData)) {
+                                const whatWeGotKeys = Object.keys(whatWeGotData).map(k => k.toLowerCase());
+                                const findingsKeys = Object.keys(analyzed.findings).map(k => k.toLowerCase());
+                                
+                                // If most keys overlap, skip this section (already shown in Key Findings)
+                                const overlap = findingsKeys.filter(k => whatWeGotKeys.includes(k)).length;
+                                if (overlap >= findingsKeys.length * 0.7) {
+                                  return null; // Skip duplicate display
+                                }
+                              }
+                            }
+                            
+                            return (
+                            <div className="mb-6">
+                              <h5 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Findings</h5>
+                              <div className="space-y-3">
+                                {Object.entries(analyzed.findings)
+                                  .filter(([key]) => {
+                                    const keyLower = key.toLowerCase();
+                                    return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                           !keyLower.includes('command') && 
+                                           !keyLower.includes('cmd');
+                                  })
+                                  .map(([key, value], idx) => {
+                                  if (value === null || value === undefined || 
+                                      (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
+                                      (Array.isArray(value) && value.length === 0)) {
+                                    return null;
+                                  }
+                                  
+                                  // Format key name
+                                  const formattedKey = key
+                                    .replace(/([A-Z])/g, ' $1')
+                                    .replace(/^./, str => str.toUpperCase())
+                                    .trim();
+                                  
+                                  // Format value
+                                  let displayValue = value;
+                                  if (typeof value === 'boolean') {
+                                    displayValue = value ? 'Yes' : 'No';
+                                  } else if (typeof value === 'object' && !Array.isArray(value)) {
+                                    displayValue = JSON.stringify(value, null, 2);
+                                  } else if (Array.isArray(value)) {
+                                    displayValue = value.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ');
+                                  }
+                                  
                                   return (
-                                    <li key={idx} className="flex items-start gap-2 bg-green-50 dark:bg-green-900/20 rounded-lg p-3 border border-green-200 dark:border-green-800">
-                                      <span className="text-green-600 dark:text-green-400 mt-1">✓</span>
-                                      <span className="text-sm text-gray-700 dark:text-gray-300 flex-1">{recText}</span>
-                                    </li>
+                                    <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                                      <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">{formattedKey}</div>
+                                      <div className={`text-sm ${
+                                        key.toLowerCase().includes('description') || key.toLowerCase().includes('details') || key.toLowerCase().includes('info') ?
+                                          'text-gray-700 dark:text-gray-300' :
+                                          key.toLowerCase().includes('location') || key.toLowerCase().includes('address') || key.toLowerCase().includes('ip') || key.toLowerCase().includes('url') ?
+                                            'text-gray-600 dark:text-gray-400 font-mono' :
+                                            'text-gray-700 dark:text-gray-300'
+                                      }`}>
+                                        {typeof displayValue === 'string' && displayValue.length > 500 ? 
+                                          <div className="whitespace-pre-wrap break-words">{displayValue}</div> :
+                                          String(displayValue)}
+                                      </div>
+                                    </div>
                                   );
                                 })}
-                              </ul>
+                              </div>
+                            </div>
+                            );
+                          })()}
+                          
+                          {/* What We Did & What We Got section removed - redundant with new template structure */}
+                          {false && (analyzed.whatWeDid || analyzed.whatWeGot) && (() => {
+                            // Helper function to parse and format data
+                            const parseAndFormat = (data) => {
+                              if (!data) return null;
+                              
+                              // If it's already an object, return it
+                              if (typeof data === 'object' && !Array.isArray(data)) {
+                                return data;
+                              }
+                              
+                              // If it's a string, try to parse as JSON
+                              if (typeof data === 'string') {
+                                // Check if it looks like JSON
+                                const trimmed = data.trim();
+                                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                  try {
+                                    return JSON.parse(trimmed);
+                                  } catch (e) {
+                                    // If parsing fails, return as plain text
+                                    return { _text: data };
+                                  }
+                                }
+                                // If it's plain text, return as text
+                                return { _text: data };
+                              }
+                              
+                              return { _text: String(data) };
+                            };
+                            
+                            const whatWeDidData = parseAndFormat(analyzed.whatWeDid);
+                            const whatWeGotData = parseAndFormat(analyzed.whatWeGot);
+                            
+                            return (
+                              <div className="mb-8 space-y-4">
+                                {whatWeDidData && (
+                                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-5 border-2 border-blue-200 dark:border-blue-800 shadow-md">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <h5 className="text-sm font-bold text-blue-900 dark:text-blue-100">Analysis Overview</h5>
+                                    </div>
+                                    {whatWeDidData._text ? (
+                                      <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {whatWeDidData._text}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {Object.entries(whatWeDidData)
+                                          .filter(([key]) => {
+                                            const keyLower = key.toLowerCase();
+                                            return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                   !keyLower.includes('command') && 
+                                                   !keyLower.includes('cmd');
+                                          })
+                                          .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 pb-2 border-b border-blue-200 dark:border-blue-700 last:border-0">
+                                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide min-w-[120px]">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {whatWeGotData && (
+                                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl p-5 border-2 border-green-200 dark:border-green-800 shadow-md">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <h5 className="text-sm font-bold text-green-900 dark:text-green-100">Key Findings</h5>
+                                    </div>
+                                    {whatWeGotData._text ? (
+                                      <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                        {whatWeGotData._text}
+                                      </p>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        {Object.entries(whatWeGotData)
+                                          .filter(([key]) => {
+                                            const keyLower = key.toLowerCase();
+                                            return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                   !keyLower.includes('command') && 
+                                                   !keyLower.includes('cmd');
+                                          })
+                                          .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col gap-2 pb-2 border-b border-green-200 dark:border-green-700 last:border-0">
+                                            <span className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <div className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {(() => {
+                                                // First, try to parse if it's a JSON string
+                                                let parsedValue = value;
+                                                if (typeof value === 'string') {
+                                                  const trimmed = value.trim();
+                                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                                    try {
+                                                      parsedValue = JSON.parse(trimmed);
+                                                    } catch (e) {
+                                                      // If parsing fails, keep as string
+                                                      parsedValue = value;
+                                                    }
+                                                  }
+                                                }
+                                                
+                                                // Handle arrays - display as formatted list
+                                                if (Array.isArray(parsedValue)) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1">
+                                                      {parsedValue.map((item, idx) => (
+                                                        <div key={idx} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                          {typeof item === 'object' && item !== null ? (
+                                                            <div className="space-y-2">
+                                                              {Object.entries(item).map(([subKey, subValue]) => (
+                                                                <div key={subKey} className="flex items-start gap-2">
+                                                                  <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                                    {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                                  </span>
+                                                                  <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                                    {Array.isArray(subValue) ? (
+                                                                      <div className="space-y-1">
+                                                                        {subValue.map((arrItem, arrIdx) => (
+                                                                          <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                            {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : typeof subValue === 'object' && subValue !== null ? (
+                                                                      <div className="space-y-1">
+                                                                        {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                          <div key={nestedKey} className="flex gap-2">
+                                                                            <span className="font-medium">{nestedKey}:</span>
+                                                                            <span>{String(nestedValue)}</span>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : String(subValue)}
+                                                                  </span>
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          ) : (
+                                                            <span>{String(item)}</span>
+                                                          )}
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle objects - display as key-value pairs
+                                                if (typeof parsedValue === 'object' && parsedValue !== null) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                      {Object.entries(parsedValue).map(([subKey, subValue]) => (
+                                                        <div key={subKey} className="flex items-start gap-2">
+                                                          <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                            {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                          </span>
+                                                          <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                            {Array.isArray(subValue) ? (
+                                                              <div className="space-y-1">
+                                                                {subValue.map((arrItem, arrIdx) => (
+                                                                  <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                    {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : typeof subValue === 'object' && subValue !== null ? (
+                                                              <div className="space-y-1">
+                                                                {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                  <div key={nestedKey} className="flex gap-2">
+                                                                    <span className="font-medium">{nestedKey}:</span>
+                                                                    <span>{String(nestedValue)}</span>
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : String(subValue)}
+                                                          </span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle primitives
+                                                return <span>{String(parsedValue)}</span>;
+                                              })()}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                          
+                          {/* Old Vulnerabilities section - disabled, using horizontal scrollable version above */}
+                          {false && analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0 && (
+                            <div className="mb-8">
+                              {/* This section is disabled - vulnerabilities are shown in horizontal scrollable view above */}
                             </div>
                           )}
                           
@@ -2014,48 +3292,48 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                       );
                     };
                     
-                    // Define command configs in the exact order specified
+                    // Define command configs in the exact order specified with enhanced titles
                     const commandConfigs = [
                       {
                         key: 'whatweb',
-                        title: 'Web Technology Detection',
-                        description: 'Web technology fingerprinting and detection. Identifies web servers, CMS, frameworks, and technologies used by the target website.',
+                        title: 'Web Technology & Framework Analysis',
+                        description: 'Comprehensive web technology fingerprinting and detection. Identifies web servers, content management systems, frameworks, and technologies used by the target website.',
                         icon: '🌐'
                       },
                       {
                         key: 'ping',
-                        title: 'Network Connectivity Test',
-                        description: 'ICMP connectivity test to verify network reachability and measure response times. Checks if the target host is online and responsive.',
+                        title: 'Network Connectivity & Latency Assessment',
+                        description: 'ICMP connectivity test to verify network reachability and measure response times. Checks if the target host is online and responsive to network requests.',
                         icon: '📡'
                       },
                       {
                         key: 'host',
-                        title: 'DNS Record Lookup',
-                        description: 'DNS lookup to resolve domain names to IP addresses. Retrieves A, MX, and other DNS records for the target domain.',
+                        title: 'DNS Resolution & Record Analysis',
+                        description: 'DNS lookup to resolve domain names to IP addresses. Retrieves A, MX, TXT, and other DNS records for the target domain.',
                         icon: '🔍'
                       },
                       {
                         key: 'hping',
-                        title: 'Advanced Packet Testing',
-                        description: 'Advanced packet crafting tool for network testing. Tests TCP connectivity and firewall rules by sending custom packets.',
+                        title: 'Advanced Network Packet Analysis',
+                        description: 'Advanced packet crafting tool for network testing. Tests TCP connectivity and firewall rules by sending custom packets to analyze network behavior.',
                         icon: '🔧'
                       },
                       {
                         key: 'nmapSn',
-                        title: 'Host Discovery Analysis',
-                        description: 'Network host discovery scan to identify active hosts on the network. Uses ICMP and ARP to determine if hosts are up.',
+                        title: 'Network Host Discovery & Enumeration',
+                        description: 'Network host discovery scan to identify active hosts on the network. Uses ICMP and ARP protocols to determine if hosts are up and reachable.',
                         icon: '🎯'
                       },
                       {
                         key: 'nmapFast',
-                        title: 'Quick Port Scan',
+                        title: 'Rapid Port Scanning & Service Detection',
                         description: 'Quick port scan of the top 100 most common ports. Provides fast overview of open ports and services without scanning all ports.',
                         icon: '⚡'
                       },
                       {
                         key: 'nmapFull',
-                        title: 'Comprehensive Port Scan',
-                        description: 'Comprehensive port scan of all 65535 ports with service version detection. Most thorough scan but takes longer to complete.',
+                        title: 'Comprehensive Port & Service Enumeration',
+                        description: 'Comprehensive port scan of all 65535 ports with service version detection. Most thorough scan that identifies all open ports and running services.',
                         icon: '🛡️'
                       }
                     ];
@@ -2113,15 +3391,15 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                 )}
               </div>
 
-              {/* Raw Results - TGPT JSON and Kali Raw Results */}
+              {/* Raw Results - AI Analysis and Kali Raw Results */}
               {scanResults && scanResults.success && (
                 <div id="raw-results-section" className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 mt-6 border border-gray-200 dark:border-gray-700 max-w-full overflow-x-hidden">
                   <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Raw Results</h3>
                   
-                  {/* Combined TGPT JSON Result */}
+                  {/* Combined AI Analysis Result */}
                   {scanResults?.results?.json?.analyzedResults && (
                     <div className="mb-6">
-                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Combined Analysis Report (TGPT JSON)</h4>
+                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Combined Analysis Report</h4>
                       <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 overflow-x-auto max-h-96 overflow-y-auto">
                         <pre className="text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-mono">
                           {JSON.stringify(scanResults.results.json.analyzedResults, null, 2)}
@@ -2144,8 +3422,6 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                 </div>
               )}
               
-              {/* Legacy TGPT Converted Results - COMPLETELY REMOVED per user request */}
-
               {/* Raw JSON Output - Collapsed by default, shown at the end */}
               {(scanResults.results?.json || scanResults.results) && (
                 <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
@@ -2165,7 +3441,7 @@ Analyze the above scan result and provide ONLY valid JSON output. No additional 
                 </div>
               )}
 
-              {/* Legacy Command Results (fallback) - Only show if TGPT results are NOT available */}
+              {/* Legacy Command Results (fallback) - Only show if AI analysis results are NOT available */}
               {scanResults.results && !scanResults.results.markdown && !tgptConvertedResults && (
                 <div className="space-y-4">
                   <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center space-x-2">

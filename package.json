@@ -114,7 +114,10 @@
       "installerIcon": "src/assets/Cybersecurity research-02.ico",
       "uninstallerIcon": "src/assets/Cybersecurity research-02.ico",
       "installerHeaderIcon": "src/assets/Cybersecurity research-02.ico",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false,
+      "warningsAsErrors": false,
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
 
     "portable": {

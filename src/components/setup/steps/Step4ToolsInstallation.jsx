@@ -95,8 +95,12 @@ const Step4ToolsInstallation = ({ username, password, onComplete, onError, onLog
       addLog('Step 4: Installing Go-based tools...', 'info');
       await installGoTools();
 
-      // Step 5: Final verification
-      addLog('Step 5: Verifying installation...', 'info');
+      // Step 5: Install tgpt (AI tool)
+      addLog('Step 5: Installing tgpt (AI analysis tool)...', 'info');
+      await installTgpt();
+
+      // Step 6: Final verification
+      addLog('Step 6: Verifying installation...', 'info');
       await verifyInstallation();
 
       setStatus('completed');
@@ -398,6 +402,103 @@ const Step4ToolsInstallation = ({ username, password, onComplete, onError, onLog
   };
 
   /**
+   * Install tgpt (AI analysis tool)
+   */
+  const installTgpt = async () => {
+    if (!window.cyberGuard?.runWslCommandAsRoot) {
+      addLog('❌ [ERROR] WSL command API not available', 'error');
+      return;
+    }
+
+    addLog('🔍 [CHECK] Checking for tgpt...', 'info');
+    setCurrentTool('tgpt');
+    setMessage('Checking tgpt installation...');
+    
+    try {
+      // Check if tgpt is installed
+      addLog('💻 [COMMAND] Executing: command -v tgpt', 'info');
+      const checkResult = await window.cyberGuard.runWslCommandAsRoot(
+        username,
+        `command -v tgpt >/dev/null 2>&1 && echo 'installed' || echo 'notinstalled'`,
+        password
+      );
+      
+      const checkOutput = checkResult?.stdout || '';
+      if (checkOutput.includes('installed')) {
+        addLog('✅ [RESULT] tgpt is already installed - skipping', 'success');
+        
+        // Get version
+        try {
+          const versionResult = await window.cyberGuard.runWslCommandAsRoot(
+            username,
+            `tgpt --version 2>/dev/null || echo 'version unknown'`,
+            password
+          );
+          if (versionResult?.stdout) {
+            addLog(`📋 [INFO] tgpt version: ${versionResult.stdout.trim()}`, 'info');
+          }
+        } catch (error) {
+          // Version check is optional
+        }
+        return;
+      }
+      
+      addLog('📦 [INSTALL] Installing tgpt...', 'info');
+      addLog('💻 [COMMAND] Executing: curl -sSL https://raw.githubusercontent.com/aandrew-me/tgpt/main/install | bash', 'info');
+      setMessage('Installing tgpt...');
+      
+      // Install tgpt using curl
+      addLog('⏳ [WAIT] Executing installation command in WSL terminal...', 'info');
+      const installResult = await window.cyberGuard.runWslCommandAsRoot(
+        username,
+        `curl -sSL https://raw.githubusercontent.com/aandrew-me/tgpt/main/install | bash`,
+        password
+      );
+      
+      addLog('📥 [RESPONSE] Command execution completed', 'info');
+      if (installResult?.stdout) {
+        addLog(`📤 [TERMINAL OUTPUT] stdout:\n${installResult.stdout}`, 'info');
+      }
+      if (installResult?.stderr) {
+        addLog(`📤 [TERMINAL OUTPUT] stderr:\n${installResult.stderr}`, 'warning');
+      }
+      
+      // Verify installation
+      addLog('🔍 [VERIFY] Verifying tgpt installation...', 'info');
+      const verifyResult = await window.cyberGuard.runWslCommandAsRoot(
+        username,
+        `command -v tgpt >/dev/null 2>&1 && echo 'installed' || echo 'notinstalled'`,
+        password
+      );
+      
+      const verifyOutput = verifyResult?.stdout || '';
+      if (verifyOutput.includes('installed')) {
+        addLog('✅ [RESULT] tgpt installed successfully', 'success');
+        
+        // Get version
+        try {
+          const versionResult = await window.cyberGuard.runWslCommandAsRoot(
+            username,
+            `tgpt --version 2>/dev/null || echo 'version unknown'`,
+            password
+          );
+          if (versionResult?.stdout) {
+            addLog(`📋 [INFO] tgpt version: ${versionResult.stdout.trim()}`, 'info');
+          }
+        } catch (error) {
+          // Version check is optional
+        }
+      } else {
+        addLog('⚠️ [WARNING] tgpt installation may have failed', 'warning');
+        addLog('📋 [INFO] tgpt will be installed automatically when needed during scans', 'info');
+      }
+    } catch (error) {
+      addLog(`⚠️ [WARNING] Error installing tgpt: ${error.message}`, 'warning');
+      addLog('📋 [INFO] tgpt will be installed automatically when needed during scans', 'info');
+    }
+  };
+
+  /**
    * Verify installation
    */
   const verifyInstallation = async () => {
@@ -407,16 +508,35 @@ const Step4ToolsInstallation = ({ username, password, onComplete, onError, onLog
     }
 
     addLog('🔍 [VERIFY] Verifying all tools installation...', 'info');
+    addLog('🔄 [INFO] Using fresh shell session with updated PATH...', 'info');
+    
     const allTools = [...requiredTools.map(t => t.name), ...goTools.map(t => t.name)];
     let verified = 0;
+    const failedTools = [];
 
     for (const toolName of allTools) {
       try {
         addLog(`🔍 [CHECK] Verifying ${toolName}...`, 'info');
         addLog('⏳ [WAIT] Executing verification command...', 'info');
+        
+        // Use fresh shell with proper PATH setup
+        // Try multiple methods: command -v, which, and direct path check
+        const verifyCommand = `
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$HOME/go/bin:\$PATH"
+          if command -v ${toolName} >/dev/null 2>&1; then
+            echo 'installed'
+          elif which ${toolName} >/dev/null 2>&1; then
+            echo 'installed'
+          elif [ -f "/usr/bin/${toolName}" ] || [ -f "/usr/local/bin/${toolName}" ] || [ -f "\$HOME/go/bin/${toolName}" ]; then
+            echo 'installed'
+          else
+            echo 'notinstalled'
+          fi
+        `.trim().replace(/\n/g, ' ');
+        
         const result = await window.cyberGuard.runWslCommandAsRoot(
           username,
-          `command -v ${toolName} >/dev/null 2>&1 && echo 'installed' || echo 'notinstalled'`,
+          verifyCommand,
           password
         );
         
@@ -426,17 +546,38 @@ const Step4ToolsInstallation = ({ username, password, onComplete, onError, onLog
           addLog(`📤 [TERMINAL OUTPUT] ${toolName}: ${output}`, 'info');
           if (output.includes('installed')) {
             verified++;
-            addLog(`✅ [RESULT] ${toolName} is installed`, 'success');
+            addLog(`✅ [RESULT] ${toolName} is installed and accessible`, 'success');
           } else {
-            addLog(`❌ [RESULT] ${toolName} is not installed`, 'warning');
+            failedTools.push(toolName);
+            addLog(`❌ [RESULT] ${toolName} is not accessible - may need PATH refresh`, 'warning');
+            
+            // Try to fix PATH and re-verify
+            addLog(`🔄 [FIX] Attempting to refresh PATH for ${toolName}...`, 'info');
+            const fixResult = await window.cyberGuard.runWslCommandAsRoot(
+              username,
+              `hash -r && export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:\$HOME/go/bin:\$PATH" && command -v ${toolName} >/dev/null 2>&1 && echo 'installed' || echo 'notinstalled'`,
+              password
+            );
+            
+            if (fixResult?.stdout?.includes('installed')) {
+              verified++;
+              failedTools.pop();
+              addLog(`✅ [RESULT] ${toolName} verified after PATH refresh`, 'success');
+            }
           }
         }
       } catch (error) {
         addLog(`❌ [ERROR] Error verifying ${toolName}: ${error.message}`, 'error');
+        failedTools.push(toolName);
       }
     }
 
-    addLog(`📊 [SUMMARY] Verified: ${verified}/${allTools.length} tools installed`, verified === allTools.length ? 'success' : 'warning');
+    if (failedTools.length > 0) {
+      addLog(`⚠️ [WARNING] ${failedTools.length} tools not accessible: ${failedTools.join(', ')}`, 'warning');
+      addLog(`💡 [TIP] These tools may be installed but not in PATH. Try logging out and back in.`, 'info');
+    }
+    
+    addLog(`📊 [SUMMARY] Verified: ${verified}/${allTools.length} tools installed and accessible`, verified === allTools.length ? 'success' : 'warning');
     setProgress(95);
   };
 
@@ -478,4 +619,5 @@ const Step4ToolsInstallation = ({ username, password, onComplete, onError, onLog
 };
 
 export default Step4ToolsInstallation;
+
 
