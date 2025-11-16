@@ -159,56 +159,73 @@ function SettingsPanel() {
       setRepos(lines)
       setReposChecking(false)
 
-      // Check tools using version flags: "--version" then "-v" if needed (no sudo, no PATH exports)
+      // Get username for root command execution (same as QuickCheckScreen)
+      let username = 'root'
+      try {
+        const { getWslCredentials } = require('../utils/wslPasswordManager')
+        const storedCredentials = await getWslCredentials()
+        if (storedCredentials?.username) {
+          username = storedCredentials.username
+        } else if (window.cyberGuard?.getWslUsername) {
+          const wslUserResult = await window.cyberGuard.getWslUsername()
+          if (wslUserResult?.username) {
+            username = wslUserResult.username
+          }
+        }
+      } catch (err) {
+        console.log('[SettingsPanel] Could not get username, using root:', err.message)
+      }
+
+      // Check tools using runWslCommandAsRoot (SAME as QuickCheckScreen and Step4ToolsInstallation)
+      // This ensures consistency - tools are checked the same way they're installed
       const toolEntries = await Promise.all(REQUIRED_TOOLS.map(async (t) => {
         try {
-          const cmd1 = `bash -lc \"${t} --version\"`
-          console.log(`[ToolCheck] ${t}: running --version ->`, cmd1)
-          let res = await window.cyberGuard?.runWslCommand?.(cmd1, password)
-          console.log(`[ToolCheck] ${t}: --version result success=${res?.success} stdout=${(res?.stdout||'').trim()} stderr=${(res?.stderr||'').trim()}`)
-          let output = `${res?.stdout||''}\n${res?.stderr||''}`
-          let notFound = /command not found|not found/i.test(output)
-          let ok = (!!res?.success) || (!notFound && output.trim().length > 0)
+          // Use command -v to check if tool exists (same method as QuickCheckScreen)
+          const checkCmd = `command -v ${t} >/dev/null 2>&1 && echo 'installed' || echo 'notinstalled'`
+          console.log(`[ToolCheck] ${t}: checking with runWslCommandAsRoot ->`, checkCmd)
+          
+          let res = null
+          if (window.cyberGuard?.runWslCommandAsRoot) {
+            res = await window.cyberGuard.runWslCommandAsRoot(username, checkCmd, password)
+          } else {
+            // Fallback to regular command if API not available
+            res = await window.cyberGuard?.runWslCommand?.(checkCmd, password)
+          }
+          
+          console.log(`[ToolCheck] ${t}: check result success=${res?.success} stdout=${(res?.stdout||'').trim()} stderr=${(res?.stderr||'').trim()}`)
+          
+          const isInstalled = res?.success && (res.stdout || '').trim().includes('installed')
           let version = null
           
-          if (ok && res?.stdout) {
-            // Extract version from output
-            const versionMatch = res.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
-            if (versionMatch) {
-              version = versionMatch[1]
-            } else {
-              // Try to get first line
-              const firstLine = res.stdout.split('\n')[0].trim()
-              if (firstLine && firstLine.length < 50) {
-                version = firstLine
-              }
-            }
-          }
-          
-          if (!ok) {
-            const cmd2 = `bash -lc \"${t} -v\"`
-            console.log(`[ToolCheck] ${t}: running -v ->`, cmd2)
-            res = await window.cyberGuard?.runWslCommand?.(cmd2, password)
-            console.log(`[ToolCheck] ${t}: -v result success=${res?.success} stdout=${(res?.stdout||'').trim()} stderr=${(res?.stderr||'').trim()}`)
-            output = `${res?.stdout||''}\n${res?.stderr||''}`
-            notFound = /command not found|not found/i.test(output)
-            ok = (!!res?.success) || (!notFound && output.trim().length > 0)
-            
-            if (ok && res?.stdout && !version) {
-              const versionMatch = res.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
-              if (versionMatch) {
-                version = versionMatch[1]
+          // If tool is installed, get version
+          if (isInstalled) {
+            try {
+              const versionCmd = `${t} --version 2>/dev/null || ${t} -v 2>/dev/null || ${t} -V 2>/dev/null || echo ''`
+              let versionRes = null
+              if (window.cyberGuard?.runWslCommandAsRoot) {
+                versionRes = await window.cyberGuard.runWslCommandAsRoot(username, versionCmd, password)
               } else {
-                const firstLine = res.stdout.split('\n')[0].trim()
-                if (firstLine && firstLine.length < 50) {
-                  version = firstLine
+                versionRes = await window.cyberGuard?.runWslCommand?.(versionCmd, password)
+              }
+              
+              if (versionRes?.stdout) {
+                const versionMatch = versionRes.stdout.match(/(\d+\.\d+\.\d+|\d+\.\d+)/)
+                if (versionMatch) {
+                  version = versionMatch[1]
+                } else {
+                  const firstLine = versionRes.stdout.split('\n')[0].trim()
+                  if (firstLine && firstLine.length < 50) {
+                    version = firstLine
+                  }
                 }
               }
+            } catch (versionErr) {
+              console.log(`[ToolCheck] ${t}: error getting version:`, versionErr.message)
             }
           }
           
-          console.log(`[ToolCheck] ${t}: available=${ok}, version=${version || 'N/A'}`)
-          return [t, { installed: ok, checking: false, version: version || null }]
+          console.log(`[ToolCheck] ${t}: installed=${isInstalled}, version=${version || 'N/A'}`)
+          return [t, { installed: isInstalled, checking: false, version: version || null }]
         } catch (_e) {
           console.log(`[ToolCheck] ${t}: error during check`, _e?.message)
           return [t, { installed: false, checking: false, version: null }]

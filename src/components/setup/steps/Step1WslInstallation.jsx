@@ -230,8 +230,56 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
           return; // Don't complete yet
         }
         
-        if (output.includes('ubuntu')) {
-          addLog('✅ [RESULT] Ubuntu is installed', 'success');
+        // Check if Ubuntu exists in the distribution list
+        const fullOutput = result?.stdout || '';
+        const ubuntuPattern = /(ubuntu[^\s]*)/i;
+        const ubuntuMatch = fullOutput.match(ubuntuPattern);
+        
+        if (ubuntuMatch || output.includes('ubuntu')) {
+          const ubuntuDistroName = ubuntuMatch ? ubuntuMatch[1] : 'Ubuntu';
+          addLog(`✅ [RESULT] Ubuntu is installed: ${ubuntuDistroName}`, 'success');
+          
+          // Check if Ubuntu is already the default
+          addLog('🔍 [CHECK] Checking if Ubuntu is the default distribution...', 'info');
+          const defaultResult = await window.cyberGuard.runWslCommand('--list --verbose', '');
+          const defaultOutput = (defaultResult?.stdout || '').toLowerCase();
+          
+          // Check if Ubuntu is marked as default (usually has "*" or "Default" in the list)
+          const isDefault = (defaultOutput.includes('*') && 
+                           defaultOutput.includes('ubuntu') &&
+                           defaultOutput.indexOf('*') < defaultOutput.indexOf('ubuntu')) ||
+                           defaultOutput.includes('default') && defaultOutput.includes('ubuntu');
+          
+          if (!isDefault) {
+            addLog(`📋 [ACTION] Setting Ubuntu (${ubuntuDistroName}) as default distribution...`, 'info');
+            addLog(`💻 [COMMAND] Executing: wsl --set-default ${ubuntuDistroName}`, 'info');
+            
+            try {
+              if (window.cyberGuard?.setDefaultWSLDistro) {
+                const setDefaultResult = await window.cyberGuard.setDefaultWSLDistro(ubuntuDistroName);
+                if (setDefaultResult?.success) {
+                  addLog(`✅ [RESULT] Ubuntu (${ubuntuDistroName}) set as default distribution`, 'success');
+                } else {
+                  addLog(`⚠️ [WARNING] Could not set Ubuntu as default: ${setDefaultResult?.error || 'Unknown error'}`, 'warning');
+                  addLog('📋 [INFO] Continuing anyway - Ubuntu is installed', 'info');
+                }
+              } else if (window.cyberGuard?.executeCommand) {
+                // Fallback: use executeCommand
+                const setDefaultCmd = await window.cyberGuard.executeCommand(`wsl --set-default ${ubuntuDistroName}`);
+                if (setDefaultCmd?.success) {
+                  addLog(`✅ [RESULT] Ubuntu (${ubuntuDistroName}) set as default distribution`, 'success');
+                } else {
+                  addLog(`⚠️ [WARNING] Could not set Ubuntu as default`, 'warning');
+                }
+              }
+            } catch (error) {
+              addLog(`⚠️ [WARNING] Error setting Ubuntu as default: ${error.message}`, 'warning');
+              addLog('📋 [INFO] Continuing anyway - Ubuntu is installed', 'info');
+            }
+          } else {
+            addLog('✅ [RESULT] Ubuntu is already the default distribution', 'success');
+          }
+          
           addLog('✅ [STATUS] WSL and Ubuntu installation verified', 'success');
           setUbuntuInstalled(true);
           setProgress(100);
@@ -252,6 +300,31 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
         
         if (hasUbuntu) {
           addLog('✅ [RESULT] Ubuntu is installed', 'success');
+          
+          // Try to set Ubuntu as default
+          addLog('📋 [ACTION] Setting Ubuntu as default distribution...', 'info');
+          try {
+            // Try to get Ubuntu distribution name from list
+            if (window.cyberGuard?.listWSLDistributions) {
+              const distros = await window.cyberGuard.listWSLDistributions();
+              if (distros?.success && distros?.distributions) {
+                const ubuntuDistro = distros.distributions.find(d => 
+                  d.toLowerCase().includes('ubuntu')
+                );
+                if (ubuntuDistro && window.cyberGuard?.setDefaultWSLDistro) {
+                  const setDefaultResult = await window.cyberGuard.setDefaultWSLDistro(ubuntuDistro);
+                  if (setDefaultResult?.success) {
+                    addLog(`✅ [RESULT] Ubuntu (${ubuntuDistro}) set as default`, 'success');
+                  } else {
+                    addLog(`⚠️ [WARNING] Could not set Ubuntu as default: ${setDefaultResult?.error || 'Unknown error'}`, 'warning');
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            addLog(`⚠️ [WARNING] Could not set Ubuntu as default: ${error.message}`, 'warning');
+          }
+          
           addLog('✅ [STATUS] WSL and Ubuntu installation verified', 'success');
           setUbuntuInstalled(true);
           setProgress(100);
@@ -385,6 +458,25 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
     setStatus('installing');
     setMessage('Installing Ubuntu...');
     setProgress(80);
+
+    // First, check if Ubuntu is already installed
+    addLog('🔍 [CHECK] Checking if Ubuntu is already installed...', 'info');
+    try {
+      const alreadyInstalled = await window.cyberGuard?.verifyUbuntu?.();
+      if (alreadyInstalled) {
+        addLog('✅ [RESULT] Ubuntu is already installed!', 'success');
+        setUbuntuInstalled(true);
+        setProgress(100);
+        setStatus('completed');
+        setMessage('WSL and Ubuntu installation complete');
+        addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
+        onComplete();
+        return;
+      }
+    } catch (error) {
+      addLog(`⚠️ [WARNING] Could not verify existing installation: ${error.message}`, 'warning');
+    }
+
     addLog('📦 [INSTALL] Installing Ubuntu distribution...', 'info');
     addLog('💻 [COMMAND] Executing: wsl --install -d Ubuntu', 'info');
 
@@ -398,20 +490,68 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
         
         if (success) {
           addLog('✅ [RESULT] Ubuntu installation command completed', 'success');
-          // Wait a bit and verify installation
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          const hasUbuntu = await window.cyberGuard.verifyUbuntu?.();
-          if (hasUbuntu) {
-            setUbuntuInstalled(true);
-            setProgress(100);
-            setStatus('completed');
-            setMessage('WSL and Ubuntu installation complete');
-            addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
-            onComplete();
-            return;
-          } else {
+          addLog('⏳ [INFO] Ubuntu installation may take 5-10 minutes. Please wait...', 'info');
+          addLog('📋 [NOTE] Installation is downloading from Microsoft Store in the background', 'info');
+          
+          // Wait a bit before first check (30 seconds)
+          addLog('⏳ [WAIT] Waiting 30 seconds before first verification...', 'info');
+          await new Promise(resolve => setTimeout(resolve, 30000));
+          
+          // Retry verification up to 15 times with increasing delays
+          let hasUbuntu = false;
+          let retryCount = 0;
+          const maxRetries = 15; // Increased from 10
+          
+          while (!hasUbuntu && retryCount < maxRetries) {
+            retryCount++;
+            addLog(`🔍 [VERIFY] Verifying Ubuntu installation (attempt ${retryCount}/${maxRetries})...`, 'info');
+            
+            const verifyResult = await window.cyberGuard.verifyUbuntu?.();
+            if (verifyResult) {
+              hasUbuntu = true;
+              
+              // Set Ubuntu as default
+              addLog('📋 [ACTION] Setting Ubuntu as default distribution...', 'info');
+              try {
+                if (window.cyberGuard?.listWSLDistributions) {
+                  const distros = await window.cyberGuard.listWSLDistributions();
+                  if (distros?.success && distros?.distributions) {
+                    const ubuntuDistro = distros.distributions.find(d => 
+                      d.toLowerCase().includes('ubuntu')
+                    );
+                    if (ubuntuDistro && window.cyberGuard?.setDefaultWSLDistro) {
+                      const setDefaultResult = await window.cyberGuard.setDefaultWSLDistro(ubuntuDistro);
+                      if (setDefaultResult?.success) {
+                        addLog(`✅ [RESULT] Ubuntu (${ubuntuDistro}) set as default distribution`, 'success');
+                      }
+                    }
+                  }
+                }
+              } catch (error) {
+                addLog(`⚠️ [WARNING] Could not set Ubuntu as default: ${error.message}`, 'warning');
+              }
+              
+              setUbuntuInstalled(true);
+              setProgress(100);
+              setStatus('completed');
+              setMessage('WSL and Ubuntu installation complete');
+              addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
+              onComplete();
+              return;
+            } else {
+              if (retryCount < maxRetries) {
+                // Wait longer between retries (30 seconds instead of 15)
+                const waitTime = 30000;
+                addLog(`⏳ [WAIT] Ubuntu not found yet. Waiting ${waitTime/1000} seconds before next check...`, 'info');
+                addLog('📋 [NOTE] Installation may still be in progress. Please be patient.', 'info');
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+              }
+            }
+          }
+          
+          if (!hasUbuntu) {
             installationFailed = true;
-            errorMessage = 'Ubuntu installation command completed but verification failed';
+            errorMessage = 'Ubuntu installation command completed but verification failed after multiple attempts. Installation may still be in progress - please wait a few more minutes and restart the application.';
           }
         } else {
           installationFailed = true;
@@ -434,20 +574,68 @@ const Step1WslInstallation = ({ onComplete, onError, onLog }) => {
             
             if (result?.success) {
               addLog('✅ [RESULT] Ubuntu installation command completed', 'success');
-              // Wait a bit and verify installation
-              await new Promise(resolve => setTimeout(resolve, 3000));
-              const hasUbuntu = await window.cyberGuard.verifyUbuntu?.();
-              if (hasUbuntu) {
-                setUbuntuInstalled(true);
-                setProgress(100);
-                setStatus('completed');
-                setMessage('WSL and Ubuntu installation complete');
-                addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
-                onComplete();
-                return;
-              } else {
+              addLog('⏳ [INFO] Ubuntu installation may take 5-10 minutes. Please wait...', 'info');
+              addLog('📋 [NOTE] Installation is downloading from Microsoft Store in the background', 'info');
+              
+              // Wait much longer before first check (60 seconds)
+              addLog('⏳ [WAIT] Waiting 60 seconds before first verification...', 'info');
+              await new Promise(resolve => setTimeout(resolve, 60000));
+              
+              // Retry verification up to 15 times with increasing delays
+              let hasUbuntu = false;
+              let retryCount = 0;
+              const maxRetries = 15;
+              
+              while (!hasUbuntu && retryCount < maxRetries) {
+                retryCount++;
+                addLog(`🔍 [VERIFY] Verifying Ubuntu installation (attempt ${retryCount}/${maxRetries})...`, 'info');
+                
+                const verifyResult = await window.cyberGuard.verifyUbuntu?.();
+                if (verifyResult) {
+                  hasUbuntu = true;
+                  
+                  // Set Ubuntu as default
+                  addLog('📋 [ACTION] Setting Ubuntu as default distribution...', 'info');
+                  try {
+                    if (window.cyberGuard?.listWSLDistributions) {
+                      const distros = await window.cyberGuard.listWSLDistributions();
+                      if (distros?.success && distros?.distributions) {
+                        const ubuntuDistro = distros.distributions.find(d => 
+                          d.toLowerCase().includes('ubuntu')
+                        );
+                        if (ubuntuDistro && window.cyberGuard?.setDefaultWSLDistro) {
+                          const setDefaultResult = await window.cyberGuard.setDefaultWSLDistro(ubuntuDistro);
+                          if (setDefaultResult?.success) {
+                            addLog(`✅ [RESULT] Ubuntu (${ubuntuDistro}) set as default distribution`, 'success');
+                          }
+                        }
+                      }
+                    }
+                  } catch (error) {
+                    addLog(`⚠️ [WARNING] Could not set Ubuntu as default: ${error.message}`, 'warning');
+                  }
+                  
+                  setUbuntuInstalled(true);
+                  setProgress(100);
+                  setStatus('completed');
+                  setMessage('WSL and Ubuntu installation complete');
+                  addLog('✅ [COMPLETE] Step 1 completed successfully!', 'success');
+                  onComplete();
+                  return;
+                } else {
+                  if (retryCount < maxRetries) {
+                    // Wait longer between retries (30 seconds)
+                    const waitTime = 30000;
+                    addLog(`⏳ [WAIT] Ubuntu not found yet. Waiting ${waitTime/1000} seconds before next check...`, 'info');
+                    addLog('📋 [NOTE] Installation may still be in progress. Please be patient.', 'info');
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                  }
+                }
+              }
+              
+              if (!hasUbuntu) {
                 installationFailed = true;
-                errorMessage = result?.error || 'Ubuntu installation completed but verification failed';
+                errorMessage = result?.error || 'Ubuntu installation completed but verification failed after multiple attempts. Installation may still be in progress - please wait a few more minutes and restart the application.';
               }
             } else {
               installationFailed = true;

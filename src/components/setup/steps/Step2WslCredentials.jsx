@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Key, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import { getSecurePassword } from '../../../utils/securePasswordStorage';
+import { getWslCredentials } from '../../../utils/wslPasswordManager';
+import InvalidCredentialsDialog from '../../InvalidCredentialsDialog';
+import WslUserCreationDialog from '../../WslUserCreationDialog';
 
 /**
  * Step 2: WSL Credentials Component
@@ -11,6 +15,58 @@ const Step2WslCredentials = ({ onComplete, onError, onLog }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  const [showInvalidCredsDialog, setShowInvalidCredsDialog] = useState(false);
+  const [showUserCreationDialog, setShowUserCreationDialog] = useState(false);
+
+  // Auto-fetch stored password on mount
+  useEffect(() => {
+    loadStoredPassword();
+  }, []);
+
+  const loadStoredPassword = () => {
+    try {
+      // Try to get stored password from secure storage
+      const storedPassword = getSecurePassword();
+      if (storedPassword) {
+        if (onLog) onLog('🔐 [CREDENTIALS] Found stored password, auto-filling...', 'info');
+        setPassword(storedPassword);
+        return;
+      }
+      
+      // Try to get from WSL credentials
+      const storedCreds = getWslCredentials();
+      if (storedCreds && storedCreds.password) {
+        if (onLog) onLog('🔐 [CREDENTIALS] Found stored WSL credentials, auto-filling...', 'info');
+        setPassword(storedCreds.password);
+        if (storedCreds.username) {
+          setUsername(storedCreds.username);
+        }
+      }
+    } catch (error) {
+      if (onLog) onLog(`🔐 [CREDENTIALS] No stored password found: ${error.message}`, 'info');
+    }
+  };
+
+  const handleCreateNewUser = async () => {
+    setShowInvalidCredsDialog(false);
+    setShowUserCreationDialog(true);
+  };
+
+  const handleUserCreationSuccess = (newUsername, newPassword) => {
+    setShowUserCreationDialog(false);
+    setUsername(newUsername);
+    setPassword(newPassword);
+    // Auto-submit with new credentials
+    setTimeout(() => {
+      handleSubmit({ preventDefault: () => {} });
+    }, 500);
+  };
+
+  const handleTryAgain = () => {
+    setShowInvalidCredsDialog(false);
+    setPassword('');
+    setErrors({});
+  };
 
   const validate = () => {
     const newErrors = {};
@@ -137,10 +193,11 @@ const Step2WslCredentials = ({ onComplete, onError, onLog }) => {
             if (testResult?.details) {
               onLog(`📋 [DETAILS] ${testResult.details}`, 'error');
             }
+            onLog('🔐 [CREDENTIALS] Showing invalid credentials dialog...', 'info');
           }
           
-          setErrors({ submit: errorMsg });
-          onError(new Error(errorMsg));
+          setSubmitting(false);
+          setShowInvalidCredsDialog(true);
         }
       } else {
         throw new Error('WSL credential testing API not available');
@@ -302,6 +359,22 @@ const Step2WslCredentials = ({ onComplete, onError, onLog }) => {
           )}
         </button>
       </form>
+
+      {/* Invalid Credentials Dialog */}
+      <InvalidCredentialsDialog
+        isOpen={showInvalidCredsDialog}
+        onClose={() => setShowInvalidCredsDialog(false)}
+        onTryAgain={handleTryAgain}
+        onCreateNewUser={handleCreateNewUser}
+        username={username.trim()}
+      />
+
+      {/* User Creation Dialog */}
+      <WslUserCreationDialog
+        isOpen={showUserCreationDialog}
+        onClose={() => setShowUserCreationDialog(false)}
+        onSuccess={handleUserCreationSuccess}
+      />
     </div>
   );
 };

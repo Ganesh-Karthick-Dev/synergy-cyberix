@@ -15,6 +15,17 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom'],
+          'chart-vendor': ['chart.js', 'react-chartjs-2', 'recharts'],
+          'pdf-vendor': ['jspdf', 'html2canvas'],
+          'utils-vendor': ['axios', 'xlsx', 'xml2js'],
+        },
+      },
+    },
   },
 })
 

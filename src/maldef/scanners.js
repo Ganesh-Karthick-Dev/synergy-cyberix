@@ -17,7 +17,7 @@ const fs = require('fs')
 function runWslCommandStreaming(distro, command, onOutput = null, onError = null) {
   return new Promise((resolve) => {
     const args = ['-d', distro, '--', 'sh', '-lc', command]
-    const child = spawn('wsl.exe', args, { 
+    const child = spawn('C:\\Windows\\System32\\wsl.exe', args, { 
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false
     })

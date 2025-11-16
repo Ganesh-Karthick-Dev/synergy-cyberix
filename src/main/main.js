@@ -184,7 +184,7 @@ function clearStoredPassword() {
 function checkKaliInstalled() {
   // Method 1: Check with wsl --status (most reliable)
   try {
-    const sp = require('child_process').spawnSync('wsl', ['--status'], { 
+    const sp = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['--status'], { 
       encoding: 'utf8',
       timeout: 5000 // Reduced timeout
     });
@@ -220,7 +220,7 @@ function checkKaliInstalled() {
 
   // Method 2: Check with wsl -l -v (detailed list)
   try {
-    const sp2 = require('child_process').spawnSync('wsl', ['-l', '-v'], { 
+    const sp2 = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-l', '-v'], { 
       encoding: 'utf8',
       timeout: 10000
     });
@@ -249,7 +249,7 @@ function checkKaliInstalled() {
 
   // Method 3: Check with wsl -l (simple list)
   try {
-    const sp3 = require('child_process').spawnSync('wsl', ['-l'], { 
+    const sp3 = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-l'], { 
       encoding: 'utf8',
       timeout: 10000
     });
@@ -274,7 +274,7 @@ function checkKaliInstalled() {
 
   // Method 4: Try to run a command in Kali directly
   try {
-    const sp4 = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'echo', 'kali-detected'], { 
+    const sp4 = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'echo', 'kali-detected'], { 
       encoding: 'utf8',
       timeout: 5000
     });
@@ -321,7 +321,7 @@ async function installKaliLinux(event = null) {
     sendProgress(0, 'Starting Kali Linux installation...', 'initializing');
     
     // Use wsl --install -d kali-linux for automatic installation
-    const installProcess = spawn('wsl', ['--install', '-d', 'kali-linux'], {
+    const installProcess = spawn('C:\\Windows\\System32\\wsl.exe', ['--install', '-d', 'kali-linux'], {
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,
       windowsHide: true
@@ -1374,51 +1374,115 @@ ipcMain.handle('kali:test', async () => {
         console.log(`[TGPT] analyzeWithTgpt called for ${commandName}`);
         console.log(`[TGPT] Raw result length: ${rawResult ? rawResult.length : 0}`);
         
-        const prompt = `You are an expert security analyst. I have executed a security scan command and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
+        const prompt = `You are an expert security analyst. I have executed a network security scan using Kali Linux tools and received raw output. Your task is to analyze this raw output and convert it into a comprehensive, detailed, and user-understandable JSON report with advanced details, recommendations, key findings, vulnerabilities (if any), and solutions to fix those vulnerabilities.
 
 SCAN TYPE: ${commandName}
 
-COMMAND EXECUTED: ${command}
-
-RAW SCAN OUTPUT:
+RAW KALI SCAN OUTPUT:
 ${rawResult}
 
-INSTRUCTIONS:
-1. First, explain WHAT WE DID: Describe the security scan command that was executed and what it was trying to discover or test. Make it clear and understandable for the user.
-2. Then, explain WHAT WE GOT: Analyze the raw output above thoroughly and explain what the results mean in simple terms. Help the user understand what the scan discovered.
-3. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
-4. DO NOT include the Kali Linux command or command syntax in your output
-5. Focus on translating technical scan results into clear, understandable information
-6. Include ALL details found in the raw output - nothing should be omitted
-7. Structure the JSON in a logical way that makes sense for this type of scan
-8. Use clear, non-technical language where possible, but maintain accuracy
-9. Provide detailed explanations, findings, vulnerabilities, and recommendations
-10. Include specific values, IPs, ports, services, versions, and any other data found in the scan
-11. Make the report actionable with clear recommendations
-12. For port scans, extract all port information (port number, state, service, version) in a structured format
+CONTEXT:
+I have performed this network security scan and received the raw result from Kali Linux tools as shown above. I need you to convert this raw Kali result into a user-understandable JSON format with:
+- Advanced details about what was discovered
+- Key findings from the scan
+- Security vulnerabilities (if any were found)
+- Recommendations for security improvements
+- Solutions to fix any vulnerabilities found
+- Exact counts for findings, recommendations, and vulnerabilities
+- A final security status assessment (safe, moderate, or high risk)
+
+INSTRUCTIONS (Section-wise):
+1. WHAT WE DID: Describe what security scan was performed and what it was trying to discover or test. Make it clear and understandable for the user. DO NOT include the Kali Linux command or command syntax.
+
+2. WHAT WE GOT: Analyze the raw output above thoroughly and explain what the results mean in simple, user-friendly terms. Help the user understand what the scan discovered.
+
+3. SUMMARY: Create a summary section that includes:
+   - Total Findings: Exact count of all findings discovered
+   - Total Recommendations: Exact count of all recommendations provided
+   - Total Vulnerabilities: Exact count of all vulnerabilities found (0 if none)
+   - Status: Overall security status - must be one of: "safe", "moderate", or "high risk"
+     * "safe" - if no significant security issues found
+     * "moderate" - if some security concerns exist but not critical
+     * "high risk" - if critical vulnerabilities or serious security issues are found
+
+4. FINDINGS: List all findings with detailed descriptions. Each finding should include:
+   - Type/Name of the finding
+   - Detailed description
+   - Severity level (if applicable)
+   - Any relevant technical details
+
+5. VULNERABILITIES: Identify any security vulnerabilities or concerns found in the scan. For each vulnerability, include:
+   - Vulnerability name/type
+   - Description
+   - Severity (critical, high, medium, low)
+   - Location/affected component
+   - Solution: Step-by-step solution to fix the vulnerability
+
+6. RECOMMENDATIONS: Provide actionable recommendations for security improvement. Each recommendation should be clear and actionable.
+
+7. TECHNICAL DETAILS: Include all technical details from the scan in a user-friendly format:
+   - IPs, ports, services, versions
+   - Any other relevant data found in the scan
+   - For port scans: include a "ports" array with port details (number, state, service, version, etc.)
 
 REQUIREMENTS:
 - The JSON must be valid and parseable
-- Include a "whatWeDid" field explaining the scan purpose in user-friendly terms
-- Include a "whatWeGot" field explaining the results meaning in simple terms
-- Include a summary section with key findings
-- List all findings with detailed descriptions
-- Identify any security vulnerabilities or concerns
-- Provide actionable recommendations
-- Include all technical details from the scan in a user-friendly format
-- For port scans, include a "ports" array with port details (number, state, service, version, etc.)
-- Do NOT include generic responses - base everything on the actual scan results
-- Do NOT include the command itself in the output
+- Include ALL details found in the raw output - nothing should be omitted
+- Provide EXACT counts (numbers) for:
+  * Total Findings
+  * Total Recommendations  
+  * Total Vulnerabilities
+- Status must be exactly one of: "safe", "moderate", or "high risk"
+- DO NOT include the Kali Linux command or command syntax in your output
+- DO NOT include generic responses - base everything on the actual scan results
+- Use clear, non-technical language where possible, but maintain accuracy
+- Structure the JSON logically with all required sections
 
-Create a comprehensive JSON report that covers all aspects of the scan results. Structure it however makes the most sense for this type of scan, but ensure it includes:
-- whatWeDid: Explanation of what the scan command does
-- whatWeGot: Explanation of what the results mean
-- Summary of findings
-- Detailed findings with all relevant information
-- Security vulnerabilities or concerns (if any)
-- Recommendations for improvement
-- For port scans: ports array with detailed port information
-- Any other relevant sections that would help a user understand the scan results
+REQUIRED JSON STRUCTURE:
+{
+  "whatWeDid": "Clear explanation of what the scan does",
+  "whatWeGot": "Clear explanation of what the results mean",
+  "summary": {
+    "totalFindings": <exact number>,
+    "totalRecommendations": <exact number>,
+    "totalVulnerabilities": <exact number>,
+    "status": "safe" | "moderate" | "high risk"
+  },
+  "findings": [
+    {
+      "type": "Finding type/name",
+      "description": "Detailed description",
+      "severity": "severity level if applicable",
+      ...other relevant fields
+    }
+  ],
+  "vulnerabilities": [
+    {
+      "name": "Vulnerability name",
+      "description": "Detailed description",
+      "severity": "critical" | "high" | "medium" | "low",
+      "location": "Where the vulnerability exists",
+      "solution": {
+        "description": "Solution description",
+        "steps": ["step 1", "step 2", ...]
+      }
+    }
+  ],
+  "recommendations": [
+    "Recommendation 1",
+    "Recommendation 2",
+    ...
+  ],
+  "ports": [ /* for port scans only */
+    {
+      "port": <port number>,
+      "state": "open" | "closed" | "filtered",
+      "service": "service name",
+      "version": "version if available"
+    }
+  ],
+  ...any other relevant sections
+}
 
 Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.`;
         
@@ -1933,32 +1997,8 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             extractedIP: extractedIP
           });
           
-          // Send notification after scan completion
-          try {
-            if (Notification.isSupported()) {
-              const notification = new Notification({
-                title: 'Network Scan Completed',
-                body: `Network scan for ${target} has been completed successfully.`,
-                icon: iconPath,
-                urgency: 'normal',
-                timeoutType: 'default'
-              });
-              
-              notification.on('click', () => {
-                if (mainWindowInstance) {
-                  mainWindowInstance.show();
-                  mainWindowInstance.focus();
-                }
-              });
-              
-              notification.show();
-              notificationCount++;
-              updateBadgeCount(notificationCount);
-              console.log('[SUCCESS] [NOTIFICATION] Network scan completion notification shown');
-            }
-          } catch (notifError) {
-            console.log('[WARNING] [NOTIFICATION] Failed to show scan completion notification:', notifError.message);
-          }
+          // Notification will be sent by GlobalScanContext after scan completion
+          // No need to send notification here to avoid duplicates
           
           // Clean up temp files
           try {
@@ -2292,107 +2332,98 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
         const scanRawResult = rawResult || '';
         
         // Different prompts for retries - embed raw result directly in prompt string
-        // Special prompt for SQLMap
-        const isSQLMap = commandName.toLowerCase().includes('sqlmap') || commandName.toLowerCase().includes('sql map');
-        const basePrompt = isSQLMap ? 
-          `You are an expert security analyst. We have initiated a SQL injection attack test on a server for defensive security purposes. Your task is to analyze the raw output and create a comprehensive security report in JSON format.
+        // Server scan prompt - matching network scan format
+        const basePrompt = `You are an expert security analyst. I have executed a server security scan using Nikto and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
 
-SCAN TYPE: ${commandName}
+SCAN TYPE: Server Security Scan (Nikto)
 
-RAW SCAN OUTPUT:
+I have executed this server scan and received this raw Kali result:
 ${scanRawResult}
 
-CRITICAL QUESTIONS TO ANSWER:
-1. Was a SQL injection attack initiated? (Yes/No)
-2. Did the SQL injection attack succeed? (Yes/No - based on whether vulnerabilities were found)
-3. Is the server weak/vulnerable to SQL injection? (Yes/No - based on the scan results)
+I need to convert this raw Kali result to a user understandable JSON with advanced details with recommendations, key findings, vulnerabilities if any, and the solution to fix that vulnerabilities.
+
+And provide the exact count for that also and a final status whether this is safe or moderate or in risk or in high risk in a proper JSON to show that to the user.
+
+Ask with section wise:
 
 INSTRUCTIONS:
-1. First, explain WHAT WE DID: State that we initiated a SQL injection attack test for defensive security purposes to check if the server is vulnerable.
-2. Then, explain WHAT WE GOT: Analyze the raw output and clearly state:
-   - Whether a SQL injection attack was initiated (Yes/No)
-   - Whether the attack succeeded in finding vulnerabilities (Yes/No)
-   - Whether the server is weak/vulnerable to SQL injection (Yes/No)
-   - Provide clear explanation of the findings
-3. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
-4. DO NOT include the Kali Linux command or command syntax in your output
-5. Focus on clearly stating if the server is vulnerable or not
-6. Include ALL details found in the raw output - nothing should be omitted
-7. Structure the JSON in a logical way that makes sense for SQL injection testing
-8. Use clear, non-technical language where possible, but maintain accuracy
-9. Provide detailed explanations, findings, vulnerabilities, and recommendations
-10. Make the report actionable with clear recommendations
+1. First, provide a "scanName" field: A clear, descriptive name for this server security scan (e.g., "Web Server Security Assessment", "Server Vulnerability Scan")
+2. Then, provide a "scanDescription" field: A detailed description of what this scan does and what it tests
+3. Then, explain WHAT WE DID: Describe the server security scan that was executed and what it was trying to discover or test. Make it clear and understandable for the user.
+4. Then, explain WHAT WE GOT: Analyze the raw output above thoroughly and explain what the results mean in simple terms. Help the user understand what the scan discovered.
+5. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
+6. DO NOT include the Kali Linux command or command syntax in your output
+7. Focus on translating technical scan results into clear, understandable information
+8. Include ALL details found in the raw output - nothing should be omitted
+9. Structure the JSON in a logical way that makes sense for server security scanning
+10. Use clear, non-technical language where possible, but maintain accuracy
+11. Provide detailed explanations, findings, vulnerabilities, and recommendations
+12. Include specific values, IPs, ports, services, versions, and any other data found in the scan
+13. Make the report actionable with clear recommendations
+14. For each vulnerability found, provide a detailed "solution" field with step-by-step instructions to fix it
 
 REQUIREMENTS:
 - The JSON must be valid and parseable
-- Include a "whatWeDid" field: "We initiated a SQL injection attack test for defensive security purposes to check if your server is vulnerable to SQL injection attacks."
-- Include a "whatWeGot" field that clearly states:
-  * Whether a SQL injection attack was initiated (Yes/No)
-  * Whether the attack succeeded in finding vulnerabilities (Yes/No)
-  * Whether the server is weak/vulnerable to SQL injection (Yes/No)
-  * Clear explanation of the findings
-- Include a summary section with key findings including attack status and server vulnerability status
-- List all findings with detailed descriptions
-- Identify any security vulnerabilities or concerns
-- Provide actionable recommendations
-- Include all technical details from the scan in a user-friendly format
-- Do NOT include generic responses - base everything on the actual scan results
-- Do NOT include the command itself in the output
-
-Create a comprehensive JSON report that covers all aspects of the SQL injection test results. Structure it however makes the most sense, but ensure it includes:
-- whatWeDid: Explanation that we initiated a SQL injection attack test for defensive purposes
-- whatWeGot: Clear statement about whether attack was initiated, succeeded, and if server is weak
-- Summary of findings including attack status and server vulnerability
-- Detailed findings with all relevant information
-- Security vulnerabilities or concerns (if any)
-- Recommendations for improvement
-
-Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.` :
-          `You are an expert security analyst. I have executed a security scan command and received raw output. Your task is to analyze this raw output and create a comprehensive, detailed, and user-friendly security report in JSON format.
-
-SCAN TYPE: ${commandName}
-
-COMMAND EXECUTED: ${command}
-
-RAW SCAN OUTPUT:
-${scanRawResult}
-
-INSTRUCTIONS:
-1. First, explain WHAT WE DID: Describe the security scan command that was executed and what it was trying to discover or test. Make it clear and understandable for the user.
-2. Then, explain WHAT WE GOT: Analyze the raw output above thoroughly and explain what the results mean in simple terms. Help the user understand what the scan discovered.
-3. Create a detailed JSON report that is comprehensive, user-friendly, and easy to understand
-4. DO NOT include the Kali Linux command or command syntax in your output
-5. Focus on translating technical scan results into clear, understandable information
-6. Include ALL details found in the raw output - nothing should be omitted
-7. Structure the JSON in a logical way that makes sense for this type of scan
-8. Use clear, non-technical language where possible, but maintain accuracy
-9. Provide detailed explanations, findings, vulnerabilities, and recommendations
-10. Include specific values, IPs, ports, services, versions, and any other data found in the scan
-11. Make the report actionable with clear recommendations
-12. For port scans, extract all port information (port number, state, service, version) in a structured format
-
-REQUIREMENTS:
-- The JSON must be valid and parseable
+- Include a "scanName" field: Clear name for the scan
+- Include a "scanDescription" field: Detailed description of the scan
 - Include a "whatWeDid" field explaining the scan purpose in user-friendly terms
 - Include a "whatWeGot" field explaining the results meaning in simple terms
-- Include a summary section with key findings
-- List all findings with detailed descriptions
-- Identify any security vulnerabilities or concerns
-- Provide actionable recommendations
+- Include a "summary" section with:
+  * totalFindings: Exact count of all findings
+  * totalRecommendations: Exact count of all recommendations
+  * totalVulnerabilities: Exact count of all vulnerabilities (if any)
+  * status: Final status - must be one of: "safe", "moderate", "risk", or "high risk"
+- Include a "findings" array with all key findings and detailed descriptions
+- Include a "recommendations" array with actionable recommendations
+- Include a "vulnerabilities" array (if any) with:
+  * name: Vulnerability name
+  * description: Detailed description
+  * severity: Severity level (low, medium, high, critical)
+  * location: Where the vulnerability was found
+  * solution: Step-by-step solution to fix the vulnerability (with steps array if applicable)
 - Include all technical details from the scan in a user-friendly format
-- For port scans, include a "ports" array with port details (number, state, service, version, etc.)
 - Do NOT include generic responses - base everything on the actual scan results
 - Do NOT include the command itself in the output
 
-Create a comprehensive JSON report that covers all aspects of the scan results. Structure it however makes the most sense for this type of scan, but ensure it includes:
-- whatWeDid: Explanation of what the scan command does
-- whatWeGot: Explanation of what the results mean
-- Summary of findings
-- Detailed findings with all relevant information
-- Security vulnerabilities or concerns (if any)
-- Recommendations for improvement
-- For port scans: ports array with detailed port information
-- Any other relevant sections that would help a user understand the scan results
+Create a comprehensive JSON report that covers all aspects of the server scan results. Structure it as follows:
+{
+  "scanName": "Clear scan name",
+  "scanDescription": "Detailed description of what this scan does",
+  "whatWeDid": "Explanation of what the scan command does",
+  "whatWeGot": "Explanation of what the results mean",
+  "summary": {
+    "totalFindings": <exact number>,
+    "totalRecommendations": <exact number>,
+    "totalVulnerabilities": <exact number>,
+    "status": "safe" | "moderate" | "risk" | "high risk"
+  },
+  "findings": [
+    {
+      "type": "finding type",
+      "name": "finding name",
+      "description": "detailed description",
+      ...
+    }
+  ],
+  "recommendations": [
+    {
+      "description": "recommendation text",
+      ...
+    }
+  ],
+  "vulnerabilities": [
+    {
+      "name": "vulnerability name",
+      "description": "detailed description",
+      "severity": "low" | "medium" | "high" | "critical",
+      "location": "where found",
+      "solution": {
+        "description": "solution description",
+        "steps": ["step 1", "step 2", ...]
+      }
+    }
+  ]
+}
 
 Output ONLY valid JSON. No additional text, no markdown formatting, no explanations outside the JSON - just the JSON object.`;
         
@@ -2660,26 +2691,26 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             }
           };
           
-          // 1. Nikto Scan
+          // 1. Nikto Scan (ONLY COMMAND)
           currentStep = 1;
           event.sender.send('serverscan:progress', {
             stage: 'running',
-            message: `[${currentStep}/${totalSteps}] Running Nikto scan...`,
+            message: `[${currentStep}/${totalSteps}] Running Nikto server scan...`,
             command: 'nikto',
             output: '',
             progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nikto scan...\n`
+            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nikto server scan...\n`
           });
           
           const niktoReportFile = path.join(tempDir, 'nikto_report.txt');
           const niktoReportFileWSL = convertToWSLPath(niktoReportFile);
-          // Optimize nikto command: use -nointeractive to avoid waiting for user input, and -Format txt for faster output
-          const niktoCommand = `${wslPrefix} nikto -h ${targetDomain} -e -nointeractive -Format txt -output "${niktoReportFileWSL}"`;
+          // Nikto command: nikto -h domain -e -output nikto_report.txt
+          const niktoCommand = `${wslPrefix} nikto -h ${targetDomain} -e -output "${niktoReportFileWSL}"`;
           
           const niktoResult = await executeCommand(niktoCommand, 300000);
           scanResults.nikto = { command: niktoCommand, raw: niktoResult.stdout || niktoResult.stderr || '' };
           
-          // Read nikto report file if it exists (optimize: read asynchronously)
+          // Read nikto report file if it exists
           if (fs.existsSync(niktoReportFile)) {
             try {
               const niktoReport = fs.readFileSync(niktoReportFile, 'utf-8');
@@ -2698,236 +2729,9 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nikto scan completed\nRaw Result:\n${scanResults.nikto.raw.substring(0, 2000)}${scanResults.nikto.raw.length > 2000 ? '...' : ''}\n`
           });
           
-          // Run TGPT analysis (blocking) - wait for it to complete before moving to next command
+          // Run TGPT analysis (blocking) - wait for it to complete
           currentStep = 2;
-          await runTgptAnalysis('nikto', 'Nikto Web Server Scan', niktoCommand, scanResults.nikto.raw, currentStep, wslPrefix);
-          
-          // 2. SQLMap Scan
-          currentStep = 3;
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] Running SQLMap scan...`,
-            command: 'sqlmap',
-            output: '',
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SQLMap scan...\n`
-          });
-          
-          const sqlmapCommand = `${wslPrefix} sqlmap -u "${targetUrl}" --dbs --batch`;
-          const sqlmapResult = await executeCommand(sqlmapCommand, 300000);
-          scanResults.sqlmap = { command: sqlmapCommand, raw: sqlmapResult.stdout || sqlmapResult.stderr || '' };
-          
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] SQLMap scan completed`,
-            command: 'sqlmap',
-            output: scanResults.sqlmap.raw,
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] SQLMap scan completed\nRaw Result:\n${scanResults.sqlmap.raw.substring(0, 2000)}${scanResults.sqlmap.raw.length > 2000 ? '...' : ''}\n`
-          });
-          
-          // Immediately run TGPT analysis for SQLMap
-          currentStep = 4;
-          await runTgptAnalysis('sqlmap', 'SQLMap Database Scan', sqlmapCommand, scanResults.sqlmap.raw, currentStep, wslPrefix);
-          
-          // 3. Nmap Version Scan (all ports)
-          currentStep = 5;
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] Running Nmap version scan (all ports)...`,
-            command: 'nmap -sV -p-',
-            output: '',
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan (all ports)...\n`
-          });
-          
-          const nmapScanFile = path.join(tempDir, 'nmap_scan.txt');
-          const nmapScanFileWSL = convertToWSLPath(nmapScanFile);
-          const nmapSVCommand = `${wslPrefix} ${sudoPrefix} nmap -sV -p- -oN "${nmapScanFileWSL}" ${targetDomain}`;
-          
-          const nmapSVResult = await executeCommand(nmapSVCommand, 300000);
-          scanResults.nmapSV = { command: nmapSVCommand, raw: nmapSVResult.stdout || nmapSVResult.stderr || '' };
-          
-          // Read nmap scan file if it exists
-          if (fs.existsSync(nmapScanFile)) {
-            try {
-              const nmapScan = fs.readFileSync(nmapScanFile, 'utf-8');
-              scanResults.nmapSV.raw = nmapScan;
-            } catch (e) {
-              console.error('Failed to read nmap scan file:', e);
-            }
-          }
-          
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] Nmap version scan completed`,
-            command: 'nmap -sV -p-',
-            output: scanResults.nmapSV.raw,
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap version scan completed\nRaw Result:\n${scanResults.nmapSV.raw.substring(0, 2000)}${scanResults.nmapSV.raw.length > 2000 ? '...' : ''}\n`
-          });
-          
-          // Immediately run TGPT analysis for Nmap Version Scan
-          currentStep = 6;
-          await runTgptAnalysis('nmapSV', 'Nmap Version Scan', nmapSVCommand, scanResults.nmapSV.raw, currentStep, wslPrefix);
-          
-          // 4. SSLScan
-          currentStep = 7;
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] Running SSLScan...`,
-            command: 'sslscan',
-            output: '',
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running SSLScan...\n`
-          });
-          
-          const sslscanCommand = `${wslPrefix} sslscan ${targetDomain}`;
-          const sslscanResult = await executeCommand(sslscanCommand, 300000);
-          scanResults.sslscan = { command: sslscanCommand, raw: sslscanResult.stdout || sslscanResult.stderr || '' };
-          
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] SSLScan completed`,
-            command: 'sslscan',
-            output: scanResults.sslscan.raw,
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] SSLScan completed\nRaw Result:\n${scanResults.sslscan.raw.substring(0, 2000)}${scanResults.sslscan.raw.length > 2000 ? '...' : ''}\n`
-          });
-          
-          // Immediately run TGPT analysis for SSLScan
-          currentStep = 8;
-          await runTgptAnalysis('sslscan', 'SSL/TLS Scan', sslscanCommand, scanResults.sslscan.raw, currentStep, wslPrefix);
-          
-          // 5. Host Command (DNS Resolution) - to get IP
-          currentStep = 9;
-          event.sender.send('serverscan:progress', {
-            stage: 'running',
-            message: `[${currentStep}/${totalSteps}] Running DNS resolution (host)...`,
-            command: 'host',
-            output: '',
-            progress: Math.round((currentStep / totalSteps) * 100),
-            consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running DNS resolution (host)...\n`
-          });
-          
-          const hostCommand = `${wslPrefix} host "${targetDomain}"`;
-          const hostResult = await executeCommand(hostCommand, 30000);
-          scanResults.host = { command: hostCommand, raw: hostResult.stdout || hostResult.stderr || '' };
-          
-          // Extract IP from host output
-          extractedIP = extractIPFromHost(scanResults.host.raw);
-          if (extractedIP) {
-            scanResults.host.extractedIP = extractedIP;
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] DNS resolution completed - IP: ${extractedIP}`,
-              command: 'host',
-              output: scanResults.host.raw,
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] DNS resolution completed - IP: ${extractedIP}\nRaw Result:\n${scanResults.host.raw}\nExtracted IP: ${extractedIP}\n`
-            });
-          } else {
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] DNS resolution completed (IP not found)`,
-              command: 'host',
-              output: scanResults.host.raw,
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] DNS resolution completed (IP not found)\nRaw Result:\n${scanResults.host.raw}\n`
-            });
-          }
-          
-          // Immediately run TGPT analysis for Host
-          currentStep = 10;
-          await runTgptAnalysis('host', 'DNS Resolution', hostCommand, scanResults.host.raw, currentStep, wslPrefix);
-          
-          // 6. Nmap Version Scan on IP (using extracted IP)
-          currentStep = 11;
-          if (extractedIP) {
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] Running Nmap version scan on IP ${extractedIP}...`,
-              command: 'nmap -sV',
-              output: '',
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap version scan on IP ${extractedIP}...\n`
-            });
-            
-            const nmapSVIPCommand = `${wslPrefix} ${sudoPrefix} nmap -sV "${extractedIP}"`;
-            const nmapSVIPResult = await executeCommand(nmapSVIPCommand, 300000);
-            scanResults.nmapSVIP = { command: nmapSVIPCommand, raw: nmapSVIPResult.stdout || nmapSVIPResult.stderr || '' };
-            
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] Nmap version scan on IP completed`,
-              command: 'nmap -sV',
-              output: scanResults.nmapSVIP.raw,
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap version scan on IP completed\nRaw Result:\n${scanResults.nmapSVIP.raw.substring(0, 2000)}${scanResults.nmapSVIP.raw.length > 2000 ? '...' : ''}\n`
-            });
-            
-            // Immediately run TGPT analysis for Nmap Version Scan on IP
-            currentStep = 12;
-            await runTgptAnalysis('nmapSVIP', 'Nmap Version Scan (IP)', nmapSVIPCommand, scanResults.nmapSVIP.raw, currentStep, wslPrefix);
-          } else {
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] Skipping Nmap version scan on IP (no IP found)`,
-              command: 'nmap -sV',
-              output: '',
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] Skipping Nmap version scan on IP (no IP found)\n`
-            });
-            scanResults.nmapSVIP = { command: 'skipped', raw: 'IP address not found from host command' };
-            
-            // Still run TGPT analysis even if skipped
-            currentStep = 12;
-            await runTgptAnalysis('nmapSVIP', 'Nmap Version Scan (IP)', 'skipped', scanResults.nmapSVIP.raw, currentStep, wslPrefix);
-          }
-          
-          // 7. Nmap Script Scan on IP (using extracted IP)
-          currentStep = 13;
-          if (extractedIP) {
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] Running Nmap script scan on IP ${extractedIP}...`,
-              command: 'nmap -sC',
-              output: '',
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `\n[${startTimestamp}] [${currentStep}/${totalSteps}] Running Nmap script scan on IP ${extractedIP}...\n`
-            });
-            
-            const nmapSCIPCommand = `${wslPrefix} ${sudoPrefix} nmap -sC "${extractedIP}"`;
-            const nmapSCIPResult = await executeCommand(nmapSCIPCommand, 300000);
-            scanResults.nmapSCIP = { command: nmapSCIPCommand, raw: nmapSCIPResult.stdout || nmapSCIPResult.stderr || '' };
-            
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] Nmap script scan on IP completed`,
-              command: 'nmap -sC',
-              output: scanResults.nmapSCIP.raw,
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `[SUCCESS] [${currentStep}/${totalSteps}] Nmap script scan on IP completed\nRaw Result:\n${scanResults.nmapSCIP.raw.substring(0, 2000)}${scanResults.nmapSCIP.raw.length > 2000 ? '...' : ''}\n`
-            });
-            
-            // Immediately run TGPT analysis for Nmap Script Scan on IP
-            currentStep = 14;
-            await runTgptAnalysis('nmapSCIP', 'Nmap Script Scan (IP)', nmapSCIPCommand, scanResults.nmapSCIP.raw, currentStep, wslPrefix);
-          } else {
-            event.sender.send('serverscan:progress', {
-              stage: 'running',
-              message: `[${currentStep}/${totalSteps}] Skipping Nmap script scan on IP (no IP found)`,
-              command: 'nmap -sC',
-              output: '',
-              progress: Math.round((currentStep / totalSteps) * 100),
-              consoleLog: `[WARNING] [${currentStep}/${totalSteps}] Skipping Nmap script scan on IP (no IP found)\n`
-            });
-            scanResults.nmapSCIP = { command: 'skipped', raw: 'IP address not found from host command' };
-            
-            // Still run TGPT analysis even if skipped
-            currentStep = 14;
-            await runTgptAnalysis('nmapSCIP', 'Nmap Script Scan (IP)', 'skipped', scanResults.nmapSCIP.raw, currentStep, wslPrefix);
-          }
+          await runTgptAnalysis('nikto', 'Server Security Scan', niktoCommand, scanResults.nikto.raw, currentStep, wslPrefix);
           
           // Send final results
           event.sender.send('serverscan:progress', {
@@ -2961,37 +2765,11 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
             extractedIP: extractedIP
           });
           
-          // Send notification after scan completion
-          try {
-            if (Notification.isSupported()) {
-              const notification = new Notification({
-                title: 'Server Scan Completed',
-                body: `Server scan for ${target} has been completed successfully.`,
-                icon: iconPath,
-                urgency: 'normal',
-                timeoutType: 'default'
-              });
-              
-              notification.on('click', () => {
-                if (mainWindowInstance) {
-                  mainWindowInstance.show();
-                  mainWindowInstance.focus();
-                }
-              });
-              
-              notification.show();
-              notificationCount++;
-              updateBadgeCount(notificationCount);
-              console.log('[SUCCESS] [NOTIFICATION] Server scan completion notification shown');
-            }
-          } catch (notifError) {
-            console.log('[WARNING] [NOTIFICATION] Failed to show scan completion notification:', notifError.message);
-          }
+          // Note: Notifications are handled by GlobalScanContext.jsx to avoid duplicates
           
           // Clean up temp files
           try {
             if (fs.existsSync(niktoReportFile)) fs.unlinkSync(niktoReportFile);
-            if (fs.existsSync(nmapScanFile)) fs.unlinkSync(nmapScanFile);
             if (fs.existsSync(tempDir) && fs.readdirSync(tempDir).length === 0) {
               fs.rmdirSync(tempDir);
             }
@@ -3190,7 +2968,7 @@ Output ONLY valid JSON. No additional text, no markdown formatting, no explanati
       let spawnStarted = false
       
       try {
-        wapitiScanChild = spawn('wsl', ['bash', '-c', wslCommand], {
+        wapitiScanChild = spawn('C:\\Windows\\System32\\wsl.exe', ['bash', '-c', wslCommand], {
           stdio: ['pipe', 'pipe', 'pipe']
         })
         
@@ -3588,7 +3366,7 @@ Return ONLY valid JSON. No additional text, no markdown formatting - just the JS
 
           const { spawn } = require('child_process')
           return new Promise((resolve, reject) => {
-            const wslProcess = spawn('wsl', ['bash', '-c', 'tgpt'], {
+            const wslProcess = spawn('C:\\Windows\\System32\\wsl.exe', ['bash', '-c', 'tgpt'], {
               stdio: ['pipe', 'pipe', 'pipe'],
               maxBuffer: 10 * 1024 * 1024,
               shell: false
@@ -5077,7 +4855,7 @@ app.whenReady().then(async () => {
     setTimeout(async () => {
       try {
         console.log('🔍 [STARTUP] Checking for Kali Linux...');
-        const hasWsl = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
+        const hasWsl = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-l', '-q'], { encoding: 'utf8' }).status === 0;
         
         if (hasWsl) {
           const hasKali = checkKaliInstalled();
@@ -5830,7 +5608,7 @@ app.whenReady().then(async () => {
   // Helper: install nmap in WSL if missing
   async function installNmapInWsl() {
     return new Promise((resolve) => {
-      const child = spawn('wsl', ['sudo', 'apt', 'update'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn('C:\\Windows\\System32\\wsl.exe', ['sudo', 'apt', 'update'], { stdio: ['ignore', 'pipe', 'pipe'] });
       let output = '';
       child.stdout.on('data', (d) => output += d.toString());
       child.stderr.on('data', (d) => output += d.toString());
@@ -5839,7 +5617,7 @@ app.whenReady().then(async () => {
           resolve(false);
           return;
         }
-        const installChild = spawn('wsl', ['sudo', 'apt', 'install', '-y', 'nmap'], { stdio: ['ignore', 'pipe', 'pipe'] });
+        const installChild = spawn('C:\\Windows\\System32\\wsl.exe', ['sudo', 'apt', 'install', '-y', 'nmap'], { stdio: ['ignore', 'pipe', 'pipe'] });
         let installOutput = '';
         installChild.stdout.on('data', (d) => installOutput += d.toString());
         installChild.stderr.on('data', (d) => installOutput += d.toString());
@@ -5854,7 +5632,7 @@ app.whenReady().then(async () => {
   async function installSecurityToolsInWsl() {
     return new Promise((resolve) => {
       // First update package lists
-      const updateChild = spawn('wsl', ['-d', 'kali-linux', 'sudo', 'apt', 'update'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const updateChild = spawn('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sudo', 'apt', 'update'], { stdio: ['ignore', 'pipe', 'pipe'] });
       updateChild.on('close', (updateCode) => {
         if (updateCode !== 0) {
           resolve(false);
@@ -5862,7 +5640,7 @@ app.whenReady().then(async () => {
         }
 
         // Install all security tools
-        const installChild = spawn('wsl', ['-d', 'kali-linux', 'sudo', 'apt', 'install', '-y',
+        const installChild = spawn('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sudo', 'apt', 'install', '-y',
           'nmap', 'dnsutils', 'dnsrecon', 'dnsenum', 'nikto', 'sqlmap', 'gobuster'
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -5984,8 +5762,20 @@ app.whenReady().then(async () => {
     const execAsync = promisify(exec);
 
     try {
-      // Check if tgpt is installed
-      const checkCommand = `wsl -d kali-linux -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
+      // Get the default WSL distribution (should be Ubuntu)
+      let wslDistro = 'Ubuntu'; // Default to Ubuntu
+      try {
+        const distro = await wslHelper.getWSLDistro();
+        if (distro) {
+          wslDistro = distro;
+          console.log(`🔧 [TGPT-CHECKER] Using WSL distribution: ${wslDistro}`);
+        }
+      } catch (error) {
+        console.log('🔧 [TGPT-CHECKER] Could not get WSL distro, using default: Ubuntu');
+      }
+      
+      // Check if tgpt is installed - use detected distribution instead of kali-linux
+      const checkCommand = `wsl -d ${wslDistro} -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
       
       console.log('🔧 [TGPT-CHECKER] Running check command...');
       let stdout = '';
@@ -6019,7 +5809,8 @@ app.whenReady().then(async () => {
         });
       }
 
-      const installCommand = `wsl -d kali-linux -u root -- bash -lc "echo '${password}' | sudo -S bash -c 'curl -sSL https://raw.githubusercontent.com/aandrew-me/tgpt/main/install | bash'"`;
+      // Use detected distribution instead of kali-linux, and use root user directly (no sudo needed)
+      const installCommand = `wsl -d ${wslDistro} -u root -- bash -lc "curl -sSL https://raw.githubusercontent.com/aandrew-me/tgpt/main/install | bash"`;
       
       console.log('🔧 [TGPT-CHECKER] Running install command...');
       try {
@@ -6028,7 +5819,7 @@ app.whenReady().then(async () => {
         console.log('🔧 [TGPT-CHECKER] Install output:', installResult.stdout);
         
         // Verify installation
-        const verifyCommand = `wsl -d kali-linux -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
+        const verifyCommand = `wsl -d ${wslDistro} -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
         const verifyResult = await execAsync(verifyCommand, { maxBuffer: 10 * 1024 * 1024 });
         const verified = verifyResult.stdout.includes('tgpt is INSTALLED');
         
@@ -6252,7 +6043,7 @@ app.whenReady().then(async () => {
   function detectWslAndNmap() {
     const result = { hasWsl: false, hasKali: false, wslNmap: false, winNmap: false, details: [] };
     try {
-      const sp = require('child_process').spawnSync('wsl', ['-l', '-q'], { encoding: 'utf8' });
+      const sp = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-l', '-q'], { encoding: 'utf8' });
       if (sp.status === 0 && (sp.stdout || '').trim().length > 0) {
         result.hasWsl = true;
         const distributions = (sp.stdout || '').trim();
@@ -6267,10 +6058,10 @@ app.whenReady().then(async () => {
         }
         
         // Check for DNS tools (dig, dnsrecon, dnsenum) and nmap
-        const digCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which dig || echo __NO_DIG__'], { encoding: 'utf8' });
-        const dnsreconCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which dnsrecon || echo __NO_DNSRECON__'], { encoding: 'utf8' });
-        const dnsenumCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which dnsenum || echo __NO_DNSENUM__'], { encoding: 'utf8' });
-        const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
+        const digCheck = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sh', '-lc', 'which dig || echo __NO_DIG__'], { encoding: 'utf8' });
+        const dnsreconCheck = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sh', '-lc', 'which dnsrecon || echo __NO_DNSRECON__'], { encoding: 'utf8' });
+        const dnsenumCheck = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sh', '-lc', 'which dnsenum || echo __NO_DNSENUM__'], { encoding: 'utf8' });
+        const nmapCheck = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
 
         const toolsStatus = {
           dig: digCheck.status === 0 && (digCheck.stdout || '').includes('/dig'),
@@ -6341,7 +6132,7 @@ app.whenReady().then(async () => {
         if (kaliInstalled) {
           pre.hasKali = checkKaliInstalled(); // Re-check to confirm
           // Re-check nmap after Kali installation
-          const nmapCheck = require('child_process').spawnSync('wsl', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
+          const nmapCheck = require('child_process').spawnSync('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sh', '-lc', 'which nmap || echo __NO_NMAP__'], { encoding: 'utf8' });
           if (nmapCheck.status === 0 && (nmapCheck.stdout || '').includes('/nmap')) {
             pre.wslNmap = true;
             event.sender.send('scan:progress', { stage: 'installing', message: 'nmap found in Kali Linux!' });
@@ -6660,188 +6451,208 @@ app.whenReady().then(async () => {
   ipcMain.handle('wsl:testRootCredentials', async (event, password) => {
     console.log('🔐 [WSL-ROOT-AUTH] ===== HANDLER CALLED =====');
     console.log('🔐 [WSL-ROOT-AUTH] IPC Handler wsl:testRootCredentials invoked');
-    console.log('🔐 [WSL-ROOT-AUTH] Event sender:', event.sender);
-    console.log('🔐 [WSL-ROOT-AUTH] Password parameter:', password);
-    
-    const startTime = Date.now();
-    console.log('🔐 [WSL-ROOT-AUTH] Starting root credential verification...');
-    console.log('🔐 [WSL-ROOT-AUTH] Timestamp:', new Date().toISOString());
     console.log('🔐 [WSL-ROOT-AUTH] Password length:', password ? password.length : 0);
     
+    const startTime = Date.now();
+    const { spawn } = require('child_process');
+    const wslPath = 'C:\\Windows\\System32\\wsl.exe';
+    
     try {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
+      // Step 1: Check if WSL has any users configured
+      console.log('🔐 [WSL-ROOT-AUTH] Step 1: Checking if WSL has users...');
+      const hasUsers = await new Promise((resolve) => {
+        const checkProc = spawn(wslPath, ['whoami'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000
+        });
+        
+        let output = '';
+        let errorOutput = '';
+        let timeoutId = setTimeout(() => {
+          checkProc.kill();
+          resolve(false);
+        }, 5000);
+        
+        checkProc.stdout.on('data', (d) => {
+          output += d.toString();
+        });
+        
+        checkProc.stderr.on('data', (d) => {
+          errorOutput += d.toString();
+        });
+        
+        checkProc.on('close', (code) => {
+          clearTimeout(timeoutId);
+          if (code === 0 && output.trim().length > 0) {
+            console.log('🔐 [WSL-ROOT-AUTH] WSL has users, current user:', output.trim());
+            resolve(true);
+          } else {
+            console.log('🔐 [WSL-ROOT-AUTH] No users found or WSL not configured');
+            resolve(false);
+          }
+        });
+        
+        checkProc.on('error', () => {
+          clearTimeout(timeoutId);
+          resolve(false);
+        });
+      });
       
-      // Step 1: Execute wsl command
-      console.log('🔐 [WSL-ROOT-AUTH] Step 1: Executing wsl command...');
-      const wslCommand = 'wsl';
-      console.log('🔐 [WSL-ROOT-AUTH] WSL command:', wslCommand);
-      
-      // Step 2: Run sudo su command
-      console.log('🔐 [WSL-ROOT-AUTH] Step 2: Running sudo su command...');
-      const sudoSuCommand = 'sudo su';
-      console.log('🔐 [WSL-ROOT-AUTH] Sudo su command:', sudoSuCommand);
-      
-      // Step 3: Provide user password
-      console.log('🔐 [WSL-ROOT-AUTH] Step 3: Providing user password...');
-      console.log('🔐 [WSL-ROOT-AUTH] Password length:', password.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Password (DEBUG):', password.replace(/./g, '*'));
-      
-      // Use interactive approach: wsl with expect-like behavior
-      // This approach simulates the manual process: wsl -> sudo su -> password -> whoami
-      const testCommand = `wsl -e bash -c "echo '${password}' | sudo -S whoami"`;
-      console.log('🔐 [WSL-ROOT-AUTH] Final command (DEBUG):', testCommand.replace(password, '***'));
-      console.log('🔐 [WSL-ROOT-AUTH] Full final command (DEBUG):', testCommand);
-      console.log('🔐 [WSL-ROOT-AUTH] Using: wsl -e bash -c with sudo -S whoami');
-      
-      // First, test if WSL is working at all
-      console.log('🔐 [WSL-ROOT-AUTH] Testing basic WSL connectivity...');
-      try {
-        const basicTest = await execAsync('wsl echo "WSL is working"');
-        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test result:', basicTest.stdout.trim());
-      } catch (basicError) {
-        console.log('🔐 [WSL-ROOT-AUTH] Basic WSL test failed:', basicError.message);
-        return { 
-          success: false, 
-          error: 'WSL is not working properly: ' + basicError.message,
-          debug: { basicError: basicError.message }
-        };
+      // Step 2: If no users exist, set root password instead of testing
+      // Ubuntu typically has a default user, but root password might not be set
+      if (!hasUsers) {
+        console.log('🔐 [WSL-ROOT-AUTH] No users found or WSL not fully configured. Setting root password...');
+        const setPasswordResult = await new Promise((resolve) => {
+          // For Ubuntu, we need to set password for root user
+          // Use printf to avoid echo issues with special characters
+          const escapedPassword = password.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+          const setPasswordCommand = `printf '%s\\n%s\\n' '${escapedPassword}' '${escapedPassword}' | sudo passwd root`;
+          const setPassProc = spawn(wslPath, ['bash', '-c', setPasswordCommand], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 8000
+          });
+          
+          let output = '';
+          let errorOutput = '';
+          let timeoutId = setTimeout(() => {
+            setPassProc.kill();
+            console.log('🔐 [WSL-ROOT-AUTH] Password setting timeout, but continuing...');
+            resolve({ success: true, warning: 'Password setting timeout' });
+          }, 8000);
+          
+          setPassProc.stdout.on('data', (d) => {
+            output += d.toString();
+          });
+          
+          setPassProc.stderr.on('data', (d) => {
+            errorOutput += d.toString();
+          });
+          
+          setPassProc.on('close', (code) => {
+            clearTimeout(timeoutId);
+            // Ubuntu might require sudo, so we try without sudo first, then with
+            if (code === 0 || output.includes('successfully') || output.includes('updated') || output.includes('password updated')) {
+              console.log('🔐 [WSL-ROOT-AUTH] Root password set successfully');
+              resolve({ success: true });
+            } else if (errorOutput.includes('sudo') || errorOutput.includes('permission')) {
+              // Try with sudo for the default user
+              console.log('🔐 [WSL-ROOT-AUTH] Trying with sudo for default user...');
+              resolve({ success: true, needsSudo: true });
+            } else {
+              console.log('🔐 [WSL-ROOT-AUTH] Password setting uncertain, but continuing to test...');
+              resolve({ success: true, warning: 'Password setting uncertain' });
+            }
+          });
+          
+          setPassProc.on('error', (err) => {
+            clearTimeout(timeoutId);
+            console.log('🔐 [WSL-ROOT-AUTH] Password setting error:', err.message);
+            // Continue anyway - might be able to test existing credentials
+            resolve({ success: true, warning: err.message });
+          });
+        });
+        
+        // If password setting needs sudo, try with default user
+        if (setPasswordResult.needsSudo) {
+          console.log('🔐 [WSL-ROOT-AUTH] Attempting to set root password with sudo...');
+          const sudoSetResult = await new Promise((resolve) => {
+            const escapedPassword = password.replace(/\\/g, '\\\\').replace(/'/g, "'\\''");
+            // Get default username first, then set root password
+            const sudoCommand = `DEFAULT_USER=$(whoami) && echo '${escapedPassword}' | sudo -S passwd root <<< '${escapedPassword}\\n${escapedPassword}'`;
+            const sudoProc = spawn(wslPath, ['bash', '-c', sudoCommand], {
+              stdio: ['ignore', 'pipe', 'pipe'],
+              timeout: 8000
+            });
+            
+            let timeoutId = setTimeout(() => {
+              sudoProc.kill();
+              resolve({ success: true, warning: 'Sudo password setting timeout' });
+            }, 8000);
+            
+            sudoProc.on('close', () => {
+              clearTimeout(timeoutId);
+              resolve({ success: true });
+            });
+            
+            sudoProc.on('error', () => {
+              clearTimeout(timeoutId);
+              resolve({ success: true, warning: 'Sudo password setting error' });
+            });
+          });
+        }
       }
       
-      console.log('🔐 [WSL-ROOT-AUTH] Executing final command...');
-      console.log('🔐 [WSL-ROOT-AUTH] Command timeout: 10000ms');
-      
-      // Add timeout to prevent hanging
-      const { stdout, stderr } = await Promise.race([
-        execAsync(testCommand),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Command timeout after 10 seconds')), 10000)
-        )
-      ]);
-      const duration = Date.now() - startTime;
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Command execution completed in', duration, 'ms');
-      console.log('🔐 [WSL-ROOT-AUTH] ===== EXECUTION RESULTS =====');
-      console.log('🔐 [WSL-ROOT-AUTH] STDOUT:', JSON.stringify(stdout));
-      console.log('🔐 [WSL-ROOT-AUTH] STDERR:', JSON.stringify(stderr));
-      console.log('🔐 [WSL-ROOT-AUTH] STDOUT (trimmed):', JSON.stringify(stdout.trim()));
-      console.log('🔐 [WSL-ROOT-AUTH] STDERR (trimmed):', JSON.stringify(stderr.trim()));
-      
-      const output = stdout.trim();
-      const errorOutput = stderr.trim();
-      
-      console.log('🔐 [WSL-ROOT-AUTH] ===== ANALYSIS =====');
-      console.log('🔐 [WSL-ROOT-AUTH] Raw output length:', output.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Raw error length:', errorOutput.length);
-      console.log('🔐 [WSL-ROOT-AUTH] Output contains "root":', output.includes('root'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "Authentication failure":', errorOutput.includes('Authentication failure'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "sudo":', errorOutput.includes('sudo'));
-      console.log('🔐 [WSL-ROOT-AUTH] Error contains "su":', errorOutput.includes('su'));
-      
-      console.log('🔐 [WSL-ROOT-AUTH] Checking if output equals "root"...');
-      console.log('🔐 [WSL-ROOT-AUTH] Output === "root":', output === 'root');
-      
-      if (output === 'root') {
-        console.log('✅ [WSL-ROOT-AUTH] WSL root credentials VALID');
-        console.log('✅ [WSL-ROOT-AUTH] Authentication successful');
-        return { success: true, debug: { duration, stdout, stderr } };
-      } else {
-        console.log('❌ [WSL-ROOT-AUTH] First method failed, trying alternative approach...');
+      // Step 3: Test credentials using spawn with timeout
+      console.log('🔐 [WSL-ROOT-AUTH] Step 2: Testing credentials...');
+      const testResult = await new Promise((resolve) => {
+        // Escape password for bash
+        const escapedPassword = password.replace(/'/g, "'\\''");
+        const testCommand = `echo '${escapedPassword}' | sudo -S whoami`;
+        const testProc = spawn(wslPath, ['bash', '-c', testCommand], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000
+        });
         
-        // Alternative approach: Try with expect-like behavior using printf
-        console.log('🔐 [WSL-ROOT-AUTH] Alternative: Trying printf approach...');
-        const altCommand = `wsl -e bash -c "printf '${password}\\n' | sudo -S whoami"`;
-        console.log('🔐 [WSL-ROOT-AUTH] Alternative command (DEBUG):', altCommand.replace(password, '***'));
-        console.log('🔐 [WSL-ROOT-AUTH] Full alternative command (DEBUG):', altCommand);
+        let stdout = '';
+        let stderr = '';
+        let timeoutId = setTimeout(() => {
+          testProc.kill();
+          resolve({ success: false, error: 'Command timeout after 5 seconds', timeout: true });
+        }, 5000);
         
-        try {
-          console.log('🔐 [WSL-ROOT-AUTH] Executing alternative command with timeout...');
-          const { stdout: altStdout, stderr: altStderr } = await Promise.race([
-            execAsync(altCommand),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('Alternative command timeout after 10 seconds')), 10000)
-            )
-          ]);
-          const altOutput = altStdout.trim();
+        testProc.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+        
+        testProc.stderr.on('data', (d) => {
+          stderr += d.toString();
+        });
+        
+        testProc.on('close', (code) => {
+          clearTimeout(timeoutId);
+          const output = stdout.trim();
+          console.log('🔐 [WSL-ROOT-AUTH] Command output:', output);
+          console.log('🔐 [WSL-ROOT-AUTH] Exit code:', code);
           
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDOUT:', JSON.stringify(altStdout));
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative STDERR:', JSON.stringify(altStderr));
-          console.log('🔐 [WSL-ROOT-AUTH] Alternative output (trimmed):', JSON.stringify(altOutput));
-          
-          if (altOutput === 'root') {
-            console.log('✅ [WSL-ROOT-AUTH] Alternative method SUCCESS - WSL root credentials VALID');
-            return { success: true, debug: { duration, stdout: altStdout, stderr: altStderr, method: 'alternative' } };
+          if (output === 'root') {
+            resolve({ success: true, stdout, stderr });
           } else {
-            console.log('❌ [WSL-ROOT-AUTH] Both methods failed');
-            console.log('❌ [WSL-ROOT-AUTH] Expected output: "root"');
-            console.log('❌ [WSL-ROOT-AUTH] Method 1 output:', JSON.stringify(output));
-            console.log('❌ [WSL-ROOT-AUTH] Method 2 output:', JSON.stringify(altOutput));
-            console.log('❌ [WSL-ROOT-AUTH] Authentication failed');
-            return { 
+            resolve({ 
               success: false, 
-              error: 'Invalid root password', 
-              debug: { 
-                duration, 
-                method1: { stdout, stderr, output },
-                method2: { stdout: altStdout, stderr: altStderr, output: altOutput },
-                expected: 'root'
-              } 
-            };
+              error: 'Invalid credentials or user not found',
+              stdout,
+              stderr,
+              code
+            });
           }
-        } catch (altError) {
-          console.log('❌ [WSL-ROOT-AUTH] Alternative method also failed:', altError.message);
-          console.log('❌ [WSL-ROOT-AUTH] Trying third method: direct sudo su approach...');
-          
-          // Third approach: Try to simulate the exact manual process
-          try {
-            const thirdCommand = `wsl -e bash -c "echo '${password}' | sudo -S su -c 'whoami'"`;
-            console.log('🔐 [WSL-ROOT-AUTH] Third command (DEBUG):', thirdCommand.replace(password, '***'));
-            
-            const { stdout: thirdStdout, stderr: thirdStderr } = await Promise.race([
-              execAsync(thirdCommand),
-              new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Third method timeout after 10 seconds')), 10000)
-              )
-            ]);
-            
-            const thirdOutput = thirdStdout.trim();
-            console.log('🔐 [WSL-ROOT-AUTH] Third method STDOUT:', JSON.stringify(thirdStdout));
-            console.log('🔐 [WSL-ROOT-AUTH] Third method STDERR:', JSON.stringify(thirdStderr));
-            console.log('🔐 [WSL-ROOT-AUTH] Third method output (trimmed):', JSON.stringify(thirdOutput));
-            
-            if (thirdOutput === 'root') {
-              console.log('✅ [WSL-ROOT-AUTH] Third method SUCCESS - WSL root credentials VALID');
-              return { success: true, debug: { duration, stdout: thirdStdout, stderr: thirdStderr, method: 'third' } };
-            } else {
-              console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
-              return { 
-                success: false, 
-                error: 'Invalid root password - all authentication methods failed', 
-                debug: { 
-                  duration, 
-                  method1: { stdout, stderr, output },
-                  method2: { error: altError.message },
-                  method3: { stdout: thirdStdout, stderr: thirdStderr, output: thirdOutput },
-                  expected: 'root'
-                } 
-              };
-            }
-          } catch (thirdError) {
-            console.log('❌ [WSL-ROOT-AUTH] All three methods failed');
-            return { 
-              success: false, 
-              error: 'Invalid root password - all authentication methods failed', 
-              debug: { 
-                duration, 
-                method1: { stdout, stderr, output },
-                method2: { error: altError.message },
-                method3: { error: thirdError.message },
-                expected: 'root'
-              } 
-            };
+        });
+        
+        testProc.on('error', (err) => {
+          clearTimeout(timeoutId);
+          resolve({ success: false, error: err.message });
+        });
+      });
+      
+      const duration = Date.now() - startTime;
+      console.log('🔐 [WSL-ROOT-AUTH] Test completed in', duration, 'ms');
+      
+      if (testResult.success) {
+        return { 
+          success: true, 
+          debug: { duration, stdout: testResult.stdout, stderr: testResult.stderr } 
+        };
+      } else {
+        return {
+          success: false,
+          error: testResult.error || 'Credentials validation failed',
+          debug: {
+            duration,
+            stdout: testResult.stdout,
+            stderr: testResult.stderr,
+            code: testResult.code,
+            timeout: testResult.timeout
           }
-        }
+        };
       }
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -6869,23 +6680,273 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('wsl:getUsername', async () => {
     try {
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
+      const { spawn } = require('child_process');
+      const wslPath = 'C:\\Windows\\System32\\wsl.exe';
       
-      // Get the default WSL username (this is what shows up when you run 'wsl')
-      const command = 'wsl whoami';
-      console.log('👤 Getting WSL username...');
-      console.log('📝 Command:', command);
-      
-      const { stdout } = await execAsync(command);
-      const username = stdout.trim();
-      console.log('📤 Username:', username);
-      
-      return { username };
+      return new Promise((resolve) => {
+        const proc = spawn(wslPath, ['whoami'], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000
+        });
+        
+        let output = '';
+        let timeoutId = setTimeout(() => {
+          proc.kill();
+          resolve({ username: 'WSL User' });
+        }, 5000);
+        
+        proc.stdout.on('data', (d) => {
+          output += d.toString();
+        });
+        
+        proc.on('close', (code) => {
+          clearTimeout(timeoutId);
+          if (code === 0 && output.trim().length > 0) {
+            const username = output.trim();
+            console.log('📤 Username:', username);
+            resolve({ username });
+          } else {
+            console.log('❌ Failed to get WSL username');
+            resolve({ username: 'WSL User' });
+          }
+        });
+        
+        proc.on('error', () => {
+          clearTimeout(timeoutId);
+          resolve({ username: 'WSL User' });
+        });
+      });
     } catch (error) {
       console.log('❌ Failed to get WSL username:', error.message);
       return { username: 'WSL User' };
+    }
+  });
+
+  // Create new WSL user in Ubuntu
+  ipcMain.handle('wsl:createUser', async (event, username, password) => {
+    console.log('👤 [WSL-USER-CREATE] Creating new WSL user...');
+    console.log('👤 [WSL-USER-CREATE] Username:', username);
+    console.log('👤 [WSL-USER-CREATE] Password length:', password ? password.length : 0);
+    
+    const { spawn } = require('child_process');
+    const wslPath = 'C:\\Windows\\System32\\wsl.exe';
+    
+    try {
+      // Step 1: Check if user already exists
+      const userExists = await new Promise((resolve) => {
+        const checkProc = spawn(wslPath, ['bash', '-c', `id -u ${username} >/dev/null 2>&1 && echo 'exists' || echo 'notexists'`], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000
+        });
+        
+        let output = '';
+        let timeoutId = setTimeout(() => {
+          checkProc.kill();
+          resolve(false);
+        }, 5000);
+        
+        checkProc.stdout.on('data', (d) => {
+          output += d.toString();
+        });
+        
+        checkProc.on('close', () => {
+          clearTimeout(timeoutId);
+          resolve(output.trim().includes('exists'));
+        });
+        
+        checkProc.on('error', () => {
+          clearTimeout(timeoutId);
+          resolve(false);
+        });
+      });
+      
+      if (userExists) {
+        console.log('⚠️ [WSL-USER-CREATE] User already exists');
+        return { 
+          success: false, 
+          error: `User "${username}" already exists. Please choose a different username.` 
+        };
+      }
+      
+      // Step 2: Create user using adduser (interactive) or useradd + passwd
+      // Use useradd for non-interactive creation
+      const createResult = await new Promise((resolve) => {
+        // Escape special characters in password
+        const escapedPassword = password.replace(/'/g, "'\\''").replace(/"/g, '\\"');
+        
+        // Create user with home directory and shell
+        const createCommand = `useradd -m -s /bin/bash ${username} && echo '${escapedPassword}' | passwd ${username} --stdin 2>/dev/null || (echo '${escapedPassword}' && echo '${escapedPassword}') | passwd ${username}`;
+        
+        const createProc = spawn(wslPath, ['bash', '-c', createCommand], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 15000
+        });
+        
+        let stdout = '';
+        let stderr = '';
+        let timeoutId = setTimeout(() => {
+          createProc.kill();
+          resolve({ success: false, error: 'User creation timeout' });
+        }, 15000);
+        
+        createProc.stdout.on('data', (d) => {
+          stdout += d.toString();
+        });
+        
+        createProc.stderr.on('data', (d) => {
+          stderr += d.toString();
+        });
+        
+        createProc.on('close', (code) => {
+          clearTimeout(timeoutId);
+          if (code === 0 || stdout.includes('successfully') || stdout.includes('updated') || stderr.includes('successfully')) {
+            console.log('✅ [WSL-USER-CREATE] User created successfully');
+            resolve({ success: true });
+          } else {
+            // Try alternative method: use chpasswd
+            console.log('⚠️ [WSL-USER-CREATE] First method failed, trying chpasswd...');
+            resolve({ success: false, needsAlternative: true, stdout, stderr });
+          }
+        });
+        
+        createProc.on('error', (err) => {
+          clearTimeout(timeoutId);
+          console.log('❌ [WSL-USER-CREATE] Error:', err.message);
+          resolve({ success: false, error: err.message });
+        });
+      });
+      
+      // If first method failed, try alternative with chpasswd
+      if (!createResult.success && createResult.needsAlternative) {
+        console.log('🔄 [WSL-USER-CREATE] Trying alternative method with chpasswd...');
+        const altResult = await new Promise((resolve) => {
+          const escapedPassword = password.replace(/'/g, "'\\''").replace(/"/g, '\\"');
+          // Create user first, then set password with chpasswd
+          const altCommand = `useradd -m -s /bin/bash ${username} && echo '${username}:${escapedPassword}' | chpasswd`;
+          
+          const altProc = spawn(wslPath, ['bash', '-c', altCommand], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 15000
+          });
+          
+          let stdout = '';
+          let stderr = '';
+          let timeoutId = setTimeout(() => {
+            altProc.kill();
+            resolve({ success: false, error: 'Alternative user creation timeout' });
+          }, 15000);
+          
+          altProc.stdout.on('data', (d) => {
+            stdout += d.toString();
+          });
+          
+          altProc.stderr.on('data', (d) => {
+            stderr += d.toString();
+          });
+          
+          altProc.on('close', (code) => {
+            clearTimeout(timeoutId);
+            if (code === 0) {
+              console.log('✅ [WSL-USER-CREATE] User created with alternative method');
+              resolve({ success: true });
+            } else {
+              console.log('❌ [WSL-USER-CREATE] Alternative method also failed');
+              resolve({ success: false, error: `User creation failed: ${stderr || stdout}` });
+            }
+          });
+          
+          altProc.on('error', (err) => {
+            clearTimeout(timeoutId);
+            resolve({ success: false, error: err.message });
+          });
+        });
+        
+        if (!altResult.success) {
+          return altResult;
+        }
+      }
+      
+      // Step 3: Add user to sudo group (optional but recommended)
+      try {
+        const addSudoResult = await new Promise((resolve) => {
+          const sudoCommand = `usermod -aG sudo ${username}`;
+          const sudoProc = spawn(wslPath, ['bash', '-c', sudoCommand], {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            timeout: 5000
+          });
+          
+          let timeoutId = setTimeout(() => {
+            sudoProc.kill();
+            resolve({ success: false });
+          }, 5000);
+          
+          sudoProc.on('close', (code) => {
+            clearTimeout(timeoutId);
+            resolve({ success: code === 0 });
+          });
+          
+          sudoProc.on('error', () => {
+            clearTimeout(timeoutId);
+            resolve({ success: false });
+          });
+        });
+        
+        if (addSudoResult.success) {
+          console.log('✅ [WSL-USER-CREATE] User added to sudo group');
+        } else {
+          console.log('⚠️ [WSL-USER-CREATE] Could not add user to sudo group (non-critical)');
+        }
+      } catch (error) {
+        console.log('⚠️ [WSL-USER-CREATE] Error adding to sudo group (non-critical):', error.message);
+      }
+      
+      // Step 4: Verify user was created
+      const verifyResult = await new Promise((resolve) => {
+        const verifyProc = spawn(wslPath, ['bash', '-c', `id -u ${username} >/dev/null 2>&1 && echo 'exists' || echo 'notexists'`], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000
+        });
+        
+        let output = '';
+        let timeoutId = setTimeout(() => {
+          verifyProc.kill();
+          resolve(false);
+        }, 5000);
+        
+        verifyProc.stdout.on('data', (d) => {
+          output += d.toString();
+        });
+        
+        verifyProc.on('close', () => {
+          clearTimeout(timeoutId);
+          resolve(output.trim().includes('exists'));
+        });
+        
+        verifyProc.on('error', () => {
+          clearTimeout(timeoutId);
+          resolve(false);
+        });
+      });
+      
+      if (verifyResult) {
+        console.log('✅ [WSL-USER-CREATE] User verification successful');
+        return { 
+          success: true, 
+          message: `User "${username}" created successfully in WSL` 
+        };
+      } else {
+        console.log('⚠️ [WSL-USER-CREATE] User creation uncertain - verification failed');
+        return { 
+          success: false, 
+          error: 'User creation completed but verification failed. Please try logging in manually.' 
+        };
+      }
+    } catch (error) {
+      console.log('❌ [WSL-USER-CREATE] User creation error:', error.message);
+      return { 
+        success: false, 
+        error: error.message || 'Failed to create WSL user' 
+      };
     }
   });
 
@@ -7090,7 +7151,7 @@ app.whenReady().then(async () => {
       
       return new Promise((resolve, reject) => {
         // Execute tgpt in WSL and pipe prompt content directly via stdin
-        const wslProcess = spawn('wsl', ['bash', '-c', 'tgpt'], {
+        const wslProcess = spawn('C:\\Windows\\System32\\wsl.exe', ['bash', '-c', 'tgpt'], {
           stdio: ['pipe', 'pipe', 'pipe'],
           maxBuffer: 10 * 1024 * 1024,
           shell: false
@@ -7380,18 +7441,21 @@ app.whenReady().then(async () => {
       const { promisify } = require('util');
       const execAsync = promisify(exec);
       
+      // Use full path to wsl.exe for production compatibility
+      const wslPath = 'C:\\Windows\\System32\\wsl.exe';
+      
       // Run command as root user: wsl -u username, then sudo su with password, then execute command
       // The command is executed in a single bash session to maintain context
       // Escape single quotes in command by replacing ' with '\'' (bash escaping)
       const escapedCommand = command.replace(/'/g, "'\\''");
-      // Build the full command: wsl -u username bash -c "echo 'password' | sudo -S bash -c 'command'"
-      const fullCommand = `wsl -u ${username} bash -c "echo '${password}' | sudo -S bash -c '${escapedCommand}'"`;
+      // Build the full command: wsl.exe -u username bash -c "echo 'password' | sudo -S bash -c 'command'"
+      const fullCommand = `"${wslPath}" -u ${username} bash -c "echo '${password}' | sudo -S bash -c '${escapedCommand}'"`;
       
       console.log('🚀 Running WSL command as root...');
       console.log('👤 Username:', username);
       console.log('📝 Original command:', command);
       console.log('📝 Full command:', fullCommand.replace(password, '***'));
-      console.log('📋 [INFO] This simulates: wsl -> sudo su -> root@ -> execute command');
+      console.log('📋 [INFO] This simulates: wsl.exe -> sudo su -> root@ -> execute command');
       
       const { stdout, stderr } = await execAsync(fullCommand, {
         maxBuffer: 10 * 1024 * 1024,
@@ -7578,7 +7642,7 @@ app.whenReady().then(async () => {
       
       // Execute using spawn - pass command parts directly to WSL
       const { spawn } = require('child_process');
-      const child = spawn('wsl', commandParts, {
+      const child = spawn('C:\\Windows\\System32\\wsl.exe', commandParts, {
         stdio: ['ignore', 'pipe', 'pipe'],
         cwd: path.join(__dirname, '..', '..')
       });
@@ -7653,7 +7717,7 @@ app.whenReady().then(async () => {
         
         // Build basic command
         const basicCmd = ['dnstwist', '--format', 'json', '--registered', targetDomain];
-        const basicChild = spawn('wsl', basicCmd, {
+        const basicChild = spawn('C:\\Windows\\System32\\wsl.exe', basicCmd, {
           stdio: ['ignore', 'pipe', 'pipe']
         });
         
@@ -8325,7 +8389,23 @@ app.whenReady().then(async () => {
         const base = targetDistro ? `wsl -d ${targetDistro} -u root` : `wsl -u root`;
         const fullCommand = `${base} -- ${executable} ${args.join(' ')}`;
         const start = Date.now();
-        const { stdout, stderr } = await execAsync(fullCommand, { windowsHide: true, maxBuffer: 10 * 1024 * 1024 });
+        
+        // Check if this is a subdomain enumeration command (amass enum)
+        // For subdomain enumeration, use no timeout to allow full completion
+        const isSubdomainEnum = command.includes('amass enum') || command.includes('amass_subdomains');
+        const execOptions = { 
+          windowsHide: true, 
+          maxBuffer: 10 * 1024 * 1024 
+        };
+        
+        // For subdomain enumeration, don't set a timeout (let it run to completion)
+        // For other commands, use default behavior (no explicit timeout means Node.js will wait)
+        if (!isSubdomainEnum) {
+          // For other commands, you can optionally set a timeout here if needed
+          // execOptions.timeout = 300000; // 5 minutes default
+        }
+        
+        const { stdout, stderr } = await execAsync(fullCommand, execOptions);
         const duration = Date.now() - start;
         return { success: true, stdout, stderr, code: 0, timedOut: false, duration };
       };

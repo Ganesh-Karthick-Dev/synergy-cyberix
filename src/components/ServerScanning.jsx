@@ -202,54 +202,118 @@ function ServerScanning() {
   const handleExportPDF = async () => {
     if (!scanResults) {
       alert('No scan results to export')
-        return
+      return
     }
 
     try {
       const doc = new jsPDF()
-      let yPos = 20
       const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
       const margin = 15
+      const borderMargin = 5 // Small border margin
       const maxWidth = pageWidth - 2 * margin
+      const footerY = pageHeight - 15
+      let yPos = 20
+      let isFirstPage = true
+
+      // Helper function to draw page border - make it visible
+      const drawPageBorder = () => {
+        doc.setDrawColor(100, 100, 100) // Darker gray border for visibility
+        doc.setLineWidth(1) // Thicker line for visibility
+        doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
+      }
+
+      // Helper function to draw footer
+      const drawFooter = (pageNum, totalPages) => {
+        doc.setFontSize(9)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(128, 128, 128)
+        // Left footer
+        doc.text('Cyberix - A Webnox Product', margin, footerY, { align: 'left' })
+        // Right footer - page number
+        doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, footerY, { align: 'right' })
+      }
 
       // Helper function to add new page if needed
       const checkNewPage = (requiredSpace = 10) => {
-        if (yPos > 280) {
+        if (yPos + requiredSpace > footerY - 10) {
+          // Draw border and footer on current page before adding new one
+          drawPageBorder()
+          const currentPage = doc.internal.getNumberOfPages()
+          drawFooter(currentPage, currentPage) // Will update total later
+          
           doc.addPage()
+          isFirstPage = false
           yPos = 20
         }
       }
 
-      // Title
-      doc.setFontSize(20)
-      doc.setFont('helvetica', 'bold')
-      doc.text('Server Scan Security Report', margin, yPos)
-      yPos += 10
-
-      // Scan Info
-      doc.setFontSize(12)
-      doc.setFont('helvetica', 'normal')
-      doc.text(`Target: ${scanResults.target || target}`, margin, yPos)
-      yPos += 7
-      if (scanResults.extractedIP) {
-        doc.text(`IP Address: ${scanResults.extractedIP}`, margin, yPos)
-        yPos += 7
-      }
-      doc.text(`Scan Date: ${new Date().toLocaleString()}`, margin, yPos)
-      yPos += 10
-
-      // Get analyzed results
+      // Calculate scan metadata
+      const startTime = scanTimer?.startTime ? new Date(scanTimer.startTime) : new Date()
+      const completedTime = scanTimer?.completedTime || new Date()
+      const duration = scanTimer?.elapsed || (completedTime - startTime) / 1000 // in seconds
+      const durationMinutes = Math.floor(duration / 60)
+      const durationSeconds = Math.floor(duration % 60)
+      const durationText = `${durationMinutes}m ${durationSeconds}s`
+      
+      // Get analyzed results first
       const analyzedResults = scanResults?.results?.json?.analyzedResults
+      
+      // First Page Header - Scan Information
+      doc.setFontSize(18)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0, 0, 0)
+      const scanName = analyzedResults?.nikto?.scanName || 'Server Security Scan'
+      const scanDescription = analyzedResults?.nikto?.scanDescription || 'Comprehensive web server security assessment using Nikto scanner to identify vulnerabilities, misconfigurations, and security issues.'
+      doc.text(scanName, margin, yPos, { align: 'left' })
+      yPos += 8
+
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      
+      // Scan Description
+      if (scanDescription) {
+        checkNewPage(10)
+        doc.setFont('helvetica', 'italic')
+        const descLines = doc.splitTextToSize(scanDescription, maxWidth)
+        descLines.forEach(line => {
+          checkNewPage(5)
+          doc.text(line, margin, yPos)
+          yPos += 5
+        })
+        yPos += 3
+      }
+      
+      doc.setFont('helvetica', 'normal')
+      
+      // Scan Info Table with proper date/time formatting
+      const infoItems = [
+        { label: 'Scan Name:', value: scanName },
+        { label: 'Total Time Taken:', value: durationText },
+        { label: 'Started Date & Time:', value: formatDateTime(startTime) },
+        { label: 'Completed Date & Time:', value: formatDateTime(completedTime) },
+        { label: 'URL Tested:', value: scanResults.target || target || 'N/A' }
+      ]
+
+      infoItems.forEach((item, idx) => {
+        checkNewPage(7)
+        doc.setFont('helvetica', 'bold')
+        doc.text(item.label, margin, yPos)
+        doc.setFont('helvetica', 'normal')
+        const valueX = margin + 50
+        const valueLines = doc.splitTextToSize(item.value, maxWidth - 50)
+        valueLines.forEach((line, lineIdx) => {
+          doc.text(line, valueX, yPos + (lineIdx * 5))
+        })
+        yPos += Math.max(5, valueLines.length * 5) + 2
+      })
+      
+      yPos += 5
+
       if (analyzedResults && Object.keys(analyzedResults).length > 0) {
-        // Command configs in order for server scan
+        // Command configs - Only Nikto
         const commandConfigs = [
-          { key: 'nikto', title: 'Nikto Web Server Scan' },
-          { key: 'sqlmap', title: 'SQLMap Database Scan' },
-          { key: 'nmapSV', title: 'Nmap Version Scan (All Ports)' },
-          { key: 'sslscan', title: 'SSL/TLS Scan' },
-          { key: 'host', title: 'DNS Resolution' },
-          { key: 'nmapSVIP', title: 'Nmap Version Scan (IP)' },
-          { key: 'nmapSCIP', title: 'Nmap Script Scan (IP)' }
+          { key: 'nikto', title: 'Server Security Scan', description: scanDescription }
         ]
 
         // Export each command result
@@ -260,163 +324,244 @@ function ServerScanning() {
           checkNewPage(20)
           yPos += 5
 
-          // Command Title
+          // Command Title and Description
           doc.setFontSize(16)
           doc.setFont('helvetica', 'bold')
           doc.text(config.title, margin, yPos)
           yPos += 8
+          
+          if (config.description) {
+            doc.setFontSize(10)
+            doc.setFont('helvetica', 'italic')
+            const descLines = doc.splitTextToSize(config.description, maxWidth)
+            descLines.forEach(line => {
+              checkNewPage(5)
+              doc.text(line, margin, yPos)
+              yPos += 5
+            })
+            yPos += 3
+          }
 
           doc.setFontSize(11)
           doc.setFont('helvetica', 'normal')
 
-          // What We Did
-          if (analyzed.whatWeDid) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('What We Did:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            const whatWeDidText = typeof analyzed.whatWeDid === 'string' ? analyzed.whatWeDid : JSON.stringify(analyzed.whatWeDid)
-            const whatWeDidLines = doc.splitTextToSize(whatWeDidText, maxWidth)
-            whatWeDidLines.forEach(line => {
-              checkNewPage(7)
-              doc.text(line, margin, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // What We Got
-          if (analyzed.whatWeGot) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('What We Got:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            const whatWeGotText = typeof analyzed.whatWeGot === 'string' ? analyzed.whatWeGot : JSON.stringify(analyzed.whatWeGot)
-            const whatWeGotLines = doc.splitTextToSize(whatWeGotText, maxWidth)
-            whatWeGotLines.forEach(line => {
-              checkNewPage(7)
-              doc.text(line, margin, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // Summary
-          if (analyzed.summary && typeof analyzed.summary === 'object') {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text('Summary:', margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            Object.entries(analyzed.summary).forEach(([key, value]) => {
-              if (value === null || value === undefined) return
-              checkNewPage(7)
-              const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
-              const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-              doc.text(`${formattedKey}: ${displayValue}`, margin + 5, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // Ports (for port scans)
-          if ((config.key === 'nmapSV' || config.key === 'nmapSVIP' || config.key === 'nmapSCIP') && analyzed.ports && Array.isArray(analyzed.ports) && analyzed.ports.length > 0) {
-            checkNewPage(15)
-            doc.setFont('helvetica', 'bold')
-            doc.text(`Port Details (${analyzed.ports.length} ports):`, margin, yPos)
-            yPos += 6
-            doc.setFont('helvetica', 'normal')
-            analyzed.ports.forEach(port => {
-              checkNewPage(7)
-              const portNum = port.port || port.number || port.portNumber || 'N/A'
-              const state = port.state || 'unknown'
-              const service = port.service || (typeof port.service === 'object' ? port.service?.name : 'N/A')
-              const version = port.version || (typeof port.service === 'object' ? port.service?.version : 'N/A')
-              doc.text(`Port ${portNum}: ${state} - ${service} ${version ? `(${version})` : ''}`, margin + 5, yPos)
-              yPos += 6
-            })
-            yPos += 3
-          }
-
-          // Findings
-          if (analyzed.findings) {
-            if (Array.isArray(analyzed.findings) && analyzed.findings.length > 0) {
-              checkNewPage(15)
+          // Scan Summary - With Total Findings, Recommendations, Vulnerabilities, and Status
+          if (analyzed.summary) {
+            let summaryData = analyzed.summary;
+            if (typeof summaryData === 'string') {
+              try {
+                const trimmed = summaryData.trim();
+                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                    (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                  summaryData = JSON.parse(trimmed);
+                }
+              } catch (e) {
+                summaryData = null;
+              }
+            }
+            
+            if (summaryData && typeof summaryData === 'object' && !Array.isArray(summaryData)) {
+              checkNewPage(20)
               doc.setFont('helvetica', 'bold')
-              doc.text(`Findings (${analyzed.findings.length}):`, margin, yPos)
-              yPos += 6
+              doc.setFontSize(12)
+              doc.text('Scan Summary', margin, yPos)
+              yPos += 8
+              
+              const totalFindings = summaryData.totalFindings || 
+                                    (Array.isArray(analyzed.findings) ? analyzed.findings.length : 0) ||
+                                    (analyzed.findings && typeof analyzed.findings === 'object' ? Object.keys(analyzed.findings).length : 0) ||
+                                    0;
+              const totalRecommendations = summaryData.totalRecommendations || 
+                                           (Array.isArray(analyzed.recommendations) ? analyzed.recommendations.length : 0) ||
+                                           0;
+              const totalVulnerabilities = summaryData.totalVulnerabilities || 
+                                           (Array.isArray(analyzed.vulnerabilities) ? analyzed.vulnerabilities.length : 0) ||
+                                           0;
+              const status = summaryData.status || summaryData.Status || 'moderate';
+              
+              doc.setFontSize(10)
               doc.setFont('helvetica', 'normal')
-              analyzed.findings.forEach((finding, idx) => {
-                checkNewPage(20)
-                doc.setFont('helvetica', 'bold')
-                doc.text(`${idx + 1}. ${finding.type || finding.name || `Finding ${idx + 1}`}`, margin + 5, yPos)
-                yPos += 6
-                doc.setFont('helvetica', 'normal')
-                
-                // Display all properties
-                Object.entries(finding).forEach(([key, value]) => {
-                  if (['type', 'name'].includes(key.toLowerCase()) || value === null || value === undefined) return
-                  checkNewPage(7)
+              
+              checkNewPage(6)
+              doc.text(`Total Findings: ${totalFindings}`, margin + 5, yPos)
+              yPos += 6
+              checkNewPage(6)
+              doc.text(`Total Recommendations: ${totalRecommendations}`, margin + 5, yPos)
+              yPos += 6
+              checkNewPage(6)
+              doc.text(`Total Vulnerabilities: ${totalVulnerabilities}`, margin + 5, yPos)
+              yPos += 6
+              checkNewPage(6)
+              doc.setFont('helvetica', 'bold')
+              doc.text(`Status: ${status.charAt(0).toUpperCase() + status.slice(1)}`, margin + 5, yPos)
+              doc.setFont('helvetica', 'normal')
+              yPos += 8
+            }
+          }
+
+          // Helper function to parse and format data
+          const parseAndFormat = (data) => {
+            if (!data) return null;
+            if (typeof data === 'object' && !Array.isArray(data)) {
+              return data;
+            }
+            if (typeof data === 'string') {
+              const trimmed = data.trim();
+              if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                  (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                try {
+                  return JSON.parse(trimmed);
+                } catch (e) {
+                  return { _text: data };
+                }
+              }
+              return { _text: data };
+            }
+            return { _text: String(data) };
+          };
+
+          // What We Did (Analysis Overview)
+          if (analyzed.whatWeDid) {
+            const whatWeDidData = parseAndFormat(analyzed.whatWeDid);
+            checkNewPage(15)
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(11)
+            doc.text('Analysis Overview', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            
+            if (whatWeDidData._text) {
+              const lines = doc.splitTextToSize(whatWeDidData._text, maxWidth)
+              lines.forEach(line => {
+                checkNewPage(5)
+                doc.text(line, margin, yPos)
+                yPos += 5
+              })
+            } else {
+              Object.entries(whatWeDidData)
+                .filter(([key]) => {
+                  const keyLower = key.toLowerCase();
+                  return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                         !keyLower.includes('command') && 
+                         !keyLower.includes('cmd');
+                })
+                .forEach(([key, value]) => {
+                  checkNewPage(6)
                   const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
                   const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
                   const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
                   lines.forEach(line => {
-                    checkNewPage(7)
-                    doc.text(line, margin + 10, yPos)
-                    yPos += 6
+                    checkNewPage(5)
+                    doc.text(line, margin + 5, yPos)
+                    yPos += 5
                   })
                 })
-                yPos += 3
-              })
-            } else if (!Array.isArray(analyzed.findings) && typeof analyzed.findings === 'object') {
-              checkNewPage(15)
-              doc.setFont('helvetica', 'bold')
-              doc.text('Findings:', margin, yPos)
-              yPos += 6
-              doc.setFont('helvetica', 'normal')
-              Object.entries(analyzed.findings).forEach(([key, value]) => {
-                if (value === null || value === undefined) return
-                checkNewPage(7)
-                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
-                const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
-                const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
-                lines.forEach(line => {
-                  checkNewPage(7)
-                  doc.text(line, margin + 5, yPos)
-                  yPos += 6
-                })
-              })
             }
             yPos += 3
           }
 
-          // Vulnerabilities
-          if (analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0) {
+          // What We Got (Key Findings)
+          if (analyzed.whatWeGot) {
+            const whatWeGotData = parseAndFormat(analyzed.whatWeGot);
             checkNewPage(15)
             doc.setFont('helvetica', 'bold')
-            doc.text(`Vulnerabilities (${analyzed.vulnerabilities.length}):`, margin, yPos)
+            doc.setFontSize(11)
+            doc.text('Key Findings', margin, yPos)
             yPos += 6
             doc.setFont('helvetica', 'normal')
-            analyzed.vulnerabilities.forEach((vuln, idx) => {
-              checkNewPage(20)
+            doc.setFontSize(10)
+            
+            if (whatWeGotData._text) {
+              const lines = doc.splitTextToSize(whatWeGotData._text, maxWidth)
+              lines.forEach(line => {
+                checkNewPage(5)
+                doc.text(line, margin, yPos)
+                yPos += 5
+              })
+            } else {
+              Object.entries(whatWeGotData)
+                .filter(([key]) => {
+                  const keyLower = key.toLowerCase();
+                  return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                         !keyLower.includes('command') && 
+                         !keyLower.includes('cmd');
+                })
+                .forEach(([key, value]) => {
+                  checkNewPage(6)
+                  const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
+                  
+                  // Parse JSON strings in values
+                  let parsedValue = value;
+                  if (typeof value === 'string') {
+                    const trimmed = value.trim();
+                    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                      try {
+                        parsedValue = JSON.parse(trimmed);
+                      } catch (e) {
+                        parsedValue = value;
+                      }
+                    }
+                  }
+                  
+                  // Format arrays and objects
+                  let displayValue = parsedValue;
+                  if (Array.isArray(parsedValue)) {
+                    displayValue = parsedValue.map((item, idx) => {
+                      if (typeof item === 'object' && item !== null) {
+                        return JSON.stringify(item)
+                      }
+                      return String(item)
+                    }).join(', ')
+                  } else if (typeof parsedValue === 'object' && parsedValue !== null) {
+                    displayValue = JSON.stringify(parsedValue, null, 2)
+                  } else {
+                    displayValue = String(parsedValue)
+                  }
+                  
+                  const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
+                  lines.forEach(line => {
+                    checkNewPage(5)
+                    doc.text(line, margin + 5, yPos)
+                    yPos += 5
+                  })
+                })
+            }
+            yPos += 3
+          }
+
+          // Security Findings
+          if (analyzed.findings && Array.isArray(analyzed.findings) && analyzed.findings.length > 0) {
+            checkNewPage(15)
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(11)
+            doc.text('Security Findings', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            analyzed.findings.forEach((finding, idx) => {
+              checkNewPage(15)
               doc.setFont('helvetica', 'bold')
-              doc.text(`${idx + 1}. ${vuln.name || `Vulnerability ${idx + 1}`}`, margin + 5, yPos)
+              doc.text(`${idx + 1}. ${finding.type || finding.name || `Finding ${idx + 1}`}`, margin + 5, yPos)
               yPos += 6
               doc.setFont('helvetica', 'normal')
               
-              // Display all properties
-              Object.entries(vuln).forEach(([key, value]) => {
-                if (['name'].includes(key.toLowerCase()) || value === null || value === undefined) return
-                checkNewPage(7)
+              // Display all properties (filter out command-related keys)
+              Object.entries(finding).forEach(([key, value]) => {
+                const keyLower = key.toLowerCase();
+                if (['type', 'name'].includes(keyLower) || value === null || value === undefined) return
+                if (['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) ||
+                    keyLower.includes('command') || keyLower.includes('cmd')) return
+                
+                checkNewPage(6)
                 const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
                 const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
                 const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
                 lines.forEach(line => {
-                  checkNewPage(7)
+                  checkNewPage(5)
                   doc.text(line, margin + 10, yPos)
-                  yPos += 6
+                  yPos += 5
                 })
               })
               yPos += 3
@@ -424,37 +569,110 @@ function ServerScanning() {
             yPos += 3
           }
 
-          // Recommendations
+          // Security Recommendations
           if (analyzed.recommendations && Array.isArray(analyzed.recommendations) && analyzed.recommendations.length > 0) {
             checkNewPage(15)
             doc.setFont('helvetica', 'bold')
-            doc.text('Recommendations:', margin, yPos)
+            doc.setFontSize(11)
+            doc.text('Security Recommendations', margin, yPos)
             yPos += 6
             doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             analyzed.recommendations.forEach((rec, idx) => {
-              checkNewPage(7)
+              checkNewPage(6)
               const recText = typeof rec === 'string' ? rec : (rec.description || rec.recommendation || rec.text || JSON.stringify(rec))
               const lines = doc.splitTextToSize(`${idx + 1}. ${recText}`, maxWidth - 10)
               lines.forEach(line => {
-                checkNewPage(7)
+                checkNewPage(5)
                 doc.text(line, margin + 5, yPos)
-                yPos += 6
+                yPos += 5
               })
+            })
+            yPos += 3
+          }
+
+          // Security Vulnerabilities
+          if (analyzed.vulnerabilities && Array.isArray(analyzed.vulnerabilities) && analyzed.vulnerabilities.length > 0) {
+            checkNewPage(15)
+            doc.setFont('helvetica', 'bold')
+            doc.setFontSize(11)
+            doc.text('Security Vulnerabilities', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            analyzed.vulnerabilities.forEach((vuln, idx) => {
+              checkNewPage(15)
+              doc.setFont('helvetica', 'bold')
+              doc.text(`${idx + 1}. ${vuln.name || `Vulnerability ${idx + 1}`}`, margin + 5, yPos)
+              yPos += 6
+              doc.setFont('helvetica', 'normal')
+              
+              // Display all properties including solution
+              Object.entries(vuln).forEach(([key, value]) => {
+                if (['name'].includes(key.toLowerCase()) || value === null || value === undefined) return
+                
+                checkNewPage(6)
+                const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()
+                
+                // Handle solution object specially
+                if (key.toLowerCase() === 'solution' && typeof value === 'object') {
+                  doc.setFont('helvetica', 'bold')
+                  doc.text(`${formattedKey}:`, margin + 10, yPos)
+                  yPos += 5
+                  doc.setFont('helvetica', 'normal')
+                  
+                  if (value.description) {
+                    const descLines = doc.splitTextToSize(value.description, maxWidth - 15)
+                    descLines.forEach(line => {
+                      checkNewPage(5)
+                      doc.text(line, margin + 15, yPos)
+                      yPos += 5
+                    })
+                  }
+                  
+                  if (value.steps && Array.isArray(value.steps)) {
+                    value.steps.forEach((step, stepIdx) => {
+                      checkNewPage(5)
+                      const stepText = typeof step === 'string' ? step : JSON.stringify(step)
+                      const stepLines = doc.splitTextToSize(`  ${stepIdx + 1}. ${stepText}`, maxWidth - 15)
+                      stepLines.forEach(line => {
+                        checkNewPage(5)
+                        doc.text(line, margin + 15, yPos)
+                        yPos += 5
+                      })
+                    })
+                  } else if (typeof value === 'object') {
+                    const solutionText = JSON.stringify(value, null, 2)
+                    const solutionLines = doc.splitTextToSize(solutionText, maxWidth - 15)
+                    solutionLines.forEach(line => {
+                      checkNewPage(5)
+                      doc.text(line, margin + 15, yPos)
+                      yPos += 5
+                    })
+                  }
+                } else {
+                  const displayValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
+                  const lines = doc.splitTextToSize(`${formattedKey}: ${displayValue}`, maxWidth - 10)
+                  lines.forEach(line => {
+                    checkNewPage(5)
+                    doc.text(line, margin + 10, yPos)
+                    yPos += 5
+                  })
+                }
+              })
+              yPos += 3
             })
             yPos += 3
           }
         }
       }
 
-      // Footer
+      // Draw borders and footers on all pages
       const totalPages = doc.internal.getNumberOfPages()
       for (let i = 1; i <= totalPages; i++) {
         doc.setPage(i)
-        doc.setFontSize(9)
-        doc.setFont('helvetica', 'normal')
-        doc.setTextColor(128, 128, 128)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, 285, { align: 'center' })
-        doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, 285, { align: 'right' })
+        drawPageBorder()
+        drawFooter(i, totalPages)
       }
 
       // Save PDF
@@ -948,20 +1166,7 @@ function ServerScanning() {
             result: resultSummary
           })
           
-          // Send desktop push notification
-          if (isSuccess && window.cyberGuard?.showNotification) {
-            try {
-              window.cyberGuard.showNotification({
-                title: 'Server Scan Completed',
-                body: `Server scan completed successfully for ${target}`,
-                viewId: 'server-scan'
-              }).catch(err => {
-                console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
-              })
-            } catch (err) {
-              console.log('[NOTIFICATION] Failed to send notification:', err?.message || 'Unknown error')
-            }
-          }
+          // Note: Notifications are handled by GlobalScanContext.jsx to avoid duplicates
           
           // Update global scan state to mark scan as complete
           if (currentScanIdRef.current) {
@@ -1006,56 +1211,13 @@ function ServerScanning() {
     }
   }
 
-  // Command configurations for server scan
+  // Command configurations for server scan - Only Nikto
   const commandConfigs = [
     {
       key: 'nikto',
-      name: 'Nikto Web Server Scan',
-      description: 'Web server vulnerability scanner',
-      icon: Search,
-      color: '#FF6B6B'
-    },
-    {
-      key: 'sqlmap',
-      name: 'SQLMap Database Scan',
-      description: 'SQL injection vulnerability scanner',
-      icon: Syringe,
-      color: '#4ECDC4'
-    },
-    {
-      key: 'nmapSV',
-      name: 'Nmap Version Scan (All Ports)',
-      description: 'Comprehensive port and service version scan',
-      icon: Globe,
-      color: '#45B7D1'
-    },
-    {
-      key: 'sslscan',
-      name: 'SSL/TLS Scan',
-      description: 'SSL/TLS configuration and vulnerability scan',
-      icon: Lock,
-      color: '#FFA07A'
-    },
-    {
-      key: 'host',
-      name: 'DNS Resolution',
-      description: 'Resolve hostname to IP address',
-      icon: Radio,
-      color: '#98D8C8'
-    },
-    {
-      key: 'nmapSVIP',
-      name: 'Nmap Version Scan (IP)',
-      description: 'Version scan on resolved IP address',
-      icon: Target,
-      color: '#6C5CE7'
-    },
-    {
-      key: 'nmapSCIP',
-      name: 'Nmap Script Scan (IP)',
-      description: 'Default script scan on resolved IP address',
-      icon: Zap,
-      color: '#A29BFE'
+      title: 'Server Security Scan',
+      description: 'Comprehensive web server security assessment using Nikto scanner to identify vulnerabilities, misconfigurations, and security issues.',
+      icon: '🔍'
     }
   ]
 
@@ -1981,12 +2143,12 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                       return (
                         <div key={config.key} className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-200 dark:border-yellow-800 rounded-xl p-6 shadow-lg">
                           <div className="flex items-start gap-4 mb-4 pb-4 border-b border-yellow-200 dark:border-yellow-800">
-                            <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-xl">
-                              {config.icon && <config.icon size={32} className="text-yellow-600 dark:text-yellow-400" />}
+                            <div className="p-4 bg-yellow-100 dark:bg-yellow-900/30 rounded-2xl shadow-lg">
+                              <span className="text-4xl">{config.icon}</span>
                             </div>
                             <div className="flex-1">
-                              <h4 className="text-2xl font-bold text-yellow-900 dark:text-yellow-100 mb-2">{config.name}</h4>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">{config.description}</p>
+                              <h4 className="text-2xl font-extrabold text-yellow-900 dark:text-yellow-100 mb-3">{config.title}</h4>
+                              <p className="text-base text-gray-700 dark:text-gray-300 leading-relaxed">{config.description}</p>
                             </div>
                           </div>
                           <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
@@ -2008,87 +2170,307 @@ ${results.target},${results.hostname},${new Date(results.timestamp).toLocaleStri
                     return (
                       <div key={config.key} className="bg-orange-50 dark:bg-orange-900/20 border-2 border-orange-200 dark:border-orange-800 rounded-xl p-6 shadow-lg w-full max-w-full overflow-hidden box-border">
                         <div className="flex items-start gap-4 mb-4 pb-4 border-b border-orange-200 dark:border-orange-800 w-full max-w-full overflow-hidden">
-                          <div className="p-3 bg-orange-100 dark:bg-orange-900/30 rounded-xl flex-shrink-0">
-                            {config.icon && <config.icon size={32} className="text-orange-600 dark:text-orange-400" />}
+                          <div className="p-4 bg-orange-100 dark:bg-orange-900/30 rounded-2xl shadow-lg flex-shrink-0">
+                            <span className="text-4xl">{config.icon}</span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="text-2xl font-bold text-orange-900 dark:text-orange-100 mb-2 break-words">{config.name}</h4>
-                            <p className="text-sm text-gray-600 dark:text-gray-400 break-words">{config.description}</p>
+                            <h4 className="text-2xl font-extrabold text-orange-900 dark:text-orange-100 mb-3 break-words">{config.title}</h4>
+                            <p className="text-base text-gray-700 dark:text-gray-300 leading-relaxed break-words">{config.description}</p>
                           </div>
                         </div>
                         
-                        {/* What We Did & What We Got */}
-                        {(analyzed.whatWeDid || analyzed.whatWeGot) && (
-                          <div className="mb-6 space-y-3 max-w-full overflow-hidden">
-                            {analyzed.whatWeDid && (
-                              <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-w-full overflow-hidden">
-                                <h5 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">What We Did</h5>
-                                <p className="text-sm text-gray-700 dark:text-gray-300 break-words whitespace-normal max-w-full">
-                                  {typeof analyzed.whatWeDid === 'string' ? analyzed.whatWeDid : 
-                                   typeof analyzed.whatWeDid === 'object' ? JSON.stringify(analyzed.whatWeDid, null, 2) : 
-                                   String(analyzed.whatWeDid)}
-                                </p>
+                        {/* Scan Summary - With Total Findings, Recommendations, Vulnerabilities, and Status */}
+                        {analyzed.summary && (() => {
+                          // Parse summary if it's a string
+                          let summaryData = analyzed.summary;
+                          if (typeof summaryData === 'string') {
+                            try {
+                              const trimmed = summaryData.trim();
+                              if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                  (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                summaryData = JSON.parse(trimmed);
+                              }
+                            } catch (e) {
+                              return null;
+                            }
+                          }
+                          
+                          if (!summaryData || typeof summaryData !== 'object' || Array.isArray(summaryData)) {
+                            return null;
+                          }
+                          
+                          // Extract specific summary fields
+                          const totalFindings = summaryData.totalFindings || 
+                                                (Array.isArray(analyzed.findings) ? analyzed.findings.length : 0) ||
+                                                (analyzed.findings && typeof analyzed.findings === 'object' ? Object.keys(analyzed.findings).length : 0) ||
+                                                0;
+                          const totalRecommendations = summaryData.totalRecommendations || 
+                                                       (Array.isArray(analyzed.recommendations) ? analyzed.recommendations.length : 0) ||
+                                                       0;
+                          const totalVulnerabilities = summaryData.totalVulnerabilities || 
+                                                       (Array.isArray(analyzed.vulnerabilities) ? analyzed.vulnerabilities.length : 0) ||
+                                                       0;
+                          const status = summaryData.status || summaryData.Status || 'moderate';
+                          
+                          // Determine status color
+                          const statusColor = status.toLowerCase() === 'safe' ? 'text-green-600 dark:text-green-400' :
+                                              status.toLowerCase() === 'high risk' || status.toLowerCase() === 'highrisk' ? 'text-red-600 dark:text-red-400' :
+                                              'text-orange-600 dark:text-orange-400';
+                          const statusBg = status.toLowerCase() === 'safe' ? 'bg-green-100 dark:bg-green-900/30' :
+                                          status.toLowerCase() === 'high risk' || status.toLowerCase() === 'highrisk' ? 'bg-red-100 dark:bg-red-900/30' :
+                                          'bg-orange-100 dark:bg-orange-900/30';
+                          
+                          return (
+                            <div className="mb-8 bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-xl p-6 border-2 border-orange-200 dark:border-orange-800 shadow-lg">
+                              <div className="flex items-center gap-2 mb-4">
+                                <svg className="w-6 h-6 text-orange-600 dark:text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                                <h5 className="text-lg font-bold text-orange-900 dark:text-orange-100">Scan Summary</h5>
                               </div>
-                            )}
-                            {analyzed.whatWeGot && (
-                              <div className="bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-w-full overflow-hidden">
-                                <h5 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-2">What We Got</h5>
-                                <p className="text-sm text-gray-700 dark:text-gray-300 break-words whitespace-normal max-w-full">
-                                  {typeof analyzed.whatWeGot === 'string' ? analyzed.whatWeGot : 
-                                   typeof analyzed.whatWeGot === 'object' ? JSON.stringify(analyzed.whatWeGot, null, 2) : 
-                                   String(analyzed.whatWeGot)}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {/* Summary */}
-                        {analyzed.summary && typeof analyzed.summary === 'object' && (
-                          <div className="mb-6 bg-white/80 dark:bg-gray-800/80 rounded-lg p-4 border border-orange-200 dark:border-orange-800 max-w-full overflow-hidden">
-                            <h5 className="text-lg font-semibold text-orange-900 dark:text-orange-100 mb-3">Summary</h5>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                              {Object.entries(analyzed.summary).map(([key, value]) => {
-                                if (value === null || value === undefined || 
-                                    (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0) ||
-                                    (Array.isArray(value) && value.length === 0)) {
-                                  return null
-                                }
-                                
-                                const formattedKey = key
-                                  .replace(/([A-Z])/g, ' $1')
-                                  .replace(/^./, str => str.toUpperCase())
-                                  .trim()
-                                
-                                let displayValue = value
-                                if (typeof value === 'boolean') {
-                                  displayValue = value ? 'Yes' : 'No'
-                                } else if (typeof value === 'object' && !Array.isArray(value)) {
-                                  displayValue = JSON.stringify(value, null, 2)
-                                } else if (Array.isArray(value)) {
-                                  displayValue = value.length
-                                }
-                                
-                                return (
-                                  <div key={key}>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{formattedKey}</div>
-                                    <div className={`text-lg font-bold ${
-                                      key.toLowerCase().includes('vulnerabilit') || key.toLowerCase().includes('risk') || key.toLowerCase().includes('critical') || key.toLowerCase().includes('high') ?
-                                        (typeof value === 'string' && (value.toLowerCase() === 'critical' || value.toLowerCase() === 'high')) ? 'text-red-600 dark:text-red-400' :
-                                        (typeof value === 'string' && value.toLowerCase() === 'medium') ? 'text-orange-500 dark:text-orange-400' :
-                                        'text-orange-600 dark:text-orange-400' :
-                                      'text-orange-600 dark:text-orange-400'
-                                    }`}>
-                                      {typeof displayValue === 'string' && displayValue.length > 50 ? 
-                                        displayValue.substring(0, 50) + '...' : 
-                                        String(displayValue)}
-                                    </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm">
+                                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                    Total Findings
                                   </div>
-                                )
-                              })}
+                                  <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                                    {totalFindings}
+                                  </div>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm">
+                                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                    Total Recommendations
+                                  </div>
+                                  <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                                    {totalRecommendations}
+                                  </div>
+                                </div>
+                                <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm">
+                                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                    Total Vulnerabilities
+                                  </div>
+                                  <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                                    {totalVulnerabilities}
+                                  </div>
+                                </div>
+                                <div className={`bg-white dark:bg-gray-800 rounded-lg p-4 border border-orange-200 dark:border-orange-700 shadow-sm ${statusBg}`}>
+                                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wide">
+                                    Status
+                                  </div>
+                                  <div className={`text-2xl font-bold ${statusColor}`}>
+                                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
+                        
+                        {/* What We Did & What We Got - Show only once, after Summary */}
+                        {(analyzed.whatWeDid || analyzed.whatWeGot) && (() => {
+                          // Helper function to parse and format data
+                          const parseAndFormat = (data) => {
+                            if (!data) return null;
+                            
+                            // If it's already an object, return it
+                            if (typeof data === 'object' && !Array.isArray(data)) {
+                              return data;
+                            }
+                            
+                            // If it's a string, try to parse as JSON
+                            if (typeof data === 'string') {
+                              // Check if it looks like JSON
+                              const trimmed = data.trim();
+                              if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                  (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                try {
+                                  return JSON.parse(trimmed);
+                                } catch (e) {
+                                  // If parsing fails, return as plain text
+                                  return { _text: data };
+                                }
+                              }
+                              // If it's plain text, return as text
+                              return { _text: data };
+                            }
+                            
+                            return { _text: String(data) };
+                          };
+                          
+                          const whatWeDidData = parseAndFormat(analyzed.whatWeDid);
+                          const whatWeGotData = parseAndFormat(analyzed.whatWeGot);
+                          
+                          return (
+                            <div className="mb-8 space-y-4">
+                              {whatWeDidData && (
+                                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-5 border-2 border-blue-200 dark:border-blue-800 shadow-md">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <h5 className="text-sm font-bold text-blue-900 dark:text-blue-100">Analysis Overview</h5>
+                                  </div>
+                                  {whatWeDidData._text ? (
+                                    <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                      {whatWeDidData._text}
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {Object.entries(whatWeDidData)
+                                        .filter(([key]) => {
+                                          const keyLower = key.toLowerCase();
+                                          return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                 !keyLower.includes('command') && 
+                                                 !keyLower.includes('cmd');
+                                        })
+                                        .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-2 pb-2 border-b border-blue-200 dark:border-blue-700 last:border-0">
+                                            <span className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide min-w-[120px]">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <span className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                            </span>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {whatWeGotData && (
+                                <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 rounded-xl p-5 border-2 border-green-200 dark:border-green-800 shadow-md">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <h5 className="text-sm font-bold text-green-900 dark:text-green-100">Key Findings</h5>
+                                  </div>
+                                  {whatWeGotData._text ? (
+                                    <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">
+                                      {whatWeGotData._text}
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {Object.entries(whatWeGotData)
+                                        .filter(([key]) => {
+                                          const keyLower = key.toLowerCase();
+                                          return !['command', 'commandname', 'cmd', 'commandline', 'kali', 'tool'].includes(keyLower) &&
+                                                 !keyLower.includes('command') && 
+                                                 !keyLower.includes('cmd');
+                                        })
+                                        .map(([key, value]) => (
+                                          <div key={key} className="flex flex-col gap-2 pb-2 border-b border-green-200 dark:border-green-700 last:border-0">
+                                            <span className="text-xs font-semibold text-green-700 dark:text-green-300 uppercase tracking-wide">
+                                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                            </span>
+                                            <div className="text-sm text-gray-800 dark:text-gray-200 flex-1">
+                                              {(() => {
+                                                // First, try to parse if it's a JSON string
+                                                let parsedValue = value;
+                                                if (typeof value === 'string') {
+                                                  const trimmed = value.trim();
+                                                  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+                                                      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                                                    try {
+                                                      parsedValue = JSON.parse(trimmed);
+                                                    } catch (e) {
+                                                      parsedValue = value;
+                                                    }
+                                                  }
+                                                }
+                                                
+                                                // Handle arrays - display as formatted list
+                                                if (Array.isArray(parsedValue)) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1">
+                                                      {parsedValue.map((item, idx) => (
+                                                        <div key={idx} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                          {typeof item === 'object' && item !== null ? (
+                                                            <div className="space-y-2">
+                                                              {Object.entries(item).map(([subKey, subValue]) => (
+                                                                <div key={subKey} className="flex items-start gap-2">
+                                                                  <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                                    {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                                  </span>
+                                                                  <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                                    {Array.isArray(subValue) ? (
+                                                                      <div className="space-y-1">
+                                                                        {subValue.map((arrItem, arrIdx) => (
+                                                                          <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                            {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : typeof subValue === 'object' && subValue !== null ? (
+                                                                      <div className="space-y-1">
+                                                                        {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                          <div key={nestedKey} className="flex gap-2">
+                                                                            <span className="font-medium">{nestedKey}:</span>
+                                                                            <span>{String(nestedValue)}</span>
+                                                                          </div>
+                                                                        ))}
+                                                                      </div>
+                                                                    ) : String(subValue)}
+                                                                  </span>
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          ) : (
+                                                            <span>{String(item)}</span>
+                                                          )}
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle objects - display as key-value pairs
+                                                if (typeof parsedValue === 'object' && parsedValue !== null) {
+                                                  return (
+                                                    <div className="space-y-2 mt-1 bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                                      {Object.entries(parsedValue).map(([subKey, subValue]) => (
+                                                        <div key={subKey} className="flex items-start gap-2">
+                                                          <span className="font-semibold text-gray-600 dark:text-gray-400 min-w-[120px] text-xs">
+                                                            {subKey.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim()}:
+                                                          </span>
+                                                          <span className="text-gray-800 dark:text-gray-200 flex-1 text-xs">
+                                                            {Array.isArray(subValue) ? (
+                                                              <div className="space-y-1">
+                                                                {subValue.map((arrItem, arrIdx) => (
+                                                                  <div key={arrIdx} className="bg-gray-100 dark:bg-gray-600 rounded px-2 py-1">
+                                                                    {typeof arrItem === 'object' ? JSON.stringify(arrItem) : String(arrItem)}
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : typeof subValue === 'object' && subValue !== null ? (
+                                                              <div className="space-y-1">
+                                                                {Object.entries(subValue).map(([nestedKey, nestedValue]) => (
+                                                                  <div key={nestedKey} className="flex gap-2">
+                                                                    <span className="font-medium">{nestedKey}:</span>
+                                                                    <span>{String(nestedValue)}</span>
+                                                                  </div>
+                                                                ))}
+                                                              </div>
+                                                            ) : String(subValue)}
+                                                          </span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  );
+                                                }
+                                                // Handle primitives
+                                                return <span>{String(parsedValue)}</span>;
+                                              })()}
+                                            </div>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        
                         
                         {/* Findings */}
                         {analyzed.findings && Array.isArray(analyzed.findings) && analyzed.findings.length > 0 && (

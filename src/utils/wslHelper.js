@@ -10,8 +10,8 @@ async function detectWSLDistro() {
   if (detectedDistro) return detectedDistro;
   
   try {
-    // Get list of installed distributions
-    const { stdout } = await execPromise('wsl -l -v');
+    // Get list of installed distributions - use full path for production compatibility
+    const { stdout } = await execPromise('C:\\Windows\\System32\\wsl.exe -l -v');
     const lines = stdout.split('\n').filter(line => line.trim());
     
     // First, look for Ubuntu (preferred)
@@ -39,7 +39,7 @@ async function detectWSLDistro() {
     
     // If neither found, try to get default distribution
     try {
-      const { stdout: defaultOut } = await execPromise('wsl -l --default');
+      const { stdout: defaultOut } = await execPromise('C:\\Windows\\System32\\wsl.exe -l --default');
       const defaultDistro = defaultOut.trim().split('\n')[1]?.trim().split(/\s+/)[0];
       if (defaultDistro) {
         detectedDistro = defaultDistro;
@@ -73,7 +73,8 @@ function escapeDoubleQuotes(s) {
 async function runWSLAsRoot(command) {
   const distro = await detectWSLDistro();
   const escaped = escapeDoubleQuotes(command);
-  const full = `wsl -d ${distro} -u root bash -lc "${escaped}"`;
+  // Use full path to wsl.exe for production compatibility
+  const full = `C:\\Windows\\System32\\wsl.exe -d ${distro} -u root bash -lc "${escaped}"`;
   try {
     const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
     return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
@@ -85,7 +86,8 @@ async function runWSLAsRoot(command) {
 async function runWSL(command) {
   const distro = await detectWSLDistro();
   const escaped = escapeDoubleQuotes(command);
-  const full = `wsl -d ${distro} bash -lc "${escaped}"`;
+  // Use full path to wsl.exe for production compatibility
+  const full = `C:\\Windows\\System32\\wsl.exe -d ${distro} bash -lc "${escaped}"`;
   try {
     const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
     return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
@@ -98,7 +100,8 @@ async function runWSL(command) {
 async function runWSLRaw(command) {
   const distro = await detectWSLDistro();
   // Command is passed directly to WSL without bash -c wrapping
-  const full = `wsl -d ${distro} ${command}`;
+  // Use full path to wsl.exe for production compatibility
+  const full = `C:\\Windows\\System32\\wsl.exe -d ${distro} ${command}`;
   try {
     const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
     return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
@@ -109,7 +112,8 @@ async function runWSLRaw(command) {
 
 async function checkWSL() {
   try {
-    const { stdout } = await execPromise('wsl -l -v');
+    // Use full path to wsl.exe for production compatibility
+    const { stdout } = await execPromise('C:\\Windows\\System32\\wsl.exe -l -v');
     const out = (stdout || '').toLowerCase();
     return out.includes('kali') || out.includes('ubuntu');
   } catch {
@@ -118,14 +122,17 @@ async function checkWSL() {
 }
 
 async function checkTool(toolName) {
-  const res = await runWSL(`command -v ${toolName} >/dev/null 2>&1 && echo installed || echo missing`);
+  // Use root user for consistency with QuickCheckScreen and SettingsPanel
+  // Tools are installed system-wide, so checking as root ensures we find them
+  const res = await runWSLAsRoot(`command -v ${toolName} >/dev/null 2>&1 && echo installed || echo missing`);
   return !!(res.success && res.stdout.trim() === 'installed');
 }
 
 async function getToolVersion(toolName) {
+  // Use root user for consistency
   const cmds = [`${toolName} --version`, `${toolName} -v`, `${toolName} -V`];
   for (const cmd of cmds) {
-    const r = await runWSL(`${cmd} 2>/dev/null`);
+    const r = await runWSLAsRoot(`${cmd} 2>/dev/null`);
     if (r.success && r.stdout) return r.stdout.split('\n')[0];
   }
   return 'unknown';
@@ -139,7 +146,8 @@ async function getWSLDistro() {
 // Set a distribution as the default
 async function setDefaultDistro(distroName) {
   try {
-    await execPromise(`wsl --set-default ${distroName}`);
+    // Use full path to wsl.exe for production compatibility
+    await execPromise(`C:\\Windows\\System32\\wsl.exe --set-default ${distroName}`);
     // Reset detected distro so it will be re-detected
     detectedDistro = null;
     WSL_DISTRO = distroName;
@@ -154,7 +162,8 @@ async function setDefaultDistro(distroName) {
 // Get list of all installed distributions
 async function listDistributions() {
   try {
-    const { stdout } = await execPromise('wsl -l -v');
+    // Use full path to wsl.exe for production compatibility
+    const { stdout } = await execPromise('C:\\Windows\\System32\\wsl.exe -l -v');
     const lines = stdout.split('\n').filter(line => line.trim());
     const distributions = [];
     

@@ -1538,35 +1538,27 @@ function WebsiteSecurityAudit() {
       const pageWidth = doc.internal.pageSize.getWidth()
       const pageHeight = doc.internal.pageSize.getHeight()
       const margin = 15
-      const borderMargin = 10
-      const footerHeight = 20
-      let yPos = margin + 10
+      const borderMargin = 5 // Small border margin
+      const footerY = pageHeight - 15
+      let yPos = 20
+      let isFirstPage = true
       
-      // Function to draw page border
+      // Function to draw page border - make it visible
       const drawPageBorder = () => {
-        doc.setDrawColor(80, 80, 80)
-        doc.setLineWidth(0.8)
+        doc.setDrawColor(100, 100, 100) // Darker gray border for visibility
+        doc.setLineWidth(1) // Thicker line for visibility
         doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
       }
       
-      // Function to add footer
-      const addFooter = () => {
-        const currentPage = doc.internal.getCurrentPageInfo().pageNumber
-        const totalPages = doc.internal.getNumberOfPages()
-        
-        // Footer line
-        doc.setDrawColor(200, 200, 200)
-        doc.setLineWidth(0.5)
-        doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
-        
-        // Footer text
+      // Function to add footer - left: Cyberix text, right: page number
+      const drawFooter = (pageNum, totalPages) => {
         doc.setFontSize(9)
         doc.setFont('helvetica', 'normal')
-        doc.setTextColor(100, 100, 100)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
-        
-        // Page number
-        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+        doc.setTextColor(128, 128, 128)
+        // Left footer
+        doc.text('Cyberix - A Webnox Product', margin, footerY, { align: 'left' })
+        // Right footer - page number
+        doc.text(`Page ${pageNum} of ${totalPages}`, pageWidth - margin, footerY, { align: 'right' })
       }
       
       // Helper to update all page footers
@@ -1575,66 +1567,103 @@ function WebsiteSecurityAudit() {
         for (let i = 1; i <= totalPages; i++) {
           doc.setPage(i)
           drawPageBorder()
-          const currentPage = i
-          
-          // Footer line
-          doc.setDrawColor(200, 200, 200)
-          doc.setLineWidth(0.5)
-          doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
-          
-          // Footer text
-          doc.setFontSize(9)
-          doc.setFont('helvetica', 'normal')
-          doc.setTextColor(100, 100, 100)
-          doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
-          
-          // Page number
-          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+          drawFooter(i, totalPages)
         }
       }
       
       // Draw border and footer on first page
       drawPageBorder()
-      addFooter()
+      drawFooter(1, 1) // Will update total later
       
-      const addText = (text, x, y, fontSize = 12, fontStyle = 'normal', align = 'left', color = [0, 0, 0]) => {
+      // Helper function to add text with proper wrapping and overflow prevention
+      const addText = (text, x, y, fontSize = 12, fontStyle = 'normal', align = 'left', color = [0, 0, 0], maxWidthOverride = null) => {
         doc.setFontSize(fontSize)
         doc.setFont('helvetica', fontStyle)
         doc.setTextColor(color[0], color[1], color[2])
-        const lines = doc.splitTextToSize(text || '', pageWidth - 2 * x - margin - 10)
+        const textMaxWidth = maxWidthOverride || (pageWidth - 2 * margin - (x - margin))
+        const lines = doc.splitTextToSize(text || '', textMaxWidth)
         doc.text(lines, x, y, { align })
         return y + (lines.length * fontSize * 0.4) + 5
       }
       
+      // Helper function to check if new page is needed
       const checkNewPage = (requiredSpace = 20) => {
-        if (yPos + requiredSpace > pageHeight - footerHeight - margin) {
-          doc.addPage()
+        if (yPos + requiredSpace > footerY - 10) {
+          // Draw border and footer on current page before adding new one
           drawPageBorder()
-          addFooter()
-          yPos = margin + 10
+          const currentPage = doc.internal.getNumberOfPages()
+          drawFooter(currentPage, currentPage) // Will update total later
+          
+          doc.addPage()
+          isFirstPage = false
+          yPos = 20
+          // Draw border and footer on new page
+          drawPageBorder()
+          drawFooter(doc.internal.getNumberOfPages(), doc.internal.getNumberOfPages())
         }
       }
       
-      // Title
-      yPos = addText('Website Security Audit Report', margin, yPos, 20, 'bold', 'left', [0, 0, 0])
+      // Calculate scan metadata
+      const scanName = 'Website Security Audit'
+      const siteName = url || 'N/A'
+      const startTime = scanStartTime ? new Date(scanStartTime) : new Date()
+      const endTime = scanEndTime ? new Date(scanEndTime) : new Date()
+      const duration = scanStartTime && scanEndTime ? 
+        Math.floor((endTime - startTime) / 1000) : 0 // in seconds
+      const durationMinutes = Math.floor(duration / 60)
+      const durationSeconds = Math.floor(duration % 60)
+      const durationText = duration > 0 ? `${durationMinutes}m ${durationSeconds}s` : 'N/A'
+      
+      // First Page Header - Scan Information
+      doc.setFontSize(18)
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(0, 0, 0)
+      doc.text(scanName, margin, yPos, { align: 'left' })
+      yPos += 8
+
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      
+      // Scan Info Table with proper date/time formatting
+      const infoItems = [
+        { label: 'Scan Name:', value: scanName },
+        { label: 'Site Name:', value: siteName },
+        { label: 'Started Date & Time:', value: formatDateTime(scanStartTime) },
+        { label: 'Ended Date & Time:', value: formatDateTime(scanEndTime) },
+        { label: 'Total Time:', value: durationText }
+      ]
+
+      infoItems.forEach((item, idx) => {
+        checkNewPage(7)
+        doc.setFont('helvetica', 'bold')
+        doc.text(item.label, margin, yPos)
+        doc.setFont('helvetica', 'normal')
+        const valueX = margin + 50
+        const valueLines = doc.splitTextToSize(item.value, pageWidth - margin - valueX - 10)
+        valueLines.forEach((line, lineIdx) => {
+          doc.text(line, valueX, yPos + (lineIdx * 5))
+        })
+        yPos += Math.max(5, valueLines.length * 5) + 2
+      })
+      
       yPos += 5
-      
-      // Target URL
-      yPos = addText(`Target: ${url}`, margin, yPos, 12, 'normal', 'left', [50, 50, 50])
-      yPos += 3
-      
-      // Scan Date
-      if (scanStartTime) {
-        yPos = addText(`Scan Date: ${formatDateTime(scanStartTime)}`, margin, yPos, 10, 'normal', 'left', [100, 100, 100])
-        yPos += 5
-      }
       
       // Summary Section
       checkNewPage(15)
-      yPos = addText('Executive Summary', margin, yPos, 16, 'bold', 'left', [0, 0, 0])
+      doc.setFontSize(16)
+      doc.setFont('helvetica', 'bold')
+      doc.text('Executive Summary', margin, yPos)
+      yPos += 8
+      doc.setFontSize(10)
+      doc.setFont('helvetica', 'normal')
+      const summaryText = 'This report contains the results of a comprehensive website security audit performed on the target website. The audit includes SSL/TLS analysis, web server vulnerability scanning, HTTP header inspection, IP geolocation lookup, and network path analysis.'
+      const summaryLines = doc.splitTextToSize(summaryText, pageWidth - 2 * margin)
+      summaryLines.forEach(line => {
+        checkNewPage(5)
+        doc.text(line, margin, yPos)
+        yPos += 5
+      })
       yPos += 5
-      yPos = addText('This report contains the results of a comprehensive website security audit performed on the target website. The audit includes SSL/TLS analysis, web server vulnerability scanning, HTTP header inspection, IP geolocation lookup, and network path analysis.', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 10
       
       // Helper function to extract finding details (matching UI logic)
       const extractFindingDetails = (finding) => {
@@ -1677,8 +1706,10 @@ function WebsiteSecurityAudit() {
         if (!commandData) return
         
         checkNewPage(20)
-        yPos = addText(commandTitle, margin, yPos, 14, 'bold', 'left', [0, 0, 0])
-        yPos += 5
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'bold')
+        doc.text(commandTitle, margin, yPos)
+        yPos += 8
         
         // Check if we have parsed data (same logic as UI)
         let parsed = null
@@ -1692,31 +1723,60 @@ function WebsiteSecurityAudit() {
           // What We Did
           if (parsed.whatWeDid) {
             checkNewPage(7)
-            yPos = addText('What We Did:', margin, yPos, 11, 'bold', 'left', [0, 0, 0])
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'bold')
+            doc.text('What We Did:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            const whatWeDidText = String(parsed.whatWeDid)
+            const whatWeDidLines = doc.splitTextToSize(whatWeDidText, pageWidth - 2 * margin - 10)
+            whatWeDidLines.forEach(line => {
+              checkNewPage(5)
+              doc.text(line, margin + 5, yPos)
+              yPos += 5
+            })
             yPos += 3
-            yPos = addText(String(parsed.whatWeDid), margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-            yPos += 5
           }
           
           // What We Got
           if (parsed.whatWeGot) {
             checkNewPage(7)
-            yPos = addText('What We Got:', margin, yPos, 11, 'bold', 'left', [0, 0, 0])
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'bold')
+            doc.text('What We Got:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            const whatWeGotText = String(parsed.whatWeGot)
+            const whatWeGotLines = doc.splitTextToSize(whatWeGotText, pageWidth - 2 * margin - 10)
+            whatWeGotLines.forEach(line => {
+              checkNewPage(5)
+              doc.text(line, margin + 5, yPos)
+              yPos += 5
+            })
             yPos += 3
-            yPos = addText(String(parsed.whatWeGot), margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-            yPos += 5
           }
           
           // Summary
           if (parsed.summary && typeof parsed.summary === 'object') {
             checkNewPage(10)
-            yPos = addText('Summary:', margin, yPos, 12, 'bold', 'left', [0, 0, 0])
-            yPos += 5
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text('Summary:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             Object.entries(parsed.summary).forEach(([key, value]) => {
               if (value !== null && value !== undefined && value !== '') {
-                checkNewPage(7)
-                yPos = addText(`${key}: ${String(value)}`, margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-                yPos += 4
+                checkNewPage(6)
+                const summaryLine = `${key}: ${String(value)}`
+                const summaryLines = doc.splitTextToSize(summaryLine, pageWidth - 2 * margin - 10)
+                summaryLines.forEach(line => {
+                  checkNewPage(5)
+                  doc.text(line, margin + 5, yPos)
+                  yPos += 5
+                })
               }
             })
             yPos += 3
@@ -1725,12 +1785,16 @@ function WebsiteSecurityAudit() {
           // Findings
           if (parsed.findings && Array.isArray(parsed.findings) && parsed.findings.length > 0) {
             checkNewPage(10)
-            yPos = addText(`Findings (${parsed.findings.length} items):`, margin, yPos, 12, 'bold', 'left', [0, 0, 0])
-            yPos += 5
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text(`Findings (${parsed.findings.length} items):`, margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             
             parsed.findings.forEach((finding, idx) => {
               const details = extractFindingDetails(finding)
-              checkNewPage(10)
+              checkNewPage(12)
               
               // Finding header with ID and Severity
               let findingHeader = `#${idx + 1}`
@@ -1741,21 +1805,28 @@ function WebsiteSecurityAudit() {
                 findingHeader += ` [Severity: ${details.severity}]`
               }
               
-              yPos = addText(findingHeader, margin + 5, yPos, 10, 'bold', 'left', [0, 0, 0])
-              yPos += 3
+              doc.setFont('helvetica', 'bold')
+              doc.text(findingHeader, margin + 5, yPos)
+              yPos += 6
+              doc.setFont('helvetica', 'normal')
               
               // Finding message
               if (details.message) {
                 checkNewPage(7)
-                yPos = addText(`Finding: ${details.message}`, margin + 10, yPos, 9, 'normal', 'left', [50, 50, 50])
-                yPos += 4
+                const findingText = `Finding: ${details.message}`
+                const findingLines = doc.splitTextToSize(findingText, pageWidth - 2 * margin - 15)
+                findingLines.forEach(line => {
+                  checkNewPage(5)
+                  doc.text(line, margin + 10, yPos)
+                  yPos += 5
+                })
               }
               
               // IP/Port if available
               if (details.ipPort && details.ipPort !== '-' && details.ipPort !== '') {
                 checkNewPage(5)
-                yPos = addText(`IP/Port: ${details.ipPort}`, margin + 10, yPos, 9, 'normal', 'left', [80, 80, 80])
-                yPos += 4
+                doc.text(`IP/Port: ${details.ipPort}`, margin + 10, yPos)
+                yPos += 5
               }
               
               yPos += 2
@@ -1766,27 +1837,45 @@ function WebsiteSecurityAudit() {
           // Recommendations
           if (parsed.recommendations && Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0) {
             checkNewPage(10)
-            yPos = addText('Recommendations:', margin, yPos, 12, 'bold', 'left', [0, 0, 0])
-            yPos += 5
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text('Recommendations:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             parsed.recommendations.forEach((rec, idx) => {
-              checkNewPage(7)
+              checkNewPage(6)
               const recText = typeof rec === 'string' ? rec : (rec.recommendation || rec.description || rec.text || JSON.stringify(rec))
-              yPos = addText(`${idx + 1}. ${recText}`, margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-              yPos += 4
+              const recLines = doc.splitTextToSize(`${idx + 1}. ${recText}`, pageWidth - 2 * margin - 10)
+              recLines.forEach(line => {
+                checkNewPage(5)
+                doc.text(line, margin + 5, yPos)
+                yPos += 5
+              })
             })
             yPos += 3
           }
         } else if (commandData.raw) {
           // Fallback to raw output if no parsed data
           checkNewPage(10)
-          yPos = addText('Raw Output:', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-          yPos += 3
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(50, 50, 50)
+          doc.text('Raw Output:', margin, yPos)
+          yPos += 6
+          doc.setFontSize(8)
+          doc.setTextColor(80, 80, 80)
           const rawLines = commandData.raw.split('\n').slice(0, 50)
           rawLines.forEach(line => {
             if (line.trim()) {
               checkNewPage(5)
-              yPos = addText(line.substring(0, 100), margin + 5, yPos, 8, 'normal', 'left', [80, 80, 80])
-              yPos += 3
+              const rawText = line.substring(0, 120) // Increased from 100
+              const rawTextLines = doc.splitTextToSize(rawText, pageWidth - 2 * margin - 10)
+              rawTextLines.forEach(rawLine => {
+                checkNewPage(4)
+                doc.text(rawLine, margin + 5, yPos)
+                yPos += 4
+              })
             }
           })
         }
@@ -1812,14 +1901,18 @@ function WebsiteSecurityAudit() {
       // Command 4: Domain & Location Analysis
       if (scanResults.command4) {
         checkNewPage(20)
-        yPos = addText('4. Domain & Location Analysis', margin, yPos, 14, 'bold', 'left', [0, 0, 0])
-        yPos += 5
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'bold')
+        doc.text('4. Domain & Location Analysis', margin, yPos)
+        yPos += 8
         
         // Show IP Address if available (from host command)
         if (scanResults.command4.ipAddress) {
           checkNewPage(7)
-          yPos = addText(`IP Address: ${scanResults.command4.ipAddress}`, margin, yPos, 11, 'bold', 'left', [0, 0, 0])
-          yPos += 5
+          doc.setFontSize(11)
+          doc.setFont('helvetica', 'bold')
+          doc.text(`IP Address: ${scanResults.command4.ipAddress}`, margin, yPos)
+          yPos += 6
         }
         
         // Process parsed data manually to avoid duplicate title
@@ -1835,31 +1928,60 @@ function WebsiteSecurityAudit() {
           // What We Did
           if (parsed.whatWeDid) {
             checkNewPage(7)
-            yPos = addText('What We Did:', margin, yPos, 11, 'bold', 'left', [0, 0, 0])
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'bold')
+            doc.text('What We Did:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            const whatWeDidText = String(parsed.whatWeDid)
+            const whatWeDidLines = doc.splitTextToSize(whatWeDidText, pageWidth - 2 * margin - 10)
+            whatWeDidLines.forEach(line => {
+              checkNewPage(5)
+              doc.text(line, margin + 5, yPos)
+              yPos += 5
+            })
             yPos += 3
-            yPos = addText(String(parsed.whatWeDid), margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-            yPos += 5
           }
           
           // What We Got
           if (parsed.whatWeGot) {
             checkNewPage(7)
-            yPos = addText('What We Got:', margin, yPos, 11, 'bold', 'left', [0, 0, 0])
+            doc.setFontSize(11)
+            doc.setFont('helvetica', 'bold')
+            doc.text('What We Got:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
+            const whatWeGotText = String(parsed.whatWeGot)
+            const whatWeGotLines = doc.splitTextToSize(whatWeGotText, pageWidth - 2 * margin - 10)
+            whatWeGotLines.forEach(line => {
+              checkNewPage(5)
+              doc.text(line, margin + 5, yPos)
+              yPos += 5
+            })
             yPos += 3
-            yPos = addText(String(parsed.whatWeGot), margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-            yPos += 5
           }
           
           // Summary
           if (parsed.summary && typeof parsed.summary === 'object') {
             checkNewPage(10)
-            yPos = addText('Summary:', margin, yPos, 12, 'bold', 'left', [0, 0, 0])
-            yPos += 5
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text('Summary:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             Object.entries(parsed.summary).forEach(([key, value]) => {
               if (value !== null && value !== undefined && value !== '') {
-                checkNewPage(7)
-                yPos = addText(`${key}: ${String(value)}`, margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-                yPos += 4
+                checkNewPage(6)
+                const summaryLine = `${key}: ${String(value)}`
+                const summaryLines = doc.splitTextToSize(summaryLine, pageWidth - 2 * margin - 10)
+                summaryLines.forEach(line => {
+                  checkNewPage(5)
+                  doc.text(line, margin + 5, yPos)
+                  yPos += 5
+                })
               }
             })
             yPos += 3
@@ -1868,12 +1990,16 @@ function WebsiteSecurityAudit() {
           // Findings
           if (parsed.findings && Array.isArray(parsed.findings) && parsed.findings.length > 0) {
             checkNewPage(10)
-            yPos = addText(`Findings (${parsed.findings.length} items):`, margin, yPos, 12, 'bold', 'left', [0, 0, 0])
-            yPos += 5
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text(`Findings (${parsed.findings.length} items):`, margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             
             parsed.findings.forEach((finding, idx) => {
               const details = extractFindingDetails(finding)
-              checkNewPage(10)
+              checkNewPage(12)
               
               // Finding header with ID and Severity
               let findingHeader = `#${idx + 1}`
@@ -1884,21 +2010,28 @@ function WebsiteSecurityAudit() {
                 findingHeader += ` [Severity: ${details.severity}]`
               }
               
-              yPos = addText(findingHeader, margin + 5, yPos, 10, 'bold', 'left', [0, 0, 0])
-              yPos += 3
+              doc.setFont('helvetica', 'bold')
+              doc.text(findingHeader, margin + 5, yPos)
+              yPos += 6
+              doc.setFont('helvetica', 'normal')
               
               // Finding message
               if (details.message) {
                 checkNewPage(7)
-                yPos = addText(`Finding: ${details.message}`, margin + 10, yPos, 9, 'normal', 'left', [50, 50, 50])
-                yPos += 4
+                const findingText = `Finding: ${details.message}`
+                const findingLines = doc.splitTextToSize(findingText, pageWidth - 2 * margin - 15)
+                findingLines.forEach(line => {
+                  checkNewPage(5)
+                  doc.text(line, margin + 10, yPos)
+                  yPos += 5
+                })
               }
               
               // IP/Port if available
               if (details.ipPort && details.ipPort !== '-' && details.ipPort !== '') {
                 checkNewPage(5)
-                yPos = addText(`IP/Port: ${details.ipPort}`, margin + 10, yPos, 9, 'normal', 'left', [80, 80, 80])
-                yPos += 4
+                doc.text(`IP/Port: ${details.ipPort}`, margin + 10, yPos)
+                yPos += 5
               }
               
               yPos += 2
@@ -1909,27 +2042,45 @@ function WebsiteSecurityAudit() {
           // Recommendations
           if (parsed.recommendations && Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0) {
             checkNewPage(10)
-            yPos = addText('Recommendations:', margin, yPos, 12, 'bold', 'left', [0, 0, 0])
-            yPos += 5
+            doc.setFontSize(12)
+            doc.setFont('helvetica', 'bold')
+            doc.text('Recommendations:', margin, yPos)
+            yPos += 6
+            doc.setFont('helvetica', 'normal')
+            doc.setFontSize(10)
             parsed.recommendations.forEach((rec, idx) => {
-              checkNewPage(7)
+              checkNewPage(6)
               const recText = typeof rec === 'string' ? rec : (rec.recommendation || rec.description || rec.text || JSON.stringify(rec))
-              yPos = addText(`${idx + 1}. ${recText}`, margin + 5, yPos, 10, 'normal', 'left', [50, 50, 50])
-              yPos += 4
+              const recLines = doc.splitTextToSize(`${idx + 1}. ${recText}`, pageWidth - 2 * margin - 10)
+              recLines.forEach(line => {
+                checkNewPage(5)
+                doc.text(line, margin + 5, yPos)
+                yPos += 5
+              })
             })
             yPos += 3
           }
         } else if (command4Data.raw) {
           // Fallback to raw output if no parsed data
           checkNewPage(10)
-          yPos = addText('Raw Output:', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-          yPos += 3
+          doc.setFontSize(10)
+          doc.setFont('helvetica', 'normal')
+          doc.setTextColor(50, 50, 50)
+          doc.text('Raw Output:', margin, yPos)
+          yPos += 6
+          doc.setFontSize(8)
+          doc.setTextColor(80, 80, 80)
           const rawLines = command4Data.raw.split('\n').slice(0, 50)
           rawLines.forEach(line => {
             if (line.trim()) {
               checkNewPage(5)
-              yPos = addText(line.substring(0, 100), margin + 5, yPos, 8, 'normal', 'left', [80, 80, 80])
-              yPos += 3
+              const rawText = line.substring(0, 120)
+              const rawTextLines = doc.splitTextToSize(rawText, pageWidth - 2 * margin - 10)
+              rawTextLines.forEach(rawLine => {
+                checkNewPage(4)
+                doc.text(rawLine, margin + 5, yPos)
+                yPos += 4
+              })
             }
           })
         }
@@ -1944,28 +2095,45 @@ function WebsiteSecurityAudit() {
       // Screenshots Section
       if (screenshots && screenshots.length > 0) {
         checkNewPage(15)
-        yPos = addText('Screenshots', margin, yPos, 14, 'bold', 'left', [0, 0, 0])
-        yPos += 5
-        yPos = addText(`${screenshots.length} screenshot(s) captured during the scan.`, margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-        yPos += 5
+        doc.setFontSize(14)
+        doc.setFont('helvetica', 'bold')
+        doc.text('Screenshots', margin, yPos)
+        yPos += 8
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(10)
+        doc.text(`${screenshots.length} screenshot(s) captured during the scan.`, margin, yPos)
+        yPos += 6
       }
       
-      // Recommendations Section
+      // General Recommendations Section
       checkNewPage(15)
-      yPos = addText('Recommendations', margin, yPos, 14, 'bold', 'left', [0, 0, 0])
-      yPos += 5
-      yPos = addText('1. Review SSL/TLS configuration and disable outdated protocols/weak ciphers', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('2. Patch or remove vulnerable server components identified in the scan', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('3. Implement security headers (CSP, X-Frame-Options, Referrer-Policy)', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('4. Enable Secure/HttpOnly/SameSite flags on cookies', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 4
-      yPos = addText('5. Review network configuration and consider using CDN/WAF for additional protection', margin, yPos, 10, 'normal', 'left', [50, 50, 50])
-      yPos += 10
+      doc.setFontSize(14)
+      doc.setFont('helvetica', 'bold')
+      doc.text('General Recommendations', margin, yPos)
+      yPos += 8
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(10)
       
-      // Update all footers
+      const generalRecs = [
+        '1. Review SSL/TLS configuration and disable outdated protocols/weak ciphers',
+        '2. Patch or remove vulnerable server components identified in the scan',
+        '3. Implement security headers (CSP, X-Frame-Options, Referrer-Policy)',
+        '4. Enable Secure/HttpOnly/SameSite flags on cookies',
+        '5. Review network configuration and consider using CDN/WAF for additional protection'
+      ]
+      
+      generalRecs.forEach(rec => {
+        checkNewPage(6)
+        const recLines = doc.splitTextToSize(rec, pageWidth - 2 * margin)
+        recLines.forEach(line => {
+          checkNewPage(5)
+          doc.text(line, margin, yPos)
+          yPos += 5
+        })
+      })
+      yPos += 5
+      
+      // Update all footers with correct page numbers
       updateAllFooters()
       
       // Save PDF

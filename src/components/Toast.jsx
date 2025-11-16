@@ -37,13 +37,16 @@ const Toast = ({
   };
 
   const getVariantStyles = () => {
-    const baseStyles = "relative flex items-center justify-between px-6 py-4 mb-2 shadow-lg backdrop-blur-sm transition-all duration-500 ease-in-out w-full";
+    // Rounded corners, no elevation (shadow), only 4 colors
+    const baseStyles = "relative flex items-center justify-between px-6 py-4 mb-2 rounded-lg backdrop-blur-sm transition-all duration-500 ease-in-out w-full";
     
     const variants = {
-      error: "bg-red-500 text-white shadow-red-200",
-      success: "bg-green-500 text-white shadow-green-200", 
-      alert: "bg-yellow-500 text-white shadow-yellow-200",
-      secondary: "bg-gray-500 text-white shadow-gray-200"
+      error: "bg-red-500 text-white",
+      success: "bg-green-500 text-white", 
+      alert: "bg-yellow-500 text-white",
+      warning: "bg-yellow-500 text-white", // Alias for alert
+      info: "bg-blue-500 text-white",
+      secondary: "bg-blue-500 text-white" // Map secondary to blue (info)
     };
 
     return `${baseStyles} ${variants[variant]}`;
@@ -60,6 +63,8 @@ const Toast = ({
       error: <XCircle className={`${iconClass} text-white`} />,
       success: <CheckCircle className={`${iconClass} text-white`} />,
       alert: <AlertTriangle className={`${iconClass} text-white`} />,
+      warning: <AlertTriangle className={`${iconClass} text-white`} />,
+      info: <Info className={`${iconClass} text-white`} />,
       secondary: <Info className={`${iconClass} text-white`} />
     };
 
@@ -72,8 +77,10 @@ const Toast = ({
     const variants = {
       error: "hover:bg-red-600 focus:ring-red-300 text-white",
       success: "hover:bg-green-600 focus:ring-green-300 text-white",
-      alert: "hover:bg-yellow-600 focus:ring-yellow-300 text-white", 
-      secondary: "hover:bg-gray-600 focus:ring-gray-300 text-white"
+      alert: "hover:bg-yellow-600 focus:ring-yellow-300 text-white",
+      warning: "hover:bg-yellow-600 focus:ring-yellow-300 text-white",
+      info: "hover:bg-blue-600 focus:ring-blue-300 text-white",
+      secondary: "hover:bg-blue-600 focus:ring-blue-300 text-white"
     };
 
     return `${baseStyles} ${variants[variant]}`;

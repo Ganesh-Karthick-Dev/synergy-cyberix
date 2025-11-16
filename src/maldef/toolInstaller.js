@@ -51,7 +51,7 @@ async function checkTool(distro, toolName) {
     const command = `command -v ${toolName} || echo "NOT_FOUND"`
     const args = ['-d', distro, '--', 'sh', '-lc', command]
     
-    const child = spawn('wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('C:\\Windows\\System32\\wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     
     child.stdout.on('data', (data) => {
@@ -122,7 +122,7 @@ async function installTool(distro, tool, password = null, onProgress = null) {
     onProgress?.({ tool: tool.name, stage: 'updating', message: 'Updating package lists...' })
     
     const updateArgs = ['-d', distro, '--', 'sh', '-lc', updateCommand]
-    const updateChild = spawn('wsl.exe', updateArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const updateChild = spawn('C:\\Windows\\System32\\wsl.exe', updateArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
     
     let updateStdout = ''
     let updateStderr = ''
@@ -153,7 +153,7 @@ async function installTool(distro, tool, password = null, onProgress = null) {
       onProgress?.({ tool: tool.name, stage: 'installing', message: `Installing ${tool.name} (${tool.package})...` })
       
       const installArgs = ['-d', distro, '--', 'sh', '-lc', installCommand]
-      const installChild = spawn('wsl.exe', installArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
+      const installChild = spawn('C:\\Windows\\System32\\wsl.exe', installArgs, { stdio: ['ignore', 'pipe', 'pipe'] })
       
       let installStdout = ''
       let installStderr = ''
@@ -236,7 +236,7 @@ async function installAllMissingTools(distro, password = null, onProgress = null
   
   return new Promise((resolve) => {
     const args = ['-d', distro, '--', 'sh', '-lc', batchCommand]
-    const child = spawn('wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('C:\\Windows\\System32\\wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
     
     let stdout = ''
     let stderr = ''
@@ -302,7 +302,7 @@ async function updateClamavDefinitions(distro, password = null, onProgress = nul
     onProgress?.({ tool: 'freshclam', stage: 'updating', message: 'Updating ClamAV virus definitions...' })
     
     const args = ['-d', distro, '--', 'sh', '-lc', command]
-    const child = spawn('wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn('C:\\Windows\\System32\\wsl.exe', args, { stdio: ['ignore', 'pipe', 'pipe'] })
     
     let stdout = ''
     let stderr = ''

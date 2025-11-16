@@ -15,7 +15,7 @@ async function checkWslInstalled() {
   // Use multiple methods to check if WSL is installed
   return new Promise((resolve) => {
     // Method 1: Try wsl --status
-    const proc1 = spawn('wsl', ['--status'], { 
+    const proc1 = spawn('C:\\Windows\\System32\\wsl.exe', ['--status'], { 
       shell: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5000
@@ -64,7 +64,7 @@ async function checkWslInstalled() {
     // Alternative method: Try wsl --list or wsl -l
     const tryAlternativeCheck = () => {
       console.log('[WSL] Trying alternative verification method: wsl --list');
-      const proc2 = spawn('wsl', ['--list'], { 
+      const proc2 = spawn('C:\\Windows\\System32\\wsl.exe', ['--list'], { 
         shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         timeout: 5000
@@ -241,6 +241,15 @@ function installWsl(onLog, onDone) {
       
       console.log('[WSL] Detected wsl --install exit code:', wslExitCode);
       
+      // Check if restart is required
+      const allOutputLower = allOutput.toLowerCase();
+      const requiresRestart = allOutputLower.includes('restart') || 
+                              allOutputLower.includes('reboot') ||
+                              wslExitCode === 3010 || // Common restart required code
+                              wslExitCode === 3011 ||
+                              allOutputLower.includes('restart required') ||
+                              allOutputLower.includes('reboot required');
+      
       // wsl --install typically returns 0 on success, but may return non-zero even on success
       // The key is that the command executed (not cancelled)
       if (code === 0) {
@@ -250,17 +259,36 @@ function installWsl(onLog, onDone) {
           onLog('WSL installation command executed successfully.');
           onLog('The installation process has been initiated.');
           onLog('');
-          onLog('=== Installation Complete ===');
-          onLog('WSL has been installed to:');
-          onLog('- C:\\Windows\\System32\\wsl.exe (WSL executable - system location)');
-          onLog('- C:\\Windows\\System32\\lxss\\ (WSL kernel - system location)');
-          onLog('- Windows Features enabled (WSL, Virtual Machine Platform)');
-          onLog('- Linux distributions will be in: C:\\Users\\Admin\\');
-          onLog('');
-          onLog('Important: You MUST restart your computer for WSL to be fully functional.');
-          onLog('After restart, WSL will be ready and distributions will be in C:\\Users\\Admin\\');
-          onLog('You can verify installation after restart by running: wsl --status');
-          onDone(true);
+          
+          if (requiresRestart) {
+            onLog('⚠️ IMPORTANT: System restart required!');
+            onLog('WSL installation has been initiated, but your computer MUST be restarted.');
+            onLog('');
+            onLog('After restart:');
+            onLog('1. WSL will be fully installed');
+            onLog('2. You can then install Ubuntu distribution');
+            onLog('3. Please restart your computer now and run this application again.');
+            onLog('');
+            onLog('=== Installation Status ===');
+            onLog('WSL installation initiated - RESTART REQUIRED');
+            onLog('WSL will be installed to:');
+            onLog('- C:\\Windows\\System32\\wsl.exe (WSL executable - system location)');
+            onLog('- C:\\Windows\\System32\\lxss\\ (WSL kernel - system location)');
+            onLog('- Windows Features enabled (WSL, Virtual Machine Platform)');
+            onDone(true); // Return true so verification can proceed after restart
+          } else {
+            onLog('=== Installation Complete ===');
+            onLog('WSL has been installed to:');
+            onLog('- C:\\Windows\\System32\\wsl.exe (WSL executable - system location)');
+            onLog('- C:\\Windows\\System32\\lxss\\ (WSL kernel - system location)');
+            onLog('- Windows Features enabled (WSL, Virtual Machine Platform)');
+            onLog('- Linux distributions will be in: C:\\Users\\Admin\\');
+            onLog('');
+            onLog('Note: If prompted, you may need to restart your computer for WSL to be fully functional.');
+            onLog('After restart (if required), WSL will be ready and distributions will be in C:\\Users\\Admin\\');
+            onLog('You can verify installation after restart by running: wsl --status');
+            onDone(true);
+          }
         } else {
           // Command may have been cancelled or UAC denied
           const allOutputLower = allOutput.toLowerCase();
@@ -272,7 +300,12 @@ function installWsl(onLog, onDone) {
             // Unclear - assume it might have worked
             onLog('WSL installation command was executed.');
             onLog('If a UAC prompt appeared, please ensure you clicked "Yes".');
-            onLog('Important: You MUST restart your computer for WSL to be fully installed.');
+            if (requiresRestart) {
+              onLog('⚠️ IMPORTANT: System restart may be required for WSL to be fully installed.');
+              onLog('Please restart your computer and run this application again.');
+            } else {
+              onLog('Note: You may need to restart your computer for WSL to be fully installed.');
+            }
             onDone(true);
           }
         }
@@ -324,7 +357,7 @@ function installUbuntu(onLog, onDone) {
     onLog('Running: wsl --install -d Ubuntu (will be moved to custom path)');
     
     // Use direct wsl command execution - install first, then we'll move it
-    const proc = spawn('wsl', ['--install', '-d', 'Ubuntu'], { 
+    const proc = spawn('C:\\Windows\\System32\\wsl.exe', ['--install', '-d', 'Ubuntu'], { 
       shell: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -430,13 +463,18 @@ async function verifyUbuntuInstalled() {
       let errorOutput = '';
 
       proc.stdout.on('data', (d) => {
-        const text = d.toString();
+        // Handle potential encoding issues by trying multiple approaches
+        let text = d.toString();
+        // Remove null bytes and normalize encoding issues
+        text = text.replace(/\0/g, '').replace(/[^\x20-\x7E\n\r\t]/g, '');
         output += text;
         console.log(`[WSL] stdout: ${text.trim()}`);
       });
 
       proc.stderr.on('data', (d) => {
-        const text = d.toString();
+        let text = d.toString();
+        // Remove null bytes and normalize encoding issues
+        text = text.replace(/\0/g, '').replace(/[^\x20-\x7E\n\r\t]/g, '');
         errorOutput += text;
         console.log(`[WSL] stderr: ${text.trim()}`);
       });
@@ -468,7 +506,7 @@ async function verifyUbuntuInstalled() {
           console.log('[WSL] Detected message: "Windows Subsystem for Linux has no installed distributions"');
           
           // Auto-install Ubuntu
-          const installProc = spawn('wsl', ['--install', '-d', 'Ubuntu'], {
+          const installProc = spawn('C:\\Windows\\System32\\wsl.exe', ['--install', '-d', 'Ubuntu'], {
             shell: true,
             stdio: ['ignore', 'pipe', 'pipe']
           });
@@ -496,7 +534,7 @@ async function verifyUbuntuInstalled() {
               console.log(`[WSL] Re-verifying Ubuntu installation (attempt ${recheckAttempts}/${maxRecheckAttempts})...`);
               
               // Create a new verification process
-              const verifyProc = spawn('wsl', ['-l', '-v'], {
+              const verifyProc = spawn('C:\\Windows\\System32\\wsl.exe', ['-l', '-v'], {
                 shell: true,
                 stdio: ['ignore', 'pipe', 'pipe'],
                 timeout: 10000
@@ -504,7 +542,10 @@ async function verifyUbuntuInstalled() {
               
               let verifyOutput = '';
               verifyProc.stdout.on('data', (d) => {
-                verifyOutput += d.toString();
+                let text = d.toString();
+                // Handle potential encoding issues
+                text = text.replace(/\0/g, '').replace(/[^\x20-\x7E\n\r\t]/g, '');
+                verifyOutput += text;
               });
               
               verifyProc.on('close', (verifyCode) => {
@@ -552,15 +593,32 @@ async function verifyUbuntuInstalled() {
         const ubuntuPatterns = [
           /ubuntu/i,
           /ubuntu-\d+\.\d+/i,
-          /ubuntu\s+\(/i
+          /ubuntu\s+\(/i,
+          /\*\s*ubuntu/i,  // Ubuntu with asterisk (default)
+          /ubuntu\s+stopped/i,  // Ubuntu stopped
+          /ubuntu\s+running/i   // Ubuntu running
         ];
-        
+
         let hasUbuntu = false;
         for (const pattern of ubuntuPatterns) {
           if (pattern.test(allOutput)) {
             hasUbuntu = true;
             console.log(`[WSL] Ubuntu found using pattern: ${pattern}`);
+            console.log(`[WSL] Matching text: "${allOutput.match(pattern)[0]}"`);
             break;
+          }
+        }
+
+        // Additional check: Look for "Ubuntu" as a standalone word in the output
+        if (!hasUbuntu) {
+          const lines = allOutput.split('\n');
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.toLowerCase().includes('ubuntu') && !trimmed.toLowerCase().includes('kali')) {
+              hasUbuntu = true;
+              console.log(`[WSL] Ubuntu found in line: "${trimmed}"`);
+              break;
+            }
           }
         }
         
@@ -632,7 +690,7 @@ function installKaliLinux(onLog, onDone) {
     onLog('Running: wsl --install -d kali-linux (will be available at custom path)');
     
     // Use direct wsl command execution
-    const proc = spawn('wsl', ['--install', '-d', 'kali-linux'], { 
+    const proc = spawn('C:\\Windows\\System32\\wsl.exe', ['--install', '-d', 'kali-linux'], { 
       shell: true,
       stdio: ['ignore', 'pipe', 'pipe']
     });
