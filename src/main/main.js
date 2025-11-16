@@ -8389,7 +8389,23 @@ app.whenReady().then(async () => {
         const base = targetDistro ? `wsl -d ${targetDistro} -u root` : `wsl -u root`;
         const fullCommand = `${base} -- ${executable} ${args.join(' ')}`;
         const start = Date.now();
-        const { stdout, stderr } = await execAsync(fullCommand, { windowsHide: true, maxBuffer: 10 * 1024 * 1024 });
+        
+        // Check if this is a subdomain enumeration command (amass enum)
+        // For subdomain enumeration, use no timeout to allow full completion
+        const isSubdomainEnum = command.includes('amass enum') || command.includes('amass_subdomains');
+        const execOptions = { 
+          windowsHide: true, 
+          maxBuffer: 10 * 1024 * 1024 
+        };
+        
+        // For subdomain enumeration, don't set a timeout (let it run to completion)
+        // For other commands, use default behavior (no explicit timeout means Node.js will wait)
+        if (!isSubdomainEnum) {
+          // For other commands, you can optionally set a timeout here if needed
+          // execOptions.timeout = 300000; // 5 minutes default
+        }
+        
+        const { stdout, stderr } = await execAsync(fullCommand, execOptions);
         const duration = Date.now() - start;
         return { success: true, stdout, stderr, code: 0, timedOut: false, duration };
       };

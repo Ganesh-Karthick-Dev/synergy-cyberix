@@ -449,7 +449,37 @@ const ComprehensiveSecurityScanner = () => {
       const footerHeight = 20
       let yPos = margin + 10
       let pageNumber = 1
-      const totalPages = 1 // Will be updated after content is added
+      
+      // Get scan timing information
+      const startTime = scanStartTime || scanTiming.startTime
+      const endTime = scanEndTime || scanTiming.endTime || Date.now()
+      const formatDateTime = (timestamp) => {
+        if (!timestamp) return 'N/A'
+        const date = new Date(timestamp)
+        return date.toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        })
+      }
+      const formatDuration = (start, end) => {
+        if (!start || !end) return 'N/A'
+        const duration = end - start
+        const seconds = Math.floor(duration / 1000)
+        const minutes = Math.floor(seconds / 60)
+        const hours = Math.floor(minutes / 60)
+        if (hours > 0) {
+          return `${hours}h ${minutes % 60}m ${seconds % 60}s`
+        } else if (minutes > 0) {
+          return `${minutes}m ${seconds % 60}s`
+        } else {
+          return `${seconds}s`
+        }
+      }
       
       // Function to draw page border (only on each page, not around content)
       const drawPageBorder = () => {
@@ -458,7 +488,7 @@ const ComprehensiveSecurityScanner = () => {
         doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
       }
       
-      // Function to add footer with "Cyberix - A Webnox Product" and page number
+      // Function to add footer with "Cyberix - A Webnox Product" (left) and page number (right)
       const addFooter = () => {
         const currentPage = doc.internal.getCurrentPageInfo().pageNumber
         const totalPages = doc.internal.getNumberOfPages()
@@ -468,16 +498,16 @@ const ComprehensiveSecurityScanner = () => {
         doc.setLineWidth(0.5)
         doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
         
-        // Footer text: "Cyberix - A Webnox Product"
+        // Footer text: "Cyberix - A Webnox Product" (left)
         doc.setFontSize(9)
         doc.setFont('helvetica', 'normal')
-        doc.setTextColor(100, 100, 100)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+        doc.setTextColor(0, 0, 0)
+        doc.text('Cyberix - A Webnox Product', margin, pageHeight - footerHeight + 12, { align: 'left' })
         
-        // Page number
+        // Page number (right)
         doc.setFontSize(9)
-        doc.setTextColor(100, 100, 100)
-        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+        doc.setTextColor(0, 0, 0)
+        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin, pageHeight - footerHeight + 12, { align: 'right' })
       }
       
       // Helper to update all page footers
@@ -493,16 +523,16 @@ const ComprehensiveSecurityScanner = () => {
           doc.setLineWidth(0.5)
           doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
           
-          // Footer text: "Cyberix - A Webnox Product"
+          // Footer text: "Cyberix - A Webnox Product" (left)
           doc.setFontSize(9)
           doc.setFont('helvetica', 'normal')
-          doc.setTextColor(100, 100, 100)
-          doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+          doc.setTextColor(0, 0, 0)
+          doc.text('Cyberix - A Webnox Product', margin, pageHeight - footerHeight + 12, { align: 'left' })
           
-          // Page number
+          // Page number (right)
           doc.setFontSize(9)
-          doc.setTextColor(100, 100, 100)
-          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+          doc.setTextColor(0, 0, 0)
+          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin, pageHeight - footerHeight + 12, { align: 'right' })
         }
       }
       
@@ -534,7 +564,7 @@ const ComprehensiveSecurityScanner = () => {
         }
       }
       
-      const addSectionBox = (title, contentLines = [], heightPadding = 15, backgroundColor = [250, 250, 250], borderColor = [180, 180, 180]) => {
+      const addSectionBox = (title, contentLines = [], heightPadding = 15) => {
         checkNewPage(30)
         
         // Calculate approximate height
@@ -546,18 +576,13 @@ const ComprehensiveSecurityScanner = () => {
           }
         })
         
-        // Professional section box
-        doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2])
-        doc.setLineWidth(0.6)
-        doc.setFillColor(backgroundColor[0], backgroundColor[1], backgroundColor[2])
-        doc.rect(margin + 5, yPos - 5, pageWidth - 2 * margin - 10, estimatedHeight, 'FD')
-        
-        // Section title with professional background
-        doc.setFillColor(245, 245, 245)
-        doc.rect(margin + 6, yPos - 4, pageWidth - 2 * margin - 12, 16, 'F')
+        // Section box with border (no fill colors)
+        doc.setDrawColor(0, 0, 0)
+        doc.setLineWidth(0.5)
+        doc.rect(margin + 5, yPos - 5, pageWidth - 2 * margin - 10, estimatedHeight)
         
         // Title text
-        doc.setTextColor(40, 40, 40)
+        doc.setTextColor(0, 0, 0)
         doc.setFontSize(13)
         doc.setFont('helvetica', 'bold')
         doc.text(title, margin + 10, yPos + 6)
@@ -568,7 +593,7 @@ const ComprehensiveSecurityScanner = () => {
           if (line.text) {
             doc.setFontSize(line.fontSize || 10)
             doc.setFont('helvetica', line.fontStyle || 'normal')
-            doc.setTextColor(line.color ? line.color[0] : 60, line.color ? line.color[1] : 60, line.color ? line.color[2] : 60)
+            doc.setTextColor(0, 0, 0)
             const lines = doc.splitTextToSize(line.text, pageWidth - 2 * margin - 30)
             lines.forEach((l, idx) => {
               doc.text(l, margin + 10 + (line.indent || 0), currentY + (idx * 6))
@@ -583,119 +608,129 @@ const ComprehensiveSecurityScanner = () => {
       const test = securityTests.find(t => t.id === testId)
       const testName = test ? test.name : testId
       
-      // Enhanced Header with better styling
-      doc.setFillColor(59, 130, 246) // Blue
-      doc.setDrawColor(59, 130, 246)
-      doc.setLineWidth(0)
-      doc.rect(margin + 5, yPos - 5, pageWidth - 2 * margin - 10, 35, 'F')
-      doc.setTextColor(255, 255, 255)
-      doc.setFontSize(22)
+      // Header Section - First Page Top
+      doc.setFontSize(18)
       doc.setFont('helvetica', 'bold')
-      doc.text('Security Scan Report', pageWidth / 2, yPos + 10, { align: 'center' })
-      doc.setFontSize(14)
-      doc.setFont('helvetica', 'normal')
-      doc.text(`Test: ${testName}`, pageWidth / 2, yPos + 20, { align: 'center' })
-      yPos += 45
+      doc.setTextColor(0, 0, 0)
+      doc.text('Security Scan Report', margin + 10, yPos)
+      yPos += 8
       
-      // Enhanced Scan Details Section
-      addSectionBox('Scan Details', [
-        { text: `Target: ${targetUrl}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
-        { text: `Date: ${new Date().toLocaleString()}`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] },
-        { text: `Scanner: Cyberix Security Scanner`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] }
-      ])
+      // Scan Name
+      doc.setFontSize(14)
+      doc.setFont('helvetica', 'bold')
+      doc.text(`Scan Name: ${testName}`, margin + 10, yPos)
+      yPos += 8
+      
+      // Started Date and Time
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Started Date and Time: ${formatDateTime(startTime)}`, margin + 10, yPos)
+      yPos += 7
+      
+      // Ended Date and Time
+      doc.text(`Ended Date and Time: ${formatDateTime(endTime)}`, margin + 10, yPos)
+      yPos += 7
+      
+      // Total Timing
+      doc.text(`Total Timing: ${formatDuration(startTime, endTime)}`, margin + 10, yPos)
+      yPos += 7
+      
+      // Site/Domain URL
+      doc.text(`Site/Domain URL: ${targetUrl}`, margin + 10, yPos)
+      yPos += 15
+      
+      // Separator line
+      doc.setDrawColor(0, 0, 0)
+      doc.setLineWidth(0.5)
+      doc.line(margin + 5, yPos, pageWidth - margin - 5, yPos)
+      yPos += 10
       
       // Result Content - Include all content from detailed report dialog
       if (result) {
         const report = result.report || {}
         
-        // Enhanced Scan Summary Section
-        const statusColor = result.status === 'completed' ? [34, 197, 94] : result.status === 'failed' ? [239, 68, 68] : [156, 163, 175]
+        // Scan Summary Section
         addSectionBox('Scan Summary', [
-          { text: `Status: ${result.status || 'N/A'}`, fontSize: 11, fontStyle: 'bold', color: statusColor },
-          { text: `Findings Count: ${result.findings?.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
-          { text: `Recommendations: ${result.recommendations?.length || report.recommendations?.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
-          { text: `Severity Level: ${result.severity || test?.severity || 'N/A'}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] }
+          { text: `Status: ${result.status || 'N/A'}`, fontSize: 11, fontStyle: 'bold' },
+          { text: `Findings Count: ${result.findings?.length || 0}`, fontSize: 11, fontStyle: 'normal' },
+          { text: `Recommendations: ${result.recommendations?.length || report.recommendations?.length || 0}`, fontSize: 11, fontStyle: 'normal' },
+          { text: `Severity Level: ${result.severity || test?.severity || 'N/A'}`, fontSize: 11, fontStyle: 'normal' }
         ])
         
-        // Enhanced Risk Assessment Section
+        // Risk Assessment Section
         if (report.riskLevel || report.risk_summary) {
           const riskLevel = report.risk_summary?.overall_risk || report.riskLevel
-          const riskColor = riskLevel === 'Critical' ? [239, 68, 68] : riskLevel === 'High' ? [249, 115, 22] : 
-                           riskLevel === 'Medium' ? [234, 179, 8] : riskLevel === 'Low' ? [34, 197, 94] : [100, 100, 100]
           const riskLines = [
-            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold', color: riskColor }
+            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold' }
           ]
           if (report.risk_summary?.summary) {
-            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal' })
           }
           if (report.risk_summary) {
             riskLines.push(
-              { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] },
-              { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+              { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal' },
+              { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal' }
             )
           }
           addSectionBox('Risk Assessment', riskLines)
         }
         
-        // Enhanced Security Score Section (for DNS scans)
+        // Security Score Section (for DNS scans)
         if (report.security_score) {
           addSectionBox('Security Score', [
-            { text: `Score: ${report.security_score.score}/100`, fontSize: 12, fontStyle: 'bold', color: [30, 30, 30] },
-            { text: `Grade: ${report.security_score.grade}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] },
-            { text: report.security_score.description || '', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            { text: `Score: ${report.security_score.score}/100`, fontSize: 12, fontStyle: 'bold' },
+            { text: `Grade: ${report.security_score.grade}`, fontSize: 11, fontStyle: 'bold' },
+            { text: report.security_score.description || '', fontSize: 10, fontStyle: 'normal' }
           ])
         }
         
-        // Enhanced Scan Details Section
+        // Scan Details Section
         if (report.target || report.scanType) {
           const scanDetailsLines = []
-          if (report.target) scanDetailsLines.push({ text: `Target: ${report.target}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
-          if (report.scanType) scanDetailsLines.push({ text: `Scan Type: ${report.scanType}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+          if (report.target) scanDetailsLines.push({ text: `Target: ${report.target}`, fontSize: 11, fontStyle: 'normal' })
+          if (report.scanType) scanDetailsLines.push({ text: `Scan Type: ${report.scanType}`, fontSize: 11, fontStyle: 'normal' })
           if (scanDetailsLines.length > 0) {
             addSectionBox('Scan Information', scanDetailsLines)
           }
         }
         
-        // DNS-Specific Content - Enhanced with structured boxes
+        // DNS-Specific Content
         if (testId === 'dns-resolution' || report.scanType === 'DNS Resolution & Analysis' || report.scanType === 'DNS Analysis') {
           // DNS Summary
           if (report.summary) {
             const dnsLines = []
             if (report.summary.dnssec !== undefined) {
-              const dnssecColor = report.summary.dnssec ? [34, 197, 94] : [234, 179, 8]
-              dnsLines.push({ text: `DNSSEC: ${report.summary.dnssec ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'normal', color: dnssecColor })
+              dnsLines.push({ text: `DNSSEC: ${report.summary.dnssec ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (report.summary.zoneTransfer) {
-              dnsLines.push({ text: `Zone Transfer: ${report.summary.zoneTransfer}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+              dnsLines.push({ text: `Zone Transfer: ${report.summary.zoneTransfer}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (report.summary.spfRecord !== undefined) {
-              const spfColor = report.summary.spfRecord ? [34, 197, 94] : [234, 179, 8]
-              dnsLines.push({ text: `SPF Record: ${report.summary.spfRecord ? 'Configured' : 'Missing'}`, fontSize: 11, fontStyle: 'normal', color: spfColor })
+              dnsLines.push({ text: `SPF Record: ${report.summary.spfRecord ? 'Configured' : 'Missing'}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (report.summary.dmarcRecord !== undefined) {
-              const dmarcColor = report.summary.dmarcRecord ? [34, 197, 94] : [234, 179, 8]
-              dnsLines.push({ text: `DMARC Record: ${report.summary.dmarcRecord ? 'Configured' : 'Missing'}`, fontSize: 11, fontStyle: 'normal', color: dmarcColor })
+              dnsLines.push({ text: `DMARC Record: ${report.summary.dmarcRecord ? 'Configured' : 'Missing'}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (report.summary.subdomainsFound !== undefined) {
-              dnsLines.push({ text: `Subdomains Found: ${report.summary.subdomainsFound}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+              dnsLines.push({ text: `Subdomains Found: ${report.summary.subdomainsFound}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (dnsLines.length > 0) {
               addSectionBox('DNS Summary', dnsLines)
             }
           }
           
-          // DNS Records - Enhanced
+          // DNS Records
           if (report.records) {
             const recordLines = []
             Object.entries(report.records).forEach(([recordType, records]) => {
               if (records && Array.isArray(records) && records.length > 0) {
-                recordLines.push({ text: `${recordType} Records (${records.length}):`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+                recordLines.push({ text: `${recordType} Records (${records.length}):`, fontSize: 11, fontStyle: 'bold' })
                 records.slice(0, 10).forEach((record, idx) => {
                   const recordText = typeof record === 'object' ? JSON.stringify(record) : String(record)
-                  recordLines.push({ text: `  ${idx + 1}. ${recordText}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 0 })
+                  recordLines.push({ text: `  ${idx + 1}. ${recordText}`, fontSize: 9, fontStyle: 'normal', indent: 0 })
                 })
                 if (records.length > 10) {
-                  recordLines.push({ text: `  ... and ${records.length - 10} more ${recordType} records`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100], indent: 0 })
+                  recordLines.push({ text: `  ... and ${records.length - 10} more ${recordType} records`, fontSize: 9, fontStyle: 'italic', indent: 0 })
                 }
               }
             })
@@ -704,33 +739,31 @@ const ComprehensiveSecurityScanner = () => {
             }
           }
           
-          // DNSSEC Status - Enhanced
+          // DNSSEC Status
           if (report.dnssec) {
-            const dnssecColor = report.dnssec.enabled ? [34, 197, 94] : [239, 68, 68]
             const dnssecLines = [
-              { text: `Status: ${report.dnssec.enabled ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'bold', color: dnssecColor }
+              { text: `Status: ${report.dnssec.enabled ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'bold' }
             ]
             if (report.dnssec.recommendation) {
-              dnssecLines.push({ text: report.dnssec.recommendation, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              dnssecLines.push({ text: report.dnssec.recommendation, fontSize: 10, fontStyle: 'normal' })
             }
             addSectionBox('DNSSEC Status', dnssecLines)
           }
           
-          // Zone Transfer Status - Enhanced
+          // Zone Transfer Status
           if (report.zone_transfer) {
-            const zoneColor = report.zone_transfer.allowed ? [239, 68, 68] : [34, 197, 94]
             addSectionBox('Zone Transfer Status', [
-              { text: `Status: ${report.zone_transfer.allowed ? 'Allowed (Security Risk)' : 'Blocked (Secure)'}`, fontSize: 11, fontStyle: 'bold', color: zoneColor }
+              { text: `Status: ${report.zone_transfer.allowed ? 'Allowed (Security Risk)' : 'Blocked (Secure)'}`, fontSize: 11, fontStyle: 'bold' }
             ])
           }
           
-          // Subdomains - Enhanced
+          // Subdomains
           if (report.subdomains && report.subdomains.length > 0) {
             const subdomainLines = report.subdomains.slice(0, 30).map((subdomain, idx) => ({
-              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal'
             }))
             if (report.subdomains.length > 30) {
-              subdomainLines.push({ text: `... and ${report.subdomains.length - 30} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+              subdomainLines.push({ text: `... and ${report.subdomains.length - 30} more subdomains`, fontSize: 9, fontStyle: 'italic' })
             }
             addSectionBox('Discovered Subdomains', subdomainLines, 15)
           }
@@ -738,52 +771,52 @@ const ComprehensiveSecurityScanner = () => {
           // Scan Health (if available)
           if (report.scan_health) {
             const healthLines = [
-              { text: `Status: ${report.scan_health.status}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] }
+              { text: `Status: ${report.scan_health.status}`, fontSize: 11, fontStyle: 'bold' }
             ]
             if (report.scan_health.notes && report.scan_health.notes.length > 0) {
               report.scan_health.notes.forEach(note => {
-                healthLines.push({ text: `• ${note}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60], indent: 0 })
+                healthLines.push({ text: `• ${note}`, fontSize: 10, fontStyle: 'normal', indent: 0 })
               })
             }
             addSectionBox('Scan Health', healthLines)
           }
         }
         
-        // SSL/TLS-Specific Content - Enhanced
+        // SSL/TLS-Specific Content
         if (report.scanType === 'SSL/TLS Analysis') {
           if (report.supportedProtocols) {
             const sslLines = [
-              { text: `Supported Protocols: ${report.supportedProtocols.join(', ')}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] }
+              { text: `Supported Protocols: ${report.supportedProtocols.join(', ')}`, fontSize: 11, fontStyle: 'normal' }
             ]
             if (report.cipherStrength) {
-              sslLines.push({ text: `Cipher Strength: ${report.cipherStrength}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+              sslLines.push({ text: `Cipher Strength: ${report.cipherStrength}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (report.certificateInfo) {
               if (report.certificateInfo.issuer) {
-                sslLines.push({ text: `Certificate Issuer: ${report.certificateInfo.issuer}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+                sslLines.push({ text: `Certificate Issuer: ${report.certificateInfo.issuer}`, fontSize: 11, fontStyle: 'normal' })
               }
               if (report.certificateInfo.validTo) {
-                sslLines.push({ text: `Valid Until: ${report.certificateInfo.validTo}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+                sslLines.push({ text: `Valid Until: ${report.certificateInfo.validTo}`, fontSize: 11, fontStyle: 'normal' })
               }
             }
             addSectionBox('SSL/TLS Configuration', sslLines)
           }
         }
         
-        // Security Headers-Specific Content - Enhanced
+        // Security Headers-Specific Content
         if (report.scanType === 'Security Headers') {
           if (report.headersFound || report.missingHeaders) {
             const headerLines = []
             if (report.headersFound) {
-              headerLines.push({ text: 'Headers Found:', fontSize: 11, fontStyle: 'bold', color: [34, 197, 94] })
+              headerLines.push({ text: 'Headers Found:', fontSize: 11, fontStyle: 'bold' })
               Object.entries(report.headersFound).slice(0, 15).forEach(([key, value]) => {
-                headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+                headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
               })
             }
             if (report.missingHeaders && report.missingHeaders.length > 0) {
-              headerLines.push({ text: 'Missing Headers:', fontSize: 11, fontStyle: 'bold', color: [239, 68, 68] })
+              headerLines.push({ text: 'Missing Headers:', fontSize: 11, fontStyle: 'bold' })
               report.missingHeaders.forEach((header) => {
-                headerLines.push({ text: `- ${header}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 5 })
+                headerLines.push({ text: `- ${header}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
               })
             }
             if (headerLines.length > 0) {
@@ -792,7 +825,7 @@ const ComprehensiveSecurityScanner = () => {
           }
         }
         
-        // Port Scanning-Specific Content - Enhanced
+        // Port Scanning-Specific Content
         if (report.scanType === 'Port Scanning') {
           if (report.openPorts && report.openPorts.length > 0) {
             const portLines = []
@@ -800,25 +833,24 @@ const ComprehensiveSecurityScanner = () => {
               portLines.push({ 
                 text: `Port ${port.port}: ${port.service || 'Unknown Service'} ${port.version ? `(${port.version})` : ''}`, 
                 fontSize: 10, 
-                fontStyle: 'normal', 
-                color: [60, 60, 60] 
+                fontStyle: 'normal'
               })
             })
             if (report.openPorts.length > 25) {
-              portLines.push({ text: `... and ${report.openPorts.length - 25} more ports`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+              portLines.push({ text: `... and ${report.openPorts.length - 25} more ports`, fontSize: 9, fontStyle: 'italic' })
             }
             addSectionBox('Open Ports', portLines, 15)
           }
         }
         
-        // Subdomain Enumeration-Specific Content - Enhanced
+        // Subdomain Enumeration-Specific Content
         if (report.scanType === 'Subdomain Enumeration') {
           if (report.subdomainsFound && report.subdomainsFound.length > 0) {
             const subdomainLines = report.subdomainsFound.slice(0, 35).map((subdomain, idx) => ({
-              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal'
             }))
             if (report.subdomainsFound.length > 35) {
-              subdomainLines.push({ text: `... and ${report.subdomainsFound.length - 35} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+              subdomainLines.push({ text: `... and ${report.subdomainsFound.length - 35} more subdomains`, fontSize: 9, fontStyle: 'italic' })
             }
             addSectionBox('Discovered Subdomains', subdomainLines, 15)
           }
@@ -830,16 +862,15 @@ const ComprehensiveSecurityScanner = () => {
           const quickFingerprintLines = []
           
           // Summary section
-          if (summary.target_url) quickFingerprintLines.push({ text: `Target URL: ${summary.target_url}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
-          if (summary.status_code) quickFingerprintLines.push({ text: `Status Code: ${summary.status_code}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
-          if (summary.title) quickFingerprintLines.push({ text: `Title: ${summary.title}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
-          if (summary.ip) quickFingerprintLines.push({ text: `IP Address: ${summary.ip}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
-          if (summary.country) quickFingerprintLines.push({ text: `Country: ${summary.country}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
-          if (summary.plugins) quickFingerprintLines.push({ text: `Plugins Detected: ${summary.plugins.length || 0}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
-          if (summary.summary) quickFingerprintLines.push({ text: `Summary: ${summary.summary}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+          if (summary.target_url) quickFingerprintLines.push({ text: `Target URL: ${summary.target_url}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.status_code) quickFingerprintLines.push({ text: `Status Code: ${summary.status_code}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.title) quickFingerprintLines.push({ text: `Title: ${summary.title}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.ip) quickFingerprintLines.push({ text: `IP Address: ${summary.ip}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.country) quickFingerprintLines.push({ text: `Country: ${summary.country}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.plugins) quickFingerprintLines.push({ text: `Plugins Detected: ${summary.plugins.length || 0}`, fontSize: 11, fontStyle: 'bold' })
+          if (summary.summary) quickFingerprintLines.push({ text: `Summary: ${summary.summary}`, fontSize: 10, fontStyle: 'normal' })
           if (summary.severity_hint) {
-            const severityColor = summary.severity_hint === 'High' ? [239, 68, 68] : summary.severity_hint === 'Medium' ? [249, 115, 22] : [59, 130, 246]
-            quickFingerprintLines.push({ text: `Severity: ${summary.severity_hint}`, fontSize: 11, fontStyle: 'bold', color: severityColor })
+            quickFingerprintLines.push({ text: `Severity: ${summary.severity_hint}`, fontSize: 11, fontStyle: 'bold' })
           }
           
           if (quickFingerprintLines.length > 0) {
@@ -851,11 +882,10 @@ const ComprehensiveSecurityScanner = () => {
             const pluginLines = summary.plugins.slice(0, 20).map((plugin, idx) => ({
               text: `${idx + 1}. ${plugin.name || 'Unknown'}${plugin.description ? ` - ${plugin.description}` : ''}`, 
               fontSize: 10, 
-              fontStyle: 'normal', 
-              color: [60, 60, 60]
+              fontStyle: 'normal'
             }))
             if (summary.plugins.length > 20) {
-              pluginLines.push({ text: `... and ${summary.plugins.length - 20} more plugins`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+              pluginLines.push({ text: `... and ${summary.plugins.length - 20} more plugins`, fontSize: 9, fontStyle: 'italic' })
             }
             addSectionBox('Detected Plugins', pluginLines, 15)
           }
@@ -864,10 +894,10 @@ const ComprehensiveSecurityScanner = () => {
           if (summary.http_headers && Object.keys(summary.http_headers).length > 0) {
             const headerLines = []
             Object.entries(summary.http_headers).slice(0, 30).forEach(([key, value]) => {
-              headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60] })
+              headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal' })
             })
             if (Object.keys(summary.http_headers).length > 30) {
-              headerLines.push({ text: `... and ${Object.keys(summary.http_headers).length - 30} more headers`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+              headerLines.push({ text: `... and ${Object.keys(summary.http_headers).length - 30} more headers`, fontSize: 9, fontStyle: 'italic' })
             }
             if (headerLines.length > 0) {
               addSectionBox('HTTP Headers', headerLines, 15)
@@ -877,7 +907,7 @@ const ComprehensiveSecurityScanner = () => {
           // Recommendation section
           if (summary.recommendation) {
             addSectionBox('Recommendations', [
-              { text: summary.recommendation, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+              { text: summary.recommendation, fontSize: 10, fontStyle: 'normal' }
             ])
           }
         }
@@ -889,15 +919,14 @@ const ComprehensiveSecurityScanner = () => {
           // Aggregate Findings
           if (json.aggregate_findings) {
             const findings = json.aggregate_findings
-            const uploadAllowedColor = findings.upload_allowed === true ? [239, 68, 68] : findings.upload_allowed === false ? [34, 197, 94] : [156, 163, 175]
             const findingLines = [
-              { text: `Upload Allowed: ${findings.upload_allowed === true ? 'Yes' : findings.upload_allowed === false ? 'No' : 'Unknown'}`, fontSize: 11, fontStyle: 'bold', color: uploadAllowedColor },
-              { text: `Confidence: ${findings.confidence || 'low'}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
-              { text: `Severity: ${findings.severity || 'unknown'}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
-              { text: `Evidence Count: ${findings.evidence?.length || 0}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] }
+              { text: `Upload Allowed: ${findings.upload_allowed === true ? 'Yes' : findings.upload_allowed === false ? 'No' : 'Unknown'}`, fontSize: 11, fontStyle: 'bold' },
+              { text: `Confidence: ${findings.confidence || 'low'}`, fontSize: 11, fontStyle: 'normal' },
+              { text: `Severity: ${findings.severity || 'unknown'}`, fontSize: 11, fontStyle: 'normal' },
+              { text: `Evidence Count: ${findings.evidence?.length || 0}`, fontSize: 11, fontStyle: 'normal' }
             ]
             if (findings.rationale) {
-              findingLines.push({ text: `Rationale: ${findings.rationale}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              findingLines.push({ text: `Rationale: ${findings.rationale}`, fontSize: 10, fontStyle: 'normal' })
             }
             addSectionBox('Aggregate Findings', findingLines)
           }
@@ -907,11 +936,11 @@ const ComprehensiveSecurityScanner = () => {
             const reportLines = []
             
             if (json.meta) {
-              if (json.meta.generated_at_utc) reportLines.push({ text: `Timestamp: ${json.meta.generated_at_utc}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
-              if (json.meta.target) reportLines.push({ text: `Target: ${json.meta.target}`, fontSize: 10, fontStyle: 'normal', color: [30, 30, 30] })
+              if (json.meta.generated_at_utc) reportLines.push({ text: `Timestamp: ${json.meta.generated_at_utc}`, fontSize: 10, fontStyle: 'normal' })
+              if (json.meta.target) reportLines.push({ text: `Target: ${json.meta.target}`, fontSize: 10, fontStyle: 'normal' })
             }
             
-            reportLines.push({ text: 'Test Objective: Assess whether the upload endpoint correctly validates and stores files, and whether uploaded content is publicly accessible.', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            reportLines.push({ text: 'Test Objective: Assess whether the upload endpoint correctly validates and stores files, and whether uploaded content is publicly accessible.', fontSize: 10, fontStyle: 'normal' })
             
             if (json.commands && Array.isArray(json.commands)) {
               const cmds = json.commands
@@ -923,29 +952,29 @@ const ComprehensiveSecurityScanner = () => {
               const status = (c) => c?.status_code ?? null
               const ok = (c) => !!(status(c) && status(c) >= 200 && status(c) < 300)
               
-              reportLines.push({ text: 'Commands Executed (summary):', fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
-              reportLines.push({ text: `  • Basic upload with test.txt ${ok(upTest) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Disguised script upload harmless.php.txt ${ok(upHarmless) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Checked public accessibility of uploaded file (HEAD) ${ok(head) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Sensitive file upload attempt (/etc/passwd) ${ok(etcp) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: 'Commands Executed (summary):', fontSize: 11, fontStyle: 'bold' })
+              reportLines.push({ text: `  • Basic upload with test.txt ${ok(upTest) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Disguised script upload harmless.php.txt ${ok(upHarmless) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Checked public accessibility of uploaded file (HEAD) ${ok(head) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Sensitive file upload attempt (/etc/passwd) ${ok(etcp) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
               
-              reportLines.push({ text: 'Results:', fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
-              reportLines.push({ text: `  • Upload (test.txt): ${status(upTest) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Upload (harmless.php.txt): ${status(upHarmless) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Public access (HEAD): ${status(head) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Upload (/etc/passwd): ${status(etcp) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: 'Results:', fontSize: 11, fontStyle: 'bold' })
+              reportLines.push({ text: `  • Upload (test.txt): ${status(upTest) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Upload (harmless.php.txt): ${status(upHarmless) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Public access (HEAD): ${status(head) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Upload (/etc/passwd): ${status(etcp) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
               
               const uploadAllowed = ok(upTest) || ok(upHarmless)
               const publicAccess = ok(head)
               
-              reportLines.push({ text: 'Vulnerability Status:', fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
-              reportLines.push({ text: `  • File upload allowed: ${uploadAllowed ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Malicious file upload possible: ${ok(upHarmless) ? 'Yes (disguised script accepted)' : 'Unclear'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
-              reportLines.push({ text: `  • Public file access allowed: ${publicAccess ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+              reportLines.push({ text: 'Vulnerability Status:', fontSize: 11, fontStyle: 'bold' })
+              reportLines.push({ text: `  • File upload allowed: ${uploadAllowed ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Malicious file upload possible: ${ok(upHarmless) ? 'Yes (disguised script accepted)' : 'Unclear'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Public file access allowed: ${publicAccess ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal' })
             }
             
             if (json.aggregate_findings?.severity) {
-              reportLines.push({ text: `Risk Level: ${json.aggregate_findings.severity}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              reportLines.push({ text: `Risk Level: ${json.aggregate_findings.severity}`, fontSize: 11, fontStyle: 'bold' })
             }
             
             if (reportLines.length > 0) {
@@ -1261,55 +1290,53 @@ const ComprehensiveSecurityScanner = () => {
           }
         }
         
-        // Enhanced Findings Section
+        // Findings Section
         if (result.findings && result.findings.length > 0) {
           const findingLines = []
           result.findings.forEach((finding, idx) => {
             const findingType = finding.type || 'info'
             const findingMessage = finding.message || 'No message available'
             const findingDetails = finding.details ? (typeof finding.details === 'object' ? JSON.stringify(finding.details, null, 2) : String(finding.details)) : ''
-            const findingColor = findingType === 'critical' ? [239, 68, 68] : findingType === 'high' ? [249, 115, 22] : 
-                               findingType === 'medium' ? [234, 179, 8] : findingType === 'low' ? [59, 130, 246] : [34, 197, 94]
-            findingLines.push({ text: `${idx + 1}. [${findingType.toUpperCase()}] ${findingMessage}`, fontSize: 11, fontStyle: 'bold', color: findingColor })
+            findingLines.push({ text: `${idx + 1}. [${findingType.toUpperCase()}] ${findingMessage}`, fontSize: 11, fontStyle: 'bold' })
             if (findingDetails) {
               const detailsText = findingDetails.length > 300 ? findingDetails.substring(0, 300) + '...' : findingDetails
-              findingLines.push({ text: `   Details: ${detailsText}`, fontSize: 9, fontStyle: 'normal', color: [80, 80, 80], indent: 5 })
+              findingLines.push({ text: `   Details: ${detailsText}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
             }
           })
           addSectionBox('Findings & Recommendations', findingLines, 20)
         }
         
-        // Enhanced Issues from Report
+        // Issues from Report
         if (report.issues && report.issues.length > 0) {
           const issueLines = report.issues.map((issue, idx) => {
             const issueText = typeof issue === 'object' ? JSON.stringify(issue, null, 2) : String(issue)
             const displayText = issueText.length > 250 ? issueText.substring(0, 250) + '...' : issueText
-            return { text: `${idx + 1}. ${displayText}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            return { text: `${idx + 1}. ${displayText}`, fontSize: 10, fontStyle: 'normal' }
           })
           addSectionBox('Issues', issueLines, 15)
         }
         
-        // Enhanced Recommendations Section
+        // Recommendations Section
         const allRecommendations = [
           ...(result.recommendations || []),
           ...(report.recommendations || [])
         ]
         if (allRecommendations.length > 0) {
           const recLines = allRecommendations.map((rec, idx) => ({
-            text: `${idx + 1}. ${rec}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+            text: `${idx + 1}. ${rec}`, fontSize: 10, fontStyle: 'normal'
           }))
           addSectionBox('Recommendations', recLines, 15)
         }
         
-        // Enhanced Raw Output Section
+        // Raw Output Section
         if (report.rawOutput || report.raw_output) {
           const rawText = report.rawOutput || report.raw_output || ''
           const rawLines = doc.splitTextToSize(rawText.substring(0, 3000), pageWidth - 2 * margin - 25)
           const displayRawLines = rawLines.slice(0, 50).map(line => ({
-            text: line, fontSize: 8, fontStyle: 'normal', color: [80, 80, 80]
+            text: line, fontSize: 8, fontStyle: 'normal'
           }))
           if (rawText.length > 3000 || rawLines.length > 50) {
-            displayRawLines.push({ text: `... (output truncated, showing first 3000 characters of ${rawText.length} total)`, fontSize: 8, fontStyle: 'italic', color: [120, 120, 120] })
+            displayRawLines.push({ text: `... (output truncated, showing first 3000 characters of ${rawText.length} total)`, fontSize: 8, fontStyle: 'italic' })
           }
           addSectionBox('Raw Scan Output', displayRawLines, 10)
         }
@@ -4613,7 +4640,38 @@ const ComprehensiveSecurityScanner = () => {
         doc.rect(borderMargin, borderMargin, pageWidth - 2 * borderMargin, pageHeight - 2 * borderMargin)
       }
       
-      // Function to add footer with "Cyberix - A Webnox Product" and page number
+      // Get scan timing information
+      const startTime = scanStartTime || scanTiming.startTime
+      const endTime = scanEndTime || scanTiming.endTime || Date.now()
+      const formatDateTime = (timestamp) => {
+        if (!timestamp) return 'N/A'
+        const date = new Date(timestamp)
+        return date.toLocaleString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        })
+      }
+      const formatDuration = (start, end) => {
+        if (!start || !end) return 'N/A'
+        const duration = end - start
+        const seconds = Math.floor(duration / 1000)
+        const minutes = Math.floor(seconds / 60)
+        const hours = Math.floor(minutes / 60)
+        if (hours > 0) {
+          return `${hours}h ${minutes % 60}m ${seconds % 60}s`
+        } else if (minutes > 0) {
+          return `${minutes}m ${seconds % 60}s`
+        } else {
+          return `${seconds}s`
+        }
+      }
+      
+      // Function to add footer with "Cyberix - A Webnox Product" (left) and page number (right)
       const addFooter = () => {
         const currentPage = doc.internal.getCurrentPageInfo().pageNumber
         const totalPages = doc.internal.getNumberOfPages()
@@ -4623,16 +4681,16 @@ const ComprehensiveSecurityScanner = () => {
         doc.setLineWidth(0.5)
         doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
         
-        // Footer text: "Cyberix - A Webnox Product"
+        // Footer text: "Cyberix - A Webnox Product" (left)
         doc.setFontSize(9)
         doc.setFont('helvetica', 'normal')
-        doc.setTextColor(100, 100, 100)
-        doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+        doc.setTextColor(0, 0, 0)
+        doc.text('Cyberix - A Webnox Product', margin, pageHeight - footerHeight + 12, { align: 'left' })
         
-        // Page number
+        // Page number (right)
         doc.setFontSize(9)
-        doc.setTextColor(100, 100, 100)
-        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+        doc.setTextColor(0, 0, 0)
+        doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin, pageHeight - footerHeight + 12, { align: 'right' })
       }
       
       // Helper to update all page footers
@@ -4648,16 +4706,16 @@ const ComprehensiveSecurityScanner = () => {
           doc.setLineWidth(0.5)
           doc.line(margin, pageHeight - footerHeight, pageWidth - margin, pageHeight - footerHeight)
           
-          // Footer text: "Cyberix - A Webnox Product"
+          // Footer text: "Cyberix - A Webnox Product" (left)
           doc.setFontSize(9)
           doc.setFont('helvetica', 'normal')
-          doc.setTextColor(100, 100, 100)
-          doc.text('Cyberix - A Webnox Product', pageWidth / 2, pageHeight - footerHeight + 12, { align: 'center' })
+          doc.setTextColor(0, 0, 0)
+          doc.text('Cyberix - A Webnox Product', margin, pageHeight - footerHeight + 12, { align: 'left' })
           
-          // Page number
+          // Page number (right)
           doc.setFontSize(9)
-          doc.setTextColor(100, 100, 100)
-          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin - 5, pageHeight - footerHeight + 12, { align: 'right' })
+          doc.setTextColor(0, 0, 0)
+          doc.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin, pageHeight - footerHeight + 12, { align: 'right' })
         }
       }
       
@@ -4665,11 +4723,11 @@ const ComprehensiveSecurityScanner = () => {
       drawPageBorder()
       addFooter()
       
-      // Helper function to add text with word wrap
-      const addText = (text, x, y, maxWidth = pageWidth - 40, fontSize = 12, fontStyle = 'normal', color = [0, 0, 0]) => {
+      // Helper function to add text with word wrap (no colors)
+      const addText = (text, x, y, maxWidth = pageWidth - 40, fontSize = 12, fontStyle = 'normal') => {
         doc.setFontSize(fontSize)
         doc.setFont('helvetica', fontStyle)
-        doc.setTextColor(color[0], color[1], color[2])
+        doc.setTextColor(0, 0, 0)
         const lines = doc.splitTextToSize(text || '', maxWidth)
         doc.text(lines, x, y)
         return y + (lines.length * (fontSize * 0.4)) + 5
@@ -4690,8 +4748,8 @@ const ComprehensiveSecurityScanner = () => {
         }
       }
       
-      // Enhanced section box helper with professional styling
-      const addSectionBox = (title, contentLines = [], heightPadding = 15, backgroundColor = [250, 250, 250], borderColor = [180, 180, 180]) => {
+      // Section box helper (no colors)
+      const addSectionBox = (title, contentLines = [], heightPadding = 15) => {
         checkNewPage(30)
         
         // Calculate approximate height
@@ -4703,18 +4761,13 @@ const ComprehensiveSecurityScanner = () => {
           }
         })
         
-        // Professional section box
-        doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2])
-        doc.setLineWidth(0.6)
-        doc.setFillColor(backgroundColor[0], backgroundColor[1], backgroundColor[2])
-        doc.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, estimatedHeight, 'FD')
-        
-        // Section title with professional background
-        doc.setFillColor(245, 245, 245)
-        doc.rect(margin + 6, yPosition - 4, pageWidth - 2 * margin - 12, 16, 'F')
+        // Section box with border (no fill colors)
+        doc.setDrawColor(0, 0, 0)
+        doc.setLineWidth(0.5)
+        doc.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, estimatedHeight)
         
         // Title text
-        doc.setTextColor(40, 40, 40)
+        doc.setTextColor(0, 0, 0)
         doc.setFontSize(13)
         doc.setFont('helvetica', 'bold')
         doc.text(title, margin + 10, yPosition + 6)
@@ -4725,7 +4778,7 @@ const ComprehensiveSecurityScanner = () => {
           if (line.text) {
             doc.setFontSize(line.fontSize || 10)
             doc.setFont('helvetica', line.fontStyle || 'normal')
-            doc.setTextColor(line.color ? line.color[0] : 60, line.color ? line.color[1] : 60, line.color ? line.color[2] : 60)
+            doc.setTextColor(0, 0, 0)
             const lines = doc.splitTextToSize(line.text, pageWidth - 2 * margin - 30)
             lines.forEach((l, idx) => {
               doc.text(l, margin + 10 + (line.indent || 0), currentY + (idx * 6))
@@ -4737,35 +4790,48 @@ const ComprehensiveSecurityScanner = () => {
         yPosition = yPosition - 5 + estimatedHeight + 10
       }
       
-      // Enhanced Title Header
-      doc.setFillColor(59, 130, 246) // Blue
-      doc.setDrawColor(59, 130, 246)
-      doc.setLineWidth(0)
-      doc.rect(margin + 5, yPosition - 5, pageWidth - 2 * margin - 10, 40, 'F')
-      doc.setTextColor(255, 255, 255)
-      doc.setFontSize(22)
+      // Header Section - First Page Top
+      doc.setFontSize(18)
       doc.setFont('helvetica', 'bold')
-      
+      doc.setTextColor(0, 0, 0)
       if (isDnsReport) {
-        doc.text('DNS Security Analysis - Comprehensive Report', pageWidth / 2, yPosition + 10, { align: 'center' })
-        doc.setFontSize(14)
-        doc.setFont('helvetica', 'normal')
-        doc.text('Detailed domain security assessment and vulnerability analysis', pageWidth / 2, yPosition + 22, { align: 'center' })
+        doc.text('DNS Security Analysis - Comprehensive Report', margin + 10, yPosition)
       } else {
-        doc.text('Comprehensive Security Analysis Report', pageWidth / 2, yPosition + 10, { align: 'center' })
-        doc.setFontSize(14)
-        doc.setFont('helvetica', 'normal')
-        doc.text('Cyberix Security Scanner', pageWidth / 2, yPosition + 22, { align: 'center' })
+        doc.text('Comprehensive Security Analysis Report', margin + 10, yPosition)
       }
-      yPosition += 50
+      yPosition += 8
       
-      // Enhanced Scan Details Section
+      // Scan Name (for comprehensive report, use "All Scans" or list of scans)
+      doc.setFontSize(14)
+      doc.setFont('helvetica', 'bold')
+      const scanName = isDnsReport ? 'DNS Resolution & Analysis' : 'All Security Scans'
+      doc.text(`Scan Name: ${scanName}`, margin + 10, yPosition)
+      yPosition += 8
+      
+      // Started Date and Time
+      doc.setFontSize(11)
+      doc.setFont('helvetica', 'normal')
+      doc.text(`Started Date and Time: ${formatDateTime(startTime)}`, margin + 10, yPosition)
+      yPosition += 7
+      
+      // Ended Date and Time
+      doc.text(`Ended Date and Time: ${formatDateTime(endTime)}`, margin + 10, yPosition)
+      yPosition += 7
+      
+      // Total Timing
+      doc.text(`Total Timing: ${formatDuration(startTime, endTime)}`, margin + 10, yPosition)
+      yPosition += 7
+      
+      // Site/Domain URL
       const targetInfo = isDnsReport ? (selectedDnsResult.report.target || targetUrl) : targetUrl
-      addSectionBox('Report Information', [
-        { text: `Target: ${targetInfo}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] },
-        { text: `Analysis Date: ${new Date().toLocaleString()}`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] },
-        { text: `Generated By: Cyberix Security Scanner`, fontSize: 11, fontStyle: 'normal', color: [60, 60, 60] }
-      ])
+      doc.text(`Site/Domain URL: ${targetInfo}`, margin + 10, yPosition)
+      yPosition += 15
+      
+      // Separator line
+      doc.setDrawColor(0, 0, 0)
+      doc.setLineWidth(0.5)
+      doc.line(margin + 5, yPosition, pageWidth - margin - 5, yPosition)
+      yPosition += 10
       
       // If DNS report, generate DNS-specific content
       if (isDnsReport) {
@@ -4792,24 +4858,22 @@ const ComprehensiveSecurityScanner = () => {
         // DNS Security Score
         if (report.security_score) {
           addSectionBox('DNS Security Score', [
-            { text: `Score: ${report.security_score.score}/100`, fontSize: 12, fontStyle: 'bold', color: [30, 30, 30] },
-            { text: `Grade: ${report.security_score.grade}`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] },
-            { text: report.security_score.description || '', fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            { text: `Score: ${report.security_score.score}/100`, fontSize: 12, fontStyle: 'bold' },
+            { text: `Grade: ${report.security_score.grade}`, fontSize: 11, fontStyle: 'bold' },
+            { text: report.security_score.description || '', fontSize: 10, fontStyle: 'normal' }
           ])
         }
         
         // Risk Summary
         if (report.risk_summary) {
           const riskLevel = report.risk_summary.overall_risk || 'Unknown'
-          const riskColor = riskLevel === 'Critical' ? [239, 68, 68] : riskLevel === 'High' ? [249, 115, 22] : 
-                           riskLevel === 'Medium' ? [234, 179, 8] : riskLevel === 'Low' ? [34, 197, 94] : [100, 100, 100]
           const riskLines = [
-            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold', color: riskColor },
-            { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] },
-            { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] }
+            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold' },
+            { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal' },
+            { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal' }
           ]
           if (report.risk_summary.summary) {
-            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal' })
           }
           addSectionBox('Risk Summary', riskLines)
         }
@@ -4818,23 +4882,19 @@ const ComprehensiveSecurityScanner = () => {
         if (report.summary) {
           const assessmentLines = []
           if (report.summary.subdomainsFound !== undefined) {
-            assessmentLines.push({ text: `Subdomain Hijacking: ${report.summary.subdomainsFound > 0 ? 'Medium Risk' : 'Low Risk'}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            assessmentLines.push({ text: `Subdomain Hijacking: ${report.summary.subdomainsFound > 0 ? 'Medium Risk' : 'Low Risk'}`, fontSize: 10, fontStyle: 'normal' })
           }
           if (report.summary.zoneTransfer) {
-            const zoneColor = report.summary.zoneTransfer === 'blocked' ? [34, 197, 94] : [239, 68, 68]
-            assessmentLines.push({ text: `Zone Transfer: ${report.summary.zoneTransfer === 'blocked' ? 'Protected' : 'Vulnerable'}`, fontSize: 10, fontStyle: 'normal', color: zoneColor })
+            assessmentLines.push({ text: `Zone Transfer: ${report.summary.zoneTransfer === 'blocked' ? 'Protected' : 'Vulnerable'}`, fontSize: 10, fontStyle: 'normal' })
           }
           if (report.summary.spfRecord !== undefined) {
-            const spfColor = report.summary.spfRecord ? [34, 197, 94] : [239, 68, 68]
-            assessmentLines.push({ text: `SPF Protection: ${report.summary.spfRecord ? 'Configured' : 'Missing'}`, fontSize: 10, fontStyle: 'normal', color: spfColor })
+            assessmentLines.push({ text: `SPF Protection: ${report.summary.spfRecord ? 'Configured' : 'Missing'}`, fontSize: 10, fontStyle: 'normal' })
           }
           if (report.summary.dmarcRecord !== undefined) {
-            const dmarcColor = report.summary.dmarcRecord ? [34, 197, 94] : [239, 68, 68]
-            assessmentLines.push({ text: `DMARC Policy: ${report.summary.dmarcRecord ? 'Configured' : 'Missing'}`, fontSize: 10, fontStyle: 'normal', color: dmarcColor })
+            assessmentLines.push({ text: `DMARC Policy: ${report.summary.dmarcRecord ? 'Configured' : 'Missing'}`, fontSize: 10, fontStyle: 'normal' })
           }
           if (report.summary.dnssec !== undefined) {
-            const dnssecColor = report.summary.dnssec ? [34, 197, 94] : [239, 68, 68]
-            assessmentLines.push({ text: `DNSSEC Status: ${report.summary.dnssec ? 'Enabled (Secure)' : 'Disabled (Vulnerable)'}`, fontSize: 10, fontStyle: 'normal', color: dnssecColor })
+            assessmentLines.push({ text: `DNSSEC Status: ${report.summary.dnssec ? 'Enabled (Secure)' : 'Disabled (Vulnerable)'}`, fontSize: 10, fontStyle: 'normal' })
           }
           if (assessmentLines.length > 0) {
             addSectionBox('Security Risk Assessment', assessmentLines)
@@ -4874,12 +4934,11 @@ const ComprehensiveSecurityScanner = () => {
             report.scanMetadata.steps.forEach((step, idx) => {
               checkNewPage(20)
               const stepTime = new Date(step.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-              const statusColor = step.status === 'completed' ? [34, 197, 94] : step.status === 'warning' ? [234, 179, 8] : [239, 68, 68]
-              doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+              doc.setTextColor(0, 0, 0)
               doc.setFont('helvetica', 'bold')
               doc.text(`[${stepTime}] ${step.name} - ${step.status}`, margin + 10, yPosition)
               doc.setFont('helvetica', 'normal')
-              doc.setTextColor(60, 60, 60)
+              doc.setTextColor(0, 0, 0)
               doc.text(`  Output: ${step.stdoutBytes}b${step.stderrBytes > 0 ? `, stderr: ${step.stderrBytes}b` : ''}`, margin + 15, yPosition + 6)
               yPosition += 15
             })
@@ -4896,7 +4955,7 @@ const ComprehensiveSecurityScanner = () => {
             
             doc.setFontSize(8)
             doc.setFont('helvetica', 'bold')
-            doc.setTextColor(70, 70, 70)
+            doc.setTextColor(0, 0, 0)
             // Table header
             doc.text('Step', margin + 10, yPosition)
             doc.text('Description', margin + 50, yPosition)
@@ -4912,7 +4971,7 @@ const ComprehensiveSecurityScanner = () => {
             doc.setFont('helvetica', 'normal')
             report.scanMetadata.steps.forEach((step, idx) => {
               checkNewPage(25)
-              doc.setTextColor(30, 30, 30)
+              doc.setTextColor(0, 0, 0)
               const stepTime = new Date(step.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
               
               // Step name with timestamp
@@ -4932,12 +4991,11 @@ const ComprehensiveSecurityScanner = () => {
               doc.text(`${step.stdoutBytes}b${step.stderrBytes > 0 ? `/${step.stderrBytes}b` : ''}`, margin + 130, yPosition)
               
               // Status
-              const statusColor = step.status === 'completed' ? [34, 197, 94] : step.status === 'warning' ? [234, 179, 8] : [239, 68, 68]
-              doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
+              doc.setTextColor(0, 0, 0)
               doc.setFont('helvetica', 'bold')
               doc.text(step.status, margin + 160, yPosition)
               doc.setFont('helvetica', 'normal')
-              doc.setTextColor(30, 30, 30)
+              doc.setTextColor(0, 0, 0)
               
               yPosition += Math.max(stepLines.length, descLines.length) * 5 + 8
             })
@@ -4954,7 +5012,7 @@ const ComprehensiveSecurityScanner = () => {
             
             doc.setFontSize(9)
             doc.setFont('helvetica', 'normal')
-            doc.setTextColor(234, 179, 8)
+            doc.setTextColor(0, 0, 0)
             report.scanMetadata.warnings.forEach((warning, idx) => {
               checkNewPage(15)
               doc.text(`• ${warning}`, margin + 15, yPosition)
@@ -4969,13 +5027,13 @@ const ComprehensiveSecurityScanner = () => {
           const recordLines = []
           Object.entries(report.records).forEach(([recordType, records]) => {
             if (records && Array.isArray(records) && records.length > 0) {
-              recordLines.push({ text: `${recordType} Records (${records.length}):`, fontSize: 11, fontStyle: 'bold', color: [30, 30, 30] })
+              recordLines.push({ text: `${recordType} Records (${records.length}):`, fontSize: 11, fontStyle: 'bold' })
               records.slice(0, 10).forEach((record, idx) => {
                 const recordText = typeof record === 'object' ? JSON.stringify(record) : String(record)
-                recordLines.push({ text: `  ${idx + 1}. ${recordText}`, fontSize: 9, fontStyle: 'normal', color: [60, 60, 60], indent: 0 })
+                recordLines.push({ text: `  ${idx + 1}. ${recordText}`, fontSize: 9, fontStyle: 'normal', indent: 0 })
               })
               if (records.length > 10) {
-                recordLines.push({ text: `  ... and ${records.length - 10} more ${recordType} records`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100], indent: 0 })
+                recordLines.push({ text: `  ... and ${records.length - 10} more ${recordType} records`, fontSize: 9, fontStyle: 'italic', indent: 0 })
               }
             }
           })
@@ -4986,77 +5044,46 @@ const ComprehensiveSecurityScanner = () => {
         
         // DNSSEC Status
         if (report.dnssec) {
-          const dnssecColor = report.dnssec.enabled ? [34, 197, 94] : [239, 68, 68]
           const dnssecLines = [
-            { text: `Status: ${report.dnssec.enabled ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'bold', color: dnssecColor }
+            { text: `Status: ${report.dnssec.enabled ? 'Enabled' : 'Disabled'}`, fontSize: 11, fontStyle: 'bold' }
           ]
           if (report.dnssec.recommendation) {
-            dnssecLines.push({ text: report.dnssec.recommendation, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60] })
+            dnssecLines.push({ text: report.dnssec.recommendation, fontSize: 10, fontStyle: 'normal' })
           }
           addSectionBox('DNSSEC Status', dnssecLines)
         }
         
         // Zone Transfer Status
         if (report.zone_transfer) {
-          const zoneColor = report.zone_transfer.allowed ? [239, 68, 68] : [34, 197, 94]
           addSectionBox('Zone Transfer Status', [
-            { text: `Status: ${report.zone_transfer.allowed ? 'Allowed (Security Risk)' : 'Blocked (Secure)'}`, fontSize: 11, fontStyle: 'bold', color: zoneColor }
+            { text: `Status: ${report.zone_transfer.allowed ? 'Allowed (Security Risk)' : 'Blocked (Secure)'}`, fontSize: 11, fontStyle: 'bold' }
           ])
         }
         
         // Subdomains
         if (report.subdomains && report.subdomains.length > 0) {
           const subdomainLines = report.subdomains.slice(0, 30).map((subdomain, idx) => ({
-            text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal', color: [60, 60, 60]
+            text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal'
           }))
           if (report.subdomains.length > 30) {
-            subdomainLines.push({ text: `... and ${report.subdomains.length - 30} more subdomains`, fontSize: 9, fontStyle: 'italic', color: [100, 100, 100] })
+            subdomainLines.push({ text: `... and ${report.subdomains.length - 30} more subdomains`, fontSize: 9, fontStyle: 'italic' })
           }
           addSectionBox('Discovered Subdomains', subdomainLines, 15)
         }
         
         // Security Findings
         if (report.findings && report.findings.length > 0) {
-          checkNewPage(30)
-          doc.setFontSize(16)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Security Findings', margin + 10, yPosition)
-          yPosition += 10
-          
+          const findingLines = []
           report.findings.forEach((finding, idx) => {
-            checkNewPage(40)
-            const severityColor = finding.severity === 'Critical' ? [239, 68, 68] : 
-                                  finding.severity === 'High' ? [249, 115, 22] : 
-                                  finding.severity === 'Medium' ? [234, 179, 8] : [59, 130, 246]
-            
-            doc.setFontSize(11)
-            doc.setFont('helvetica', 'bold')
-            doc.setTextColor(severityColor[0], severityColor[1], severityColor[2])
-            yPosition = addText(`${finding.severity}: ${finding.issue}`, margin + 10, yPosition)
-            
-            doc.setFontSize(9)
-            doc.setFont('helvetica', 'normal')
-            doc.setTextColor(60, 60, 60)
+            findingLines.push({ text: `${finding.severity}: ${finding.issue}`, fontSize: 11, fontStyle: 'bold' })
             if (finding.explanation) {
-              const explLines = doc.splitTextToSize(finding.explanation, pageWidth - 2 * margin - 20)
-              explLines.forEach((line, lidx) => {
-                doc.text(line, margin + 15, yPosition + (lidx * 5))
-              })
-              yPosition += (explLines.length * 5) + 5
+              findingLines.push({ text: `Explanation: ${finding.explanation}`, fontSize: 10, fontStyle: 'normal', indent: 5 })
             }
             if (finding.recommendation) {
-              doc.setFont('helvetica', 'bold')
-              doc.setTextColor(30, 30, 30)
-              doc.text('Recommendation:', margin + 15, yPosition)
-              doc.setFont('helvetica', 'normal')
-              const recLines = doc.splitTextToSize(finding.recommendation, pageWidth - 2 * margin - 25)
-              recLines.forEach((line, lidx) => {
-                doc.text(line, margin + 20, yPosition + 7 + (lidx * 5))
-              })
-              yPosition += (recLines.length * 5) + 12
+              findingLines.push({ text: `Recommendation: ${finding.recommendation}`, fontSize: 10, fontStyle: 'normal', indent: 5 })
             }
           })
-          yPosition += 10
+          addSectionBox('Security Findings', findingLines, 20)
         }
         
         // DNS Scan Raw Results
@@ -5176,7 +5203,7 @@ const ComprehensiveSecurityScanner = () => {
           
           doc.setFontSize(7)
           doc.setFont('helvetica', 'normal')
-          doc.setTextColor(60, 60, 60)
+          doc.setTextColor(0, 0, 0)
           const rawLines = doc.splitTextToSize(report.rawOutput.substring(0, 2000), pageWidth - 2 * margin - 20)
           rawLines.slice(0, 40).forEach((line, idx) => {
             checkNewPage(8)
@@ -5185,6 +5212,7 @@ const ComprehensiveSecurityScanner = () => {
           if (report.rawOutput.length > 2000) {
             yPosition += (40 * 4) + 5
             doc.setFont('helvetica', 'italic')
+            doc.setTextColor(0, 0, 0)
             doc.text(`... (output truncated, ${Math.floor(report.rawOutput.length / 1000)}KB total)`, margin + 10, yPosition)
           }
         }
@@ -5197,373 +5225,16 @@ const ComprehensiveSecurityScanner = () => {
         return
       }
       
-      // Enhanced Table of Contents (for general comprehensive report)
+      // Table of Contents (for general comprehensive report)
       const tocLines = []
       const scansForTOC = getScansToRun()
       scansForTOC.forEach((test, idx) => {
-        tocLines.push({ text: `${idx + 1}. ${test.name}`, fontSize: 11, fontStyle: 'normal', color: [30, 30, 30] })
+        tocLines.push({ text: `${idx + 1}. ${test.name}`, fontSize: 11, fontStyle: 'normal' })
       })
       addSectionBox('Table of Contents', tocLines, 10)
       
-      // WAF Detection Section
-      const wafResult = scanResults['waf-detection'] || newScanResults['waf-detection']
-      if (wafResult?.report) {
-        checkNewPage(50)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('1. WAF (Firewall) Detection', 20, yPosition)
-        yPosition += 10
-        
-        doc.setFontSize(12)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Detection Summary', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        
-        const wafDetected = wafResult.report.summary?.wafDetected || false
-        yPosition = addText(`WAF Detected: ${wafDetected ? 'Yes' : 'No'}`, 20, yPosition)
-        
-        if (wafDetected) {
-          if (wafResult.report.summary?.wafType) {
-            yPosition = addText(`WAF Type: ${wafResult.report.summary.wafType}`, 20, yPosition)
-          }
-          if (wafResult.report.summary?.wafVendor) {
-            yPosition = addText(`Vendor: ${wafResult.report.summary.wafVendor}`, 20, yPosition)
-          }
-          if (wafResult.report.summary?.numberOfRequests) {
-            yPosition = addText(`Number of Requests: ${wafResult.report.summary.numberOfRequests}`, 20, yPosition)
-          }
-          
-          if (wafResult.report.details?.wafInfo) {
-            yPosition += 5
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Detection Information:', 20, yPosition)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(wafResult.report.details.wafInfo, 25, yPosition)
-          }
-          
-          if (wafResult.report.details?.reason) {
-            yPosition += 5
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Detection Reason:', 20, yPosition)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(wafResult.report.details.reason, 25, yPosition)
-          }
-        } else {
-          yPosition = addText('No Web Application Firewall detected. The target appears to be unprotected or using an undetected WAF solution.', 20, yPosition)
-        }
-        
-        // Full JSON Report
-        if (wafResult.report.details) {
-          checkNewPage(40)
-          yPosition += 10
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Full JSON Report', 20, yPosition)
-          yPosition += 5
-          
-          doc.setFontSize(8)
-          doc.setFont('courier', 'normal')
-          const jsonText = JSON.stringify(wafResult.report.details, null, 2)
-          yPosition = addText(jsonText, 20, yPosition)
-        }
-        
-        // Raw Output
-        if (wafResult.report.rawOutput) {
-          checkNewPage(40)
-          yPosition += 15
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Raw wafw00f Output', 20, yPosition)
-          yPosition += 5
-          
-          doc.setFontSize(8)
-          doc.setFont('courier', 'normal')
-          yPosition = addText(wafResult.report.rawOutput, 20, yPosition)
-        }
-        
-        yPosition += 15
-      }
-      
-      const dnsResult = scanResults['dns-resolution']
-      const structuredData = dnsResult?.report?.structuredData
-      
-      // DNS Security Score
-      if (structuredData?.security_score) {
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('DNS Security Score', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(14)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText(`Score: ${structuredData.security_score.score}/100 (Grade: ${structuredData.security_score.grade})`, 20, yPosition)
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        yPosition = addText(structuredData.security_score.description, 20, yPosition)
-        yPosition += 15
-      }
-      
-      // Risk Summary
-      if (structuredData?.risk_summary) {
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Risk Summary', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        yPosition = addText(`Overall Risk: ${structuredData.risk_summary.overall_risk}`, 20, yPosition)
-        yPosition = addText(`Total Issues: ${structuredData.risk_summary.total_issues}`, 20, yPosition)
-        yPosition = addText(`Critical: ${structuredData.risk_summary.critical_issues} | High: ${structuredData.risk_summary.high_issues} | Medium: ${structuredData.risk_summary.medium_issues} | Low: ${structuredData.risk_summary.low_issues}`, 20, yPosition)
-        yPosition += 5
-        yPosition = addText(structuredData.risk_summary.summary, 20, yPosition)
-        yPosition += 15
-      }
-      
-      // DNS Records Section (Updated to match UI)
-      if (structuredData?.records) {
-        checkNewPage(30)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('DNS Records', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        
-        // A Records
-        if (structuredData.records.A.length > 0) {
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('A Records (IPv4):', 20, yPosition)
-          doc.setFont('helvetica', 'normal')
-          structuredData.records.A.forEach(ip => {
-            yPosition = addText(`  ${structuredData.domain} → ${ip}`, 25, yPosition)
-          })
-          yPosition += 5
-        }
-        
-        // NS Records
-        if (structuredData.records.NS.length > 0) {
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('NS Records (Name Servers):', 20, yPosition)
-          doc.setFont('helvetica', 'normal')
-          structuredData.records.NS.forEach(ns => {
-            yPosition = addText(`  ${ns}`, 25, yPosition)
-          })
-          yPosition += 5
-        }
-        
-        // MX Records
-        if (structuredData.records.MX.length > 0) {
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('MX Records (Mail Servers):', 20, yPosition)
-          doc.setFont('helvetica', 'normal')
-          structuredData.records.MX.forEach(mx => {
-            yPosition = addText(`  ${mx}`, 25, yPosition)
-          })
-          yPosition += 5
-        }
-        
-        // SPF Records
-        if (structuredData.records.SPF.length > 0) {
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('SPF Records:', 20, yPosition)
-          doc.setFont('helvetica', 'normal')
-          structuredData.records.SPF.forEach(spf => {
-            yPosition = addText(`  ${spf}`, 25, yPosition)
-          })
-          yPosition += 5
-        }
-        
-        // DMARC Records
-        if (structuredData.records.DMARC.length > 0) {
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('DMARC Records:', 20, yPosition)
-          doc.setFont('helvetica', 'normal')
-          structuredData.records.DMARC.forEach(dmarc => {
-            yPosition = addText(`  ${dmarc}`, 25, yPosition)
-          })
-          yPosition += 10
-        }
-      }
-      
-      // Reverse DNS Section
-      if (structuredData?.reverse_dns) {
-        checkNewPage(20)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Reverse DNS (PTR)', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        
-        if (structuredData.reverse_dns.available) {
-          yPosition = addText('Reverse DNS available', 20, yPosition)
-          yPosition = addText(`Hostname: ${structuredData.reverse_dns.hostname}`, 25, yPosition)
-        } else {
-          yPosition = addText('Reverse DNS lookup failed or timed out', 20, yPosition)
-          yPosition = addText(structuredData.reverse_dns.note || 'Reverse DNS (PTR) records could not be resolved.', 25, yPosition)
-        }
-        yPosition += 10
-      }
-      
-      // Scan Health Section
-      if (structuredData?.scan_health) {
-        checkNewPage(20)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Scan Health', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        
-        yPosition = addText(`Status: ${structuredData.scan_health.status}`, 20, yPosition)
-        
-        if (structuredData.scan_health.notes.length > 0) {
-          yPosition = addText('Notes:', 20, yPosition)
-          structuredData.scan_health.notes.forEach(note => {
-            yPosition = addText(`• ${note}`, 25, yPosition)
-          })
-        }
-        yPosition += 10
-      }
-      
-      // Security Findings Section (Updated with categories)
-      if (structuredData?.findings && structuredData.findings.length > 0) {
-        checkNewPage(30)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Security Findings', 20, yPosition)
-        yPosition += 5
-        
-        // Group findings by category
-        const groupedFindings = structuredData.findings.reduce((acc, finding) => {
-          const category = finding.category || 'Other';
-          if (!acc[category]) acc[category] = [];
-          acc[category].push(finding);
-          return acc;
-        }, {});
-        
-        const categoryIcons = {
-          'Email Security': '',
-          'DNS Integrity': '',
-          'Availability & Resilience': '',
-          'Other': ''
-        };
-        
-        Object.entries(groupedFindings).forEach(([category, findings]) => {
-          checkNewPage(20)
-          
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText(`${category}`, 20, yPosition)
-          yPosition += 3
-          
-          doc.setFontSize(10)
-          doc.setFont('helvetica', 'normal')
-          
-          findings.forEach(finding => {
-            checkNewPage(15)
-            
-            // Finding header with severity
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText(`${finding.severity.toUpperCase()}: ${finding.issue}`, 25, yPosition)
-            
-            // Details
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`Details: ${finding.details}`, 30, yPosition)
-            
-            // Recommendation
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Recommendation:', 30, yPosition)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(finding.recommendation || 'Review and implement appropriate security measures.', 35, yPosition)
-            yPosition += 5
-          })
-          yPosition += 5
-        })
-      }
-      
-      // Subdomains Section
-      if (structuredData?.subdomains && structuredData.subdomains.length > 0) {
-        checkNewPage(20)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Discovered Subdomains', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        
-        structuredData.subdomains.forEach(subdomain => {
-          yPosition = addText(`• ${subdomain}`, 25, yPosition)
-        })
-        yPosition += 10
-      }
-      
-      // Executive Summary Section
-      if (structuredData?.security_score && structuredData?.risk_summary) {
-        checkNewPage(30)
-        
-        doc.setFontSize(16)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Executive Summary', 20, yPosition)
-        yPosition += 5
-        
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        
-        // Security Score Summary
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('DNS Security Assessment:', 20, yPosition)
-        doc.setFont('helvetica', 'normal')
-        yPosition = addText(`Security Score: ${structuredData.security_score.score}/100 (Grade: ${structuredData.security_score.grade})`, 25, yPosition)
-        yPosition = addText(structuredData.security_score.description, 25, yPosition)
-        yPosition += 5
-        
-        // Risk Summary
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Risk Assessment:', 20, yPosition)
-        doc.setFont('helvetica', 'normal')
-        yPosition = addText(`Overall Risk: ${structuredData.risk_summary.overall_risk}`, 25, yPosition)
-        yPosition = addText(`Total Issues: ${structuredData.risk_summary.total_issues} (Critical: ${structuredData.risk_summary.critical_issues}, High: ${structuredData.risk_summary.high_issues}, Medium: ${structuredData.risk_summary.medium_issues}, Low: ${structuredData.risk_summary.low_issues})`, 25, yPosition)
-        yPosition = addText(structuredData.risk_summary.summary, 25, yPosition)
-        yPosition += 10
-        
-        // Key Recommendations
-        if (dnsResult.recommendations && dnsResult.recommendations.length > 0) {
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Key Recommendations:', 20, yPosition)
-          doc.setFont('helvetica', 'normal')
-          
-          dnsResult.recommendations.slice(0, 5).forEach(recommendation => {
-            checkNewPage(10)
-            yPosition = addText(`• ${recommendation}`, 25, yPosition)
-          })
-          
-          if (dnsResult.recommendations.length > 5) {
-            yPosition = addText(`... and ${dnsResult.recommendations.length - 5} more recommendations`, 25, yPosition)
-          }
-          yPosition += 10
-        }
-      }
-      
-      // Add new scan sections
-      const allResults = { ...scanResults, ...newScanResults }
-      
-      // Helper function to add scan section with all detailed content
+      // Helper function to add scan section with all detailed content (reusing individual scan PDF logic)
+      // MUST be defined before it's used
       const addScanSection = (scanNumber, scanName, testId, result) => {
         if (!result) return yPosition
         
@@ -5573,335 +5244,541 @@ const ComprehensiveSecurityScanner = () => {
         // Section Header
         doc.setFontSize(16)
         doc.setFont('helvetica', 'bold')
-        yPosition = addText(`${scanNumber}. ${scanName}`, 20, yPosition)
+        doc.setTextColor(0, 0, 0)
+        yPosition = addText(`${scanNumber}. ${scanName}`, margin + 10, yPosition)
         yPosition += 10
         
-        // Scan Summary
-        doc.setDrawColor(200, 200, 200)
-        doc.setLineWidth(0.5)
-        doc.rect(20, yPosition - 10, pageWidth - 40, 40)
-        doc.setFontSize(12)
-        doc.setFont('helvetica', 'bold')
-        yPosition = addText('Scan Summary', 25, yPosition)
-        doc.setFontSize(10)
-        doc.setFont('helvetica', 'normal')
-        yPosition = addText(`Status: ${result.status || 'N/A'}`, 25, yPosition)
-        yPosition = addText(`Findings: ${result.findings?.length || 0}`, 25, yPosition)
-        yPosition = addText(`Recommendations: ${result.recommendations?.length || report.recommendations?.length || 0}`, 25, yPosition)
-        yPosition = addText(`Severity: ${result.severity || 'N/A'}`, 25, yPosition)
-        yPosition += 10
+        // Scan Summary (using addSectionBox for better overflow handling)
+        addSectionBox('Scan Summary', [
+          { text: `Status: ${result.status || 'N/A'}`, fontSize: 11, fontStyle: 'bold' },
+          { text: `Findings Count: ${result.findings?.length || 0}`, fontSize: 11, fontStyle: 'normal' },
+          { text: `Recommendations: ${result.recommendations?.length || report.recommendations?.length || 0}`, fontSize: 11, fontStyle: 'normal' },
+          { text: `Severity Level: ${result.severity || 'N/A'}`, fontSize: 11, fontStyle: 'normal' }
+        ])
         
         // Risk Assessment
         if (report.riskLevel || report.risk_summary) {
-          checkNewPage(30)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 25)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Risk Assessment', 25, yPosition)
-          doc.setFontSize(10)
-          doc.setFont('helvetica', 'normal')
-          if (report.risk_summary?.overall_risk) {
-            yPosition = addText(`Overall Risk: ${report.risk_summary.overall_risk}`, 25, yPosition)
-          } else if (report.riskLevel) {
-            yPosition = addText(`Risk Level: ${report.riskLevel}`, 25, yPosition)
+          const riskLevel = report.risk_summary?.overall_risk || report.riskLevel
+          const riskLines = [
+            { text: `Overall Risk: ${riskLevel}`, fontSize: 12, fontStyle: 'bold' }
+          ]
+          if (report.risk_summary?.summary) {
+            riskLines.push({ text: report.risk_summary.summary, fontSize: 10, fontStyle: 'normal' })
           }
-          yPosition += 10
+          if (report.risk_summary) {
+            riskLines.push(
+              { text: `Total Issues: ${report.risk_summary.total_issues || 0}`, fontSize: 10, fontStyle: 'normal' },
+              { text: `Critical: ${report.risk_summary.critical_issues || 0} | High: ${report.risk_summary.high_issues || 0} | Medium: ${report.risk_summary.medium_issues || 0} | Low: ${report.risk_summary.low_issues || 0}`, fontSize: 10, fontStyle: 'normal' }
+            )
+          }
+          addSectionBox('Risk Assessment', riskLines)
         }
         
         // Scan Details
         if (report.target || report.scanType) {
-          checkNewPage(30)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 25)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Scan Details', 25, yPosition)
-          doc.setFontSize(10)
-          doc.setFont('helvetica', 'normal')
-          if (report.target) yPosition = addText(`Target: ${report.target}`, 25, yPosition)
-          if (report.scanType) yPosition = addText(`Scan Type: ${report.scanType}`, 25, yPosition)
-          yPosition += 10
+          const scanDetailsLines = []
+          if (report.target) scanDetailsLines.push({ text: `Target: ${report.target}`, fontSize: 11, fontStyle: 'normal' })
+          if (report.scanType) scanDetailsLines.push({ text: `Scan Type: ${report.scanType}`, fontSize: 11, fontStyle: 'normal' })
+          if (scanDetailsLines.length > 0) {
+            addSectionBox('Scan Information', scanDetailsLines)
+          }
         }
         
-        // Scan-specific content (same as generateScanPDF logic)
+        // Scan-specific content (reusing same logic as generateScanPDF, but using addSectionBox for better overflow handling)
+        // SSL/TLS-Specific Content
         if (testId === 'ssl-tls-analysis' || report.scanType === 'SSL/TLS Analysis') {
           if (report.supportedProtocols) {
-            checkNewPage(40)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('SSL/TLS Configuration', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`Supported Protocols: ${report.supportedProtocols.join(', ')}`, 25, yPosition)
+            const sslLines = [
+              { text: `Supported Protocols: ${report.supportedProtocols.join(', ')}`, fontSize: 11, fontStyle: 'normal' }
+            ]
             if (report.cipherStrength) {
-              yPosition = addText(`Cipher Strength: ${report.cipherStrength}`, 25, yPosition)
+              sslLines.push({ text: `Cipher Strength: ${report.cipherStrength}`, fontSize: 11, fontStyle: 'normal' })
             }
             if (report.certificateInfo) {
               if (report.certificateInfo.issuer) {
-                yPosition = addText(`Certificate Issuer: ${report.certificateInfo.issuer}`, 25, yPosition)
+                sslLines.push({ text: `Certificate Issuer: ${report.certificateInfo.issuer}`, fontSize: 11, fontStyle: 'normal' })
               }
               if (report.certificateInfo.validTo) {
-                yPosition = addText(`Valid Until: ${report.certificateInfo.validTo}`, 25, yPosition)
+                sslLines.push({ text: `Valid Until: ${report.certificateInfo.validTo}`, fontSize: 11, fontStyle: 'normal' })
               }
             }
-            yPosition += 10
+            addSectionBox('SSL/TLS Configuration', sslLines)
           }
         }
         
+        // Security Headers-Specific Content
         if (testId === 'security-headers' || report.scanType === 'Security Headers') {
           if (report.headersFound || report.missingHeaders) {
-            checkNewPage(50)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Security Headers', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
+            const headerLines = []
             if (report.headersFound) {
-              yPosition = addText('Headers Found:', 25, yPosition)
-              Object.entries(report.headersFound).forEach(([key, value]) => {
-                checkNewPage(15)
-                yPosition = addText(`${key}: ${value}`, 30, yPosition)
+              headerLines.push({ text: 'Headers Found:', fontSize: 11, fontStyle: 'bold' })
+              Object.entries(report.headersFound).slice(0, 15).forEach(([key, value]) => {
+                headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
               })
             }
             if (report.missingHeaders && report.missingHeaders.length > 0) {
-              checkNewPage(30)
-              yPosition = addText('Missing Headers:', 25, yPosition)
+              headerLines.push({ text: 'Missing Headers:', fontSize: 11, fontStyle: 'bold' })
               report.missingHeaders.forEach((header) => {
-                checkNewPage(15)
-                yPosition = addText(`- ${header}`, 30, yPosition)
+                headerLines.push({ text: `- ${header}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
               })
             }
-            yPosition += 10
+            if (headerLines.length > 0) {
+              addSectionBox('Security Headers', headerLines, 20)
+            }
           }
         }
         
+        // Port Scanning-Specific Content
         if (testId === 'port-scanning' || report.scanType === 'Port Scanning') {
           if (report.openPorts && report.openPorts.length > 0) {
-            checkNewPage(50)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Open Ports', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            report.openPorts.slice(0, 20).forEach((port, idx) => {
-              const portInfo = `Port: ${port.port}, Service: ${port.service || 'N/A'}, Version: ${port.version || 'N/A'}`
-              checkNewPage(15)
-              yPosition = addText(`${idx + 1}. ${portInfo}`, 25, yPosition)
+            const portLines = []
+            report.openPorts.slice(0, 25).forEach((port, idx) => {
+              portLines.push({ 
+                text: `Port ${port.port}: ${port.service || 'Unknown Service'} ${port.version ? `(${port.version})` : ''}`, 
+                fontSize: 10, 
+                fontStyle: 'normal'
+              })
             })
-            if (report.openPorts.length > 20) {
-              yPosition = addText(`... and ${report.openPorts.length - 20} more ports`, 25, yPosition)
+            if (report.openPorts.length > 25) {
+              portLines.push({ text: `... and ${report.openPorts.length - 25} more ports`, fontSize: 9, fontStyle: 'italic' })
             }
-            yPosition += 10
+            addSectionBox('Open Ports', portLines, 15)
           }
         }
         
+        // Subdomain Enumeration-Specific Content
         if (testId === 'subdomain-enumeration' || report.scanType === 'Subdomain Enumeration') {
           if (report.subdomainsFound && report.subdomainsFound.length > 0) {
-            checkNewPage(50)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Discovered Subdomains', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            report.subdomainsFound.slice(0, 30).forEach((subdomain, idx) => {
-              checkNewPage(15)
-              yPosition = addText(`${idx + 1}. ${subdomain}`, 25, yPosition)
+            const subdomainLines = report.subdomainsFound.slice(0, 35).map((subdomain, idx) => ({
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal'
+            }))
+            if (report.subdomainsFound.length > 35) {
+              subdomainLines.push({ text: `... and ${report.subdomainsFound.length - 35} more subdomains`, fontSize: 9, fontStyle: 'italic' })
+            }
+            addSectionBox('Discovered Subdomains', subdomainLines, 15)
+          }
+        }
+        
+        // Quick Fingerprint-Specific Content
+        if (testId === 'quick-fingerprint' && report.summary) {
+          const summary = report.summary
+          const quickFingerprintLines = []
+          
+          if (summary.target_url) quickFingerprintLines.push({ text: `Target URL: ${summary.target_url}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.status_code) quickFingerprintLines.push({ text: `Status Code: ${summary.status_code}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.title) quickFingerprintLines.push({ text: `Title: ${summary.title}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.ip) quickFingerprintLines.push({ text: `IP Address: ${summary.ip}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.country) quickFingerprintLines.push({ text: `Country: ${summary.country}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.plugins) quickFingerprintLines.push({ text: `Plugins Detected: ${summary.plugins.length || 0}`, fontSize: 11, fontStyle: 'bold' })
+          if (summary.summary) quickFingerprintLines.push({ text: `Summary: ${summary.summary}`, fontSize: 10, fontStyle: 'normal' })
+          if (summary.severity_hint) {
+            quickFingerprintLines.push({ text: `Severity: ${summary.severity_hint}`, fontSize: 11, fontStyle: 'bold' })
+          }
+          
+          if (quickFingerprintLines.length > 0) {
+            addSectionBox('Quick Fingerprint Summary', quickFingerprintLines)
+          }
+          
+          // Plugins section
+          if (summary.plugins && summary.plugins.length > 0) {
+            const pluginLines = summary.plugins.slice(0, 20).map((plugin, idx) => ({
+              text: `${idx + 1}. ${plugin.name || 'Unknown'}${plugin.description ? ` - ${plugin.description}` : ''}`, 
+              fontSize: 10, 
+              fontStyle: 'normal'
+            }))
+            if (summary.plugins.length > 20) {
+              pluginLines.push({ text: `... and ${summary.plugins.length - 20} more plugins`, fontSize: 9, fontStyle: 'italic' })
+            }
+            addSectionBox('Detected Plugins', pluginLines, 15)
+          }
+          
+          // HTTP Headers section
+          if (summary.http_headers && Object.keys(summary.http_headers).length > 0) {
+            const headerLines = []
+            Object.entries(summary.http_headers).slice(0, 30).forEach(([key, value]) => {
+              headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal' })
             })
-            if (report.subdomainsFound.length > 30) {
-              yPosition = addText(`... and ${report.subdomainsFound.length - 30} more`, 25, yPosition)
+            if (Object.keys(summary.http_headers).length > 30) {
+              headerLines.push({ text: `... and ${Object.keys(summary.http_headers).length - 30} more headers`, fontSize: 9, fontStyle: 'italic' })
             }
-            yPosition += 10
+            if (headerLines.length > 0) {
+              addSectionBox('HTTP Headers', headerLines, 15)
+            }
+          }
+          
+          // Recommendation section
+          if (summary.recommendation) {
+            addSectionBox('Recommendations', [
+              { text: summary.recommendation, fontSize: 10, fontStyle: 'normal' }
+            ])
           }
         }
         
-        // Open Redirect Check
-        if (testId === 'open-redirect-check' || report.scanType === 'Open Redirect Check') {
-          if (report.summary) {
-            checkNewPage(40)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Open Redirect Check Results', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`🔍 We checked your site for unvalidated redirects by sending a request with a malicious redirect parameter`, 25, yPosition)
-            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
-            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Potential vulnerability detected' : '✅ SUCCESS - No unvalidated redirects found'}`, 25, yPosition)
-            doc.setTextColor(60, 60, 60)
-            doc.setFont('helvetica', 'normal')
-            if (report.summary.evidence) {
-              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+        // File Upload Check-Specific Content
+        if (testId === 'file-upload-check' && report.json) {
+          const json = report.json
+          
+          // Aggregate Findings
+          if (json.aggregate_findings) {
+            const findings = json.aggregate_findings
+            const findingLines = [
+              { text: `Upload Allowed: ${findings.upload_allowed === true ? 'Yes' : findings.upload_allowed === false ? 'No' : 'Unknown'}`, fontSize: 11, fontStyle: 'bold' },
+              { text: `Confidence: ${findings.confidence || 'low'}`, fontSize: 11, fontStyle: 'normal' },
+              { text: `Severity: ${findings.severity || 'unknown'}`, fontSize: 11, fontStyle: 'normal' },
+              { text: `Evidence Count: ${findings.evidence?.length || 0}`, fontSize: 11, fontStyle: 'normal' }
+            ]
+            if (findings.rationale) {
+              findingLines.push({ text: `Rationale: ${findings.rationale}`, fontSize: 10, fontStyle: 'normal' })
             }
-            yPosition += 10
+            addSectionBox('Aggregate Findings', findingLines)
+          }
+          
+          // Professional Client-Facing Summary (Report section from dialog)
+          if (json.meta || json.commands || json.public_accessibility) {
+            const reportLines = []
+            
+            if (json.meta) {
+              if (json.meta.generated_at_utc) reportLines.push({ text: `Timestamp: ${json.meta.generated_at_utc}`, fontSize: 10, fontStyle: 'normal' })
+              if (json.meta.target) reportLines.push({ text: `Target: ${json.meta.target}`, fontSize: 10, fontStyle: 'normal' })
+            }
+            
+            reportLines.push({ text: 'Test Objective: Assess whether the upload endpoint correctly validates and stores files, and whether uploaded content is publicly accessible.', fontSize: 10, fontStyle: 'normal' })
+            
+            if (json.commands && Array.isArray(json.commands)) {
+              const cmds = json.commands
+              const byLabel = (label) => cmds.find(c => (c.raw_label || '').includes(label) || (c.raw_label === label) || (c.id === label))
+              const upTest = byLabel('curl_upload_test') || byLabel('curl_upload_test.txt')
+              const upHarmless = byLabel('curl_upload_harmless') || byLabel('curl_upload_harmless.txt')
+              const head = byLabel('curl_head_candidate') || byLabel('curl_head_candidate.txt')
+              const etcp = byLabel('curl_upload_etcpasswd') || byLabel('curl_upload_etcpasswd.txt')
+              const status = (c) => c?.status_code ?? null
+              const ok = (c) => !!(status(c) && status(c) >= 200 && status(c) < 300)
+              
+              reportLines.push({ text: 'Commands Executed (summary):', fontSize: 11, fontStyle: 'bold' })
+              reportLines.push({ text: `  • Basic upload with test.txt ${ok(upTest) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Disguised script upload harmless.php.txt ${ok(upHarmless) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Checked public accessibility of uploaded file (HEAD) ${ok(head) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Sensitive file upload attempt (/etc/passwd) ${ok(etcp) ? '(200 OK)' : ''}`, fontSize: 10, fontStyle: 'normal' })
+              
+              reportLines.push({ text: 'Results:', fontSize: 11, fontStyle: 'bold' })
+              reportLines.push({ text: `  • Upload (test.txt): ${status(upTest) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Upload (harmless.php.txt): ${status(upHarmless) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Public access (HEAD): ${status(head) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Upload (/etc/passwd): ${status(etcp) ?? 'N/A'}`, fontSize: 10, fontStyle: 'normal' })
+              
+              const uploadAllowed = ok(upTest) || ok(upHarmless)
+              const publicAccess = ok(head)
+              
+              reportLines.push({ text: 'Vulnerability Status:', fontSize: 11, fontStyle: 'bold' })
+              reportLines.push({ text: `  • File upload allowed: ${uploadAllowed ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Malicious file upload possible: ${ok(upHarmless) ? 'Yes (disguised script accepted)' : 'Unclear'}`, fontSize: 10, fontStyle: 'normal' })
+              reportLines.push({ text: `  • Public file access allowed: ${publicAccess ? 'Yes' : 'No/Unknown'}`, fontSize: 10, fontStyle: 'normal' })
+            }
+            
+            if (json.aggregate_findings?.severity) {
+              reportLines.push({ text: `Risk Level: ${json.aggregate_findings.severity}`, fontSize: 11, fontStyle: 'bold' })
+            }
+            
+            if (reportLines.length > 0) {
+              addSectionBox('Detailed Report', reportLines, 20)
+            }
           }
         }
         
-        // Host Trust Verification
-        if (testId === 'host-header-injection' || report.scanType === 'Host Trust Verification') {
-          if (report.summary) {
-            checkNewPage(40)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Host Trust Verification Results', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`🔍 We created a defensive attack against your site by sending a request with a malicious Host header`, 25, yPosition)
-            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
-            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Potential host header injection vulnerability detected' : '✅ SUCCESS - Host header properly validated'}`, 25, yPosition)
-            doc.setTextColor(60, 60, 60)
-            doc.setFont('helvetica', 'normal')
-            if (report.summary.evidence) {
-              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+        // CT Log Subdomain Discovery-Specific Content
+        if (testId === 'ct-log-subdomain-discovery' && report.summary) {
+          const summary = report.summary
+          const ctLines = []
+          
+          if (summary.status) ctLines.push({ text: `Status: ${summary.status}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.certificates) ctLines.push({ text: `Total Certificates: ${summary.certificates.length || 0}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.unique_subdomains) ctLines.push({ text: `Unique Subdomains: ${summary.unique_subdomains.length || 0}`, fontSize: 11, fontStyle: 'normal' })
+          if (summary.evidence) ctLines.push({ text: `Evidence: ${summary.evidence}`, fontSize: 10, fontStyle: 'normal' })
+          
+          if (ctLines.length > 0) {
+            addSectionBox('Certificate Transparency Log Summary', ctLines)
+          }
+          
+          // Unique Subdomains
+          if (summary.unique_subdomains && summary.unique_subdomains.length > 0) {
+            const subdomainLines = summary.unique_subdomains.slice(0, 50).map((subdomain, idx) => ({
+              text: `${idx + 1}. ${subdomain}`, fontSize: 10, fontStyle: 'normal'
+            }))
+            if (summary.unique_subdomains.length > 50) {
+              subdomainLines.push({ text: `... and ${summary.unique_subdomains.length - 50} more subdomains`, fontSize: 9, fontStyle: 'italic' })
             }
-            yPosition += 10
+            addSectionBox('Unique Subdomains', subdomainLines, 15)
+          }
+          
+          // Discovered Certificates
+          if (summary.certificates && summary.certificates.length > 0) {
+            const certLines = []
+            summary.certificates.slice(0, 20).forEach((cert, idx) => {
+              certLines.push({ text: `Certificate ${idx + 1}:`, fontSize: 11, fontStyle: 'bold' })
+              if (cert.name_value) certLines.push({ text: `  Name Value: ${cert.name_value}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
+              if (cert.serial_number) certLines.push({ text: `  Serial Number: ${cert.serial_number}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
+              if (cert.entry_timestamp) certLines.push({ text: `  Entry Timestamp: ${cert.entry_timestamp}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
+              if (cert.not_before) certLines.push({ text: `  Not Before: ${cert.not_before}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
+              if (cert.not_after) certLines.push({ text: `  Not After: ${cert.not_after}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
+            })
+            if (summary.certificates.length > 20) {
+              certLines.push({ text: `... and ${summary.certificates.length - 20} more certificates`, fontSize: 9, fontStyle: 'italic' })
+            }
+            if (certLines.length > 0) {
+              addSectionBox('Discovered Certificates', certLines, 20)
+            }
           }
         }
         
-        // HTTP Allowed Methods Check
-        if (testId === 'http-methods-check' || report.scanType === 'HTTP Allowed Methods Check') {
-          if (report.summary) {
-            checkNewPage(40)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('HTTP Allowed Methods Check Results', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`🔍 We checked your site for dangerous HTTP methods by sending an OPTIONS request`, 25, yPosition)
-            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
-            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Dangerous HTTP methods enabled' : '✅ SUCCESS - Only safe HTTP methods enabled'}`, 25, yPosition)
-            doc.setTextColor(60, 60, 60)
-            doc.setFont('helvetica', 'normal')
-            if (report.summary.evidence) {
-              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+        // WAF Detection-Specific Content
+        if (testId === 'waf-detection' && report.summary) {
+          const wafLines = []
+          
+          if (report.summary.wafDetected !== undefined) {
+            wafLines.push({ text: `WAF Detected: ${report.summary.wafDetected ? 'Yes' : 'No'}`, fontSize: 11, fontStyle: 'bold' })
+          }
+          if (report.summary.wafType) wafLines.push({ text: `WAF Type: ${report.summary.wafType}`, fontSize: 11, fontStyle: 'normal' })
+          if (report.summary.wafVendor) wafLines.push({ text: `Vendor: ${report.summary.wafVendor}`, fontSize: 11, fontStyle: 'normal' })
+          if (report.summary.numberOfRequests) wafLines.push({ text: `Requests Made: ${report.summary.numberOfRequests}`, fontSize: 11, fontStyle: 'normal' })
+          
+          if (report.details?.wafInfo) {
+            wafLines.push({ text: `Detection Information: ${report.details.wafInfo}`, fontSize: 10, fontStyle: 'normal' })
+          }
+          if (report.details?.reason) {
+            wafLines.push({ text: `Detection Reason: ${report.details.reason}`, fontSize: 10, fontStyle: 'normal' })
+          }
+          
+          if (wafLines.length > 0) {
+            addSectionBox('WAF Detection Summary', wafLines)
+          }
+          
+          // Raw Output (truncated, no JSON)
+          if (report.rawOutput) {
+            const rawLines = doc.splitTextToSize(report.rawOutput.substring(0, 2000), pageWidth - 2 * margin - 25)
+            const displayRawLines = rawLines.slice(0, 40).map(line => ({
+              text: line, fontSize: 8, fontStyle: 'normal'
+            }))
+            if (report.rawOutput.length > 2000 || rawLines.length > 40) {
+              displayRawLines.push({ text: `... (output truncated, showing first 2000 characters of ${report.rawOutput.length} total)`, fontSize: 8, fontStyle: 'italic' })
             }
-            yPosition += 10
+            addSectionBox('Raw wafw00f Output', displayRawLines, 10)
           }
         }
         
-        // CORS Policy Validation
-        if (testId === 'cors-policy-validation' || report.scanType === 'CORS Policy Validation') {
-          if (report.summary) {
-            checkNewPage(40)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 30)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('CORS Policy Validation Results', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`🔍 We created a defensive attack against your site by sending a request with a malicious Origin header`, 25, yPosition)
-            const statusColor = report.summary.status === 'Vulnerable' ? [239, 68, 68] : [34, 197, 94]
-            doc.setTextColor(statusColor[0], statusColor[1], statusColor[2])
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText(`Result: ${report.summary.status === 'Vulnerable' ? '❌ FAILURE - Insecure CORS policy detected' : '✅ SUCCESS - CORS policy is secure'}`, 25, yPosition)
-            doc.setTextColor(60, 60, 60)
-            doc.setFont('helvetica', 'normal')
-            if (report.summary.evidence) {
-              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
-            }
-            yPosition += 10
+        // CSRF Test-Specific Content
+        if ((testId === 'csrf-test' || report.scanType === 'Cross-Site Request Forgery (CSRF) Testing') && report.csrfVulnerability) {
+          const csrfLines = [
+            { text: `CSRF Vulnerability: ${report.csrfVulnerability}`, fontSize: 11, fontStyle: 'bold' }
+          ]
+          
+          if (report.summary) csrfLines.push({ text: `Summary: ${report.summary}`, fontSize: 10, fontStyle: 'normal' })
+          if (report.httpStatusCode) csrfLines.push({ text: `HTTP Status Code: ${report.httpStatusCode}`, fontSize: 11, fontStyle: 'normal' })
+          if (report.target) csrfLines.push({ text: `Target: ${report.target}`, fontSize: 11, fontStyle: 'normal' })
+          
+          if (csrfLines.length > 0) {
+            addSectionBox('CSRF Test Results', csrfLines)
           }
-        }
-        
-        // CT Log Subdomain Discovery
-        if (testId === 'ct-log-subdomain-discovery' || report.scanType === 'Certificate Transparency (CT) Log Subdomain Discovery') {
-          if (report.summary) {
-            checkNewPage(50)
-            doc.rect(20, yPosition - 10, pageWidth - 40, 40)
-            doc.setFontSize(12)
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText('Certificate Transparency (CT) Log Subdomain Discovery', 25, yPosition)
-            doc.setFontSize(10)
-            doc.setFont('helvetica', 'normal')
-            if (report.summary.evidence) {
-              yPosition = addText(`Evidence: ${report.summary.evidence}`, 25, yPosition)
+          
+          // Response Headers
+          if (report.responseHeaders && Object.keys(report.responseHeaders).length > 0) {
+            const headerLines = []
+            Object.entries(report.responseHeaders).slice(0, 20).forEach(([key, value]) => {
+              headerLines.push({ text: `${key}: ${value}`, fontSize: 9, fontStyle: 'normal' })
+            })
+            if (Object.keys(report.responseHeaders).length > 20) {
+              headerLines.push({ text: `... and ${Object.keys(report.responseHeaders).length - 20} more headers`, fontSize: 9, fontStyle: 'italic' })
             }
-            if (report.unique_subdomains && report.unique_subdomains.length > 0) {
-              checkNewPage(30)
-              yPosition = addText(`Discovered Subdomains (${report.unique_subdomains.length}):`, 25, yPosition)
-              report.unique_subdomains.slice(0, 30).forEach((subdomain, idx) => {
-                checkNewPage(15)
-                yPosition = addText(`${idx + 1}. ${subdomain}`, 30, yPosition)
-              })
-              if (report.unique_subdomains.length > 30) {
-                yPosition = addText(`... and ${report.unique_subdomains.length - 30} more`, 30, yPosition)
-              }
+            if (headerLines.length > 0) {
+              addSectionBox('Response Headers', headerLines, 15)
             }
-            if (report.certificates && report.certificates.length > 0) {
-              checkNewPage(20)
-              yPosition = addText(`Certificates Found: ${report.certificates.length}`, 25, yPosition)
-            }
-            yPosition += 10
           }
-        }
-        
-        // Command Display
-        if (report.command) {
-          checkNewPage(40)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 30)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Command Executed', 25, yPosition)
-          doc.setFontSize(8)
-          doc.setFont('courier', 'normal')
-          doc.setTextColor(60, 60, 60)
-          const cmdLines = doc.splitTextToSize(report.command, pageWidth - 2 * margin - 40)
-          cmdLines.forEach((line, idx) => {
-            checkNewPage(10)
-            doc.text(line, 25, yPosition + (idx * 4))
+          
+          // CSRF Protection Analysis
+          const protectionLines = []
+          const hasCsrfToken = report.responseHeaders?.['x-csrf-token'] || report.responseHeaders?.['csrf-token']
+          const hasSameSite = report.responseHeaders?.['set-cookie']?.includes('SameSite')
+          const hasOrigin = report.responseHeaders?.['access-control-allow-origin']
+          
+          protectionLines.push({ 
+            text: `CSRF Tokens: ${hasCsrfToken ? 'Present' : 'Missing'}`, 
+            fontSize: 11, 
+            fontStyle: 'normal'
           })
-          yPosition += (cmdLines.length * 4) + 10
+          protectionLines.push({ 
+            text: `SameSite Cookies: ${hasSameSite ? 'Present' : 'Missing'}`, 
+            fontSize: 11, 
+            fontStyle: 'normal'
+          })
+          protectionLines.push({ 
+            text: `Origin Validation: ${hasOrigin ? 'Configured' : 'Not Configured'}`, 
+            fontSize: 11, 
+            fontStyle: 'normal'
+          })
+          
+          if (protectionLines.length > 0) {
+            addSectionBox('CSRF Protection Analysis', protectionLines)
+          }
         }
+        
+        // XSS Test-Specific Content
+        if ((testId === 'xss-test' || report.scanType === 'Cross-Site Scripting (XSS) Testing') && report.vulnerabilities_found !== undefined) {
+          const xssLines = [
+            { text: `Vulnerabilities Found: ${report.vulnerabilities_found || 0}`, fontSize: 11, fontStyle: 'bold' },
+            { text: `Status: ${report.vulnerabilities_found > 0 ? 'VULNERABLE' : (report.reflected_parameters && report.reflected_parameters.length > 0) ? 'REFLECTED' : 'SAFE'}`, fontSize: 11, fontStyle: 'bold' }
+          ]
+          
+          if (report.summary) xssLines.push({ text: `Summary: ${report.summary}`, fontSize: 10, fontStyle: 'normal' })
+          
+          if (report.scan_details) {
+            if (report.scan_details.method) xssLines.push({ text: `Method: ${report.scan_details.method}`, fontSize: 10, fontStyle: 'normal' })
+            if (report.scan_details.performance) xssLines.push({ text: `Workers: ${report.scan_details.performance}`, fontSize: 10, fontStyle: 'normal' })
+            if (report.scan_details.timeout) xssLines.push({ text: `Timeout: ${report.scan_details.timeout}s`, fontSize: 10, fontStyle: 'normal' })
+            if (report.scan_details.fast_scan !== undefined) xssLines.push({ text: `Fast Scan: ${report.scan_details.fast_scan ? 'Yes' : 'No'}`, fontSize: 10, fontStyle: 'normal' })
+          }
+          
+          if (xssLines.length > 0) {
+            addSectionBox('XSS Test Results', xssLines)
+          }
+          
+          // Reflected Parameters
+          if (report.reflected_parameters && report.reflected_parameters.length > 0) {
+            const paramLines = report.reflected_parameters.slice(0, 20).map((param, idx) => ({
+              text: `${idx + 1}. ${param}`, fontSize: 10, fontStyle: 'normal'
+            }))
+            if (report.reflected_parameters.length > 20) {
+              paramLines.push({ text: `... and ${report.reflected_parameters.length - 20} more parameters`, fontSize: 9, fontStyle: 'italic' })
+            }
+            addSectionBox('Reflected Parameters', paramLines, 15)
+          }
+          
+          // Vulnerable Parameters
+          if (report.vulnerable_parameters && report.vulnerable_parameters.length > 0) {
+            const vulnParamLines = report.vulnerable_parameters.slice(0, 15).map((param, idx) => ({
+              text: `${idx + 1}. ${param}`, fontSize: 10, fontStyle: 'bold'
+            }))
+            if (report.vulnerable_parameters.length > 15) {
+              vulnParamLines.push({ text: `... and ${report.vulnerable_parameters.length - 15} more vulnerable parameters`, fontSize: 9, fontStyle: 'italic' })
+            }
+            addSectionBox('Vulnerable Parameters', vulnParamLines, 15)
+          }
+          
+          // HTTP Errors
+          if (report.http_errors && report.http_errors.length > 0) {
+            const errorLines = report.http_errors.slice(0, 10).map((error, idx) => ({
+              text: `${idx + 1}. ${error}`, 
+              fontSize: 10, 
+              fontStyle: 'normal'
+            }))
+            if (errorLines.length > 0) {
+              addSectionBox('HTTP Errors Detected', errorLines, 15)
+              addSectionBox('Protection Detection Note', [
+                { text: 'These errors typically indicate server-side protection such as WAF or IP blocking.', fontSize: 10, fontStyle: 'normal' }
+              ])
+            }
+          }
+          
+          // Protection Detection
+          if (report.protection_detected) {
+            addSectionBox('Protection Mechanisms Detected', [
+              { text: 'The server appears to be protected by WAF (Web Application Firewall) or similar security mechanisms. This may have interfered with the XSS testing.', fontSize: 10, fontStyle: 'normal' }
+            ])
+          }
+        }
+        
+        // SQL Injection Test-Specific Content
+        if ((testId === 'sql-injection-test' || report.scanType === 'SQL Injection Test') && report.vulnerabilities_found !== undefined) {
+          const sqlLines = [
+            { text: `Vulnerabilities Found: ${report.vulnerabilities_found || 0}`, fontSize: 11, fontStyle: 'bold' },
+            { text: `Status: ${report.vulnerabilities_found > 0 ? 'VULNERABLE' : (report.vulnerable_parameters && report.vulnerable_parameters.length > 0) ? 'POTENTIALLY VULNERABLE' : 'SAFE'}`, fontSize: 11, fontStyle: 'bold' }
+          ]
+          
+          if (report.summary) sqlLines.push({ text: `Summary: ${report.summary}`, fontSize: 10, fontStyle: 'normal' })
+          
+          if (report.scan_details) {
+            if (report.scan_details.method) sqlLines.push({ text: `Method: ${report.scan_details.method}`, fontSize: 10, fontStyle: 'normal' })
+            if (report.scan_details.performance) sqlLines.push({ text: `Workers: ${report.scan_details.performance}`, fontSize: 10, fontStyle: 'normal' })
+            if (report.scan_details.timeout) sqlLines.push({ text: `Timeout: ${report.scan_details.timeout}s`, fontSize: 10, fontStyle: 'normal' })
+          }
+          
+          if (sqlLines.length > 0) {
+            addSectionBox('SQL Injection Test Results', sqlLines)
+          }
+          
+          // Vulnerable Parameters
+          if (report.vulnerable_parameters && report.vulnerable_parameters.length > 0) {
+            const vulnParamLines = report.vulnerable_parameters.slice(0, 15).map((param, idx) => ({
+              text: `${idx + 1}. ${param}`, fontSize: 10, fontStyle: 'bold'
+            }))
+            if (report.vulnerable_parameters.length > 15) {
+              vulnParamLines.push({ text: `... and ${report.vulnerable_parameters.length - 15} more vulnerable parameters`, fontSize: 9, fontStyle: 'italic' })
+            }
+            addSectionBox('Vulnerable Parameters', vulnParamLines, 15)
+          }
+          
+          // HTTP Errors
+          if (report.http_errors && report.http_errors.length > 0) {
+            const errorLines = report.http_errors.slice(0, 10).map((error, idx) => ({
+              text: `${idx + 1}. ${error}`, 
+              fontSize: 10, 
+              fontStyle: 'normal'
+            }))
+            if (errorLines.length > 0) {
+              addSectionBox('HTTP Errors Detected', errorLines, 15)
+              addSectionBox('Protection Detection Note', [
+                { text: 'These errors typically indicate server-side protection such as WAF or IP blocking.', fontSize: 10, fontStyle: 'normal' }
+              ])
+            }
+          }
+          
+          // Protection Detection
+          if (report.protection_detected) {
+            addSectionBox('Protection Mechanisms Detected', [
+              { text: 'The server appears to be protected by WAF (Web Application Firewall) or similar security mechanisms. This may have interfered with the SQL injection testing.', fontSize: 10, fontStyle: 'normal' }
+            ])
+          }
+          
+          // Database Information
+          if (report.database_info && report.database_info.dbms) {
+            const dbLines = [
+              { text: `Database Type: ${report.database_info.dbms}`, fontSize: 11, fontStyle: 'bold' }
+            ]
+            if (report.database_info.version) dbLines.push({ text: `Version: ${report.database_info.version}`, fontSize: 10, fontStyle: 'normal' })
+            if (report.database_info.databases && report.database_info.databases.length > 0) {
+              dbLines.push({ text: `Accessible Databases: ${report.database_info.databases.join(', ')}`, fontSize: 10, fontStyle: 'normal' })
+            }
+            if (dbLines.length > 0) {
+              addSectionBox('Database Information', dbLines)
+            }
+          }
+        }
+        
+        // Use the same scan-specific content logic from generateScanPDF for other scan types
+        // This ensures consistency and includes all the detailed report dialog content
         
         // Findings Section
         if (result.findings && result.findings.length > 0) {
-          checkNewPage(60)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 50)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Findings & Recommendations', 25, yPosition)
-          doc.setFontSize(10)
-          doc.setFont('helvetica', 'normal')
+          const findingLines = []
           result.findings.forEach((finding, idx) => {
-            checkNewPage(40)
             const findingType = finding.type || 'info'
             const findingMessage = finding.message || 'No message available'
             const findingDetails = finding.details ? (typeof finding.details === 'object' ? JSON.stringify(finding.details, null, 2) : String(finding.details)) : ''
-            doc.setFont('helvetica', 'bold')
-            yPosition = addText(`${idx + 1}. [${findingType.toUpperCase()}] ${findingMessage}`, 25, yPosition)
+            findingLines.push({ text: `${idx + 1}. [${findingType.toUpperCase()}] ${findingMessage}`, fontSize: 11, fontStyle: 'bold' })
             if (findingDetails) {
-              doc.setFont('helvetica', 'normal')
-              yPosition = addText(`   Details: ${findingDetails.substring(0, 200)}${findingDetails.length > 200 ? '...' : ''}`, 30, yPosition)
+              const detailsText = findingDetails.length > 300 ? findingDetails.substring(0, 300) + '...' : findingDetails
+              findingLines.push({ text: `   Details: ${detailsText}`, fontSize: 9, fontStyle: 'normal', indent: 5 })
             }
           })
-          yPosition += 10
+          addSectionBox('Findings & Recommendations', findingLines, 20)
         }
         
         // Issues from Report
         if (report.issues && report.issues.length > 0) {
-          checkNewPage(50)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 40)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Issues', 25, yPosition)
-          doc.setFontSize(10)
-          doc.setFont('helvetica', 'normal')
-          report.issues.forEach((issue, idx) => {
-            checkNewPage(30)
+          const issueLines = report.issues.map((issue, idx) => {
             const issueText = typeof issue === 'object' ? JSON.stringify(issue, null, 2) : String(issue)
-            yPosition = addText(`${idx + 1}. ${issueText.substring(0, 200)}${issueText.length > 200 ? '...' : ''}`, 25, yPosition)
+            const displayText = issueText.length > 250 ? issueText.substring(0, 250) + '...' : issueText
+            return { text: `${idx + 1}. ${displayText}`, fontSize: 10, fontStyle: 'normal' }
           })
-          yPosition += 10
+          addSectionBox('Issues', issueLines, 15)
         }
         
         // Recommendations Section
@@ -5910,50 +5787,54 @@ const ComprehensiveSecurityScanner = () => {
           ...(report.recommendations || [])
         ]
         if (allRecommendations.length > 0) {
-          checkNewPage(60)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 50)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Recommendations', 25, yPosition)
-          doc.setFontSize(10)
-          doc.setFont('helvetica', 'normal')
-          allRecommendations.forEach((rec, idx) => {
-            checkNewPage(20)
-            yPosition = addText(`${idx + 1}. ${rec}`, 25, yPosition)
-          })
-          yPosition += 10
+          const recLines = allRecommendations.map((rec, idx) => ({
+            text: `${idx + 1}. ${rec}`, fontSize: 10, fontStyle: 'normal'
+          }))
+          addSectionBox('Recommendations', recLines, 15)
         }
         
-        // Raw Output
+        // Raw Output Section (truncated, no JSON)
         if (report.rawOutput || report.raw_output) {
-          checkNewPage(60)
-          doc.rect(20, yPosition - 10, pageWidth - 40, 50)
-          doc.setFontSize(12)
-          doc.setFont('helvetica', 'bold')
-          yPosition = addText('Raw Scan Output', 25, yPosition)
-          doc.setFontSize(8)
-          doc.setFont('courier', 'normal')
           const rawText = report.rawOutput || report.raw_output || ''
-          const rawLines = doc.splitTextToSize(rawText.substring(0, 3000), pageWidth - 50)
-          rawLines.forEach(line => {
-            checkNewPage(15)
-            doc.text(line, 25, yPosition)
-            yPosition += 5
-          })
-          if (rawText.length > 3000) {
-            doc.setFont('helvetica', 'normal')
-            yPosition = addText(`... (output truncated, total length: ${rawText.length} characters)`, 25, yPosition)
+          const rawLines = doc.splitTextToSize(rawText.substring(0, 3000), pageWidth - 2 * margin - 25)
+          const displayRawLines = rawLines.slice(0, 50).map(line => ({
+            text: line, fontSize: 8, fontStyle: 'normal'
+          }))
+          if (rawText.length > 3000 || rawLines.length > 50) {
+            displayRawLines.push({ text: `... (output truncated, showing first 3000 characters of ${rawText.length} total)`, fontSize: 8, fontStyle: 'italic' })
           }
-          yPosition += 10
+          addSectionBox('Raw Scan Output', displayRawLines, 10)
         }
         
         return yPosition
       }
       
+      // WAF Detection Section (using addScanSection for consistency)
+      const wafResult = scanResults['waf-detection'] || newScanResults['waf-detection']
+      if (wafResult) {
+        const wafTest = securityTests.find(t => t.id === 'waf-detection')
+        if (wafTest) {
+          yPosition = addScanSection(1, wafTest.name, 'waf-detection', wafResult)
+        }
+      }
+      
+      // DNS Resolution section (using addScanSection for consistency and proper overflow handling)
+      const dnsResult = scanResults['dns-resolution']
+      if (dnsResult) {
+        const dnsTest = securityTests.find(t => t.id === 'dns-resolution')
+        if (dnsTest) {
+          yPosition = addScanSection(2, dnsTest.name, 'dns-resolution', dnsResult)
+        }
+      }
+      
+      // Add new scan sections
+      const allResults = { ...scanResults, ...newScanResults }
+      
       // Process all scan results - iterate through selected scans
       const scansToReport = getScansToRun()
-      let sectionNumber = 2 // Start after DNS which is handled separately
+      let sectionNumber = 3 // Start after WAF (1) and DNS (2) which are handled separately
       
+      // Process all scans using addScanSection for consistent formatting and overflow handling
       scansToReport.forEach((test) => {
         const result = allResults[test.id]
         if (result && test.id !== 'dns-resolution' && test.id !== 'waf-detection') {
@@ -5962,66 +5843,7 @@ const ComprehensiveSecurityScanner = () => {
         }
       })
       
-      // SSL/TLS Analysis Section (if exists)
-      if (allResults['ssl-tls-analysis'] && scansToReport.some(t => t.id === 'ssl-tls-analysis')) {
-        const sslResult = allResults['ssl-tls-analysis']
-        // Already handled by addScanSection above
-      }
-      
-      // Security Headers Section (if exists)
-      if (allResults['security-headers'] && scansToReport.some(t => t.id === 'security-headers')) {
-        const headersResult = allResults['security-headers']
-        // Already handled by addScanSection above
-      }
-      
-      // CMS Detection Section (if exists)
-      if (allResults['cms-detection'] && scansToReport.some(t => t.id === 'cms-detection')) {
-        const cmsResult = allResults['cms-detection']
-        // Already handled by addScanSection above
-      }
-      
-      // Subdomain Enumeration Section (if exists)
-      if (allResults['subdomain-enumeration'] && scansToReport.some(t => t.id === 'subdomain-enumeration')) {
-        const subdomainResult = allResults['subdomain-enumeration']
-        // Already handled by addScanSection above
-      }
-      
-      // Port Scanning Section (if exists)
-      if (allResults['port-scanning'] && scansToReport.some(t => t.id === 'port-scanning')) {
-        const portResult = allResults['port-scanning']
-        // Already handled by addScanSection above
-      }
-      
-      // Add other scan types (SQL Injection, XSS, CSRF, WAF, File Upload, etc.)
-      const otherScanTypes = ['sql-injection-test', 'xss-test', 'csrf-test', 'file-upload-check', 'ct-log-subdomain-discovery', 'http-methods-check', 'host-header-injection', 'cors-policy-validation', 'open-redirect-check', 'quick-fingerprint']
-      otherScanTypes.forEach(testId => {
-        if (allResults[testId] && scansToReport.some(t => t.id === testId)) {
-          const test = securityTests.find(t => t.id === testId)
-          if (test) {
-            yPosition = addScanSection(sectionNumber++, test.name, testId, allResults[testId])
-          }
-        }
-      })
-      
-      // Footer with enhanced information
-      doc.setFontSize(8)
-      doc.setFont('helvetica', 'italic')
-      
-      const currentDate = new Date();
-      const generatedDateTime = currentDate.toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short'
-      });
-      
-      doc.text('Generated by Cyberix Security Scanner', 20, pageHeight - 20)
-      doc.text(`Generated on: ${generatedDateTime}`, 20, pageHeight - 10)
-      doc.text(`Target: ${targetUrl}`, pageWidth - 120, pageHeight - 20)
-      doc.text(`Report ID: SEC-${Date.now()}`, pageWidth - 120, pageHeight - 10)
+      // Footer is already handled by updateAllFooters() - no need to add extra footer info
       
       // Save the PDF with enhanced filename
       const reportDate = new Date();
