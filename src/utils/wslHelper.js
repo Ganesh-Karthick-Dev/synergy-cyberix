@@ -75,10 +75,32 @@ async function runWSLAsRoot(command) {
   const escaped = escapeDoubleQuotes(command);
   // Use full path to wsl.exe for production compatibility
   const full = `C:\\Windows\\System32\\wsl.exe -d ${distro} -u root bash -lc "${escaped}"`;
+  
+  console.log(`💻 [WSL-HELPER] Executing WSL command as root:`);
+  console.log(`💻 [WSL-HELPER] [DISTRO] ${distro}`);
+  console.log(`💻 [WSL-HELPER] [FULL COMMAND] ${full}`);
+  console.log(`💻 [WSL-HELPER] [ORIGINAL COMMAND] ${command}`);
+  
+  const startTime = Date.now();
   try {
     const { stdout, stderr } = await execPromise(full, { maxBuffer: 10 * 1024 * 1024 });
+    const duration = Date.now() - startTime;
+    console.log(`✅ [WSL-HELPER] Command executed successfully (${duration}ms)`);
+    console.log(`📤 [WSL-HELPER] stdout length: ${(stdout || '').length} chars`);
+    console.log(`📤 [WSL-HELPER] stderr length: ${(stderr || '').length} chars`);
+    if (stdout && stdout.length > 0) {
+      console.log(`📤 [WSL-HELPER] stdout preview: ${stdout.substring(0, 200)}${stdout.length > 200 ? '...' : ''}`);
+    }
+    if (stderr && stderr.length > 0) {
+      console.log(`⚠️  [WSL-HELPER] stderr preview: ${stderr.substring(0, 200)}${stderr.length > 200 ? '...' : ''}`);
+    }
     return { success: true, stdout: (stdout || '').trim(), stderr: (stderr || '').trim() };
   } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`❌ [WSL-HELPER] Command execution FAILED (${duration}ms)`);
+    console.error(`❌ [WSL-HELPER] Error:`, error.message);
+    console.error(`📤 [WSL-HELPER] Error stdout:`, error.stdout ? error.stdout.substring(0, 500) : '(empty)');
+    console.error(`📤 [WSL-HELPER] Error stderr:`, error.stderr ? error.stderr.substring(0, 500) : '(empty)');
     return { success: false, error: error.message, stdout: error.stdout || '', stderr: error.stderr || '' };
   }
 }
@@ -124,8 +146,28 @@ async function checkWSL() {
 async function checkTool(toolName) {
   // Use root user for consistency with QuickCheckScreen and SettingsPanel
   // Tools are installed system-wide, so checking as root ensures we find them
-  const res = await runWSLAsRoot(`command -v ${toolName} >/dev/null 2>&1 && echo installed || echo missing`);
-  return !!(res.success && res.stdout.trim() === 'installed');
+  const checkCommand = `command -v ${toolName} >/dev/null 2>&1 && echo installed || echo missing`;
+  console.log(`🔍 [WSL-HELPER] Checking tool: ${toolName}`);
+  console.log(`💻 [WSL-HELPER] [COMMAND] ${checkCommand}`);
+  
+  const res = await runWSLAsRoot(checkCommand);
+  
+  const isInstalled = !!(res.success && res.stdout.trim() === 'installed');
+  console.log(`🔍 [WSL-HELPER] Result for ${toolName}:`, {
+    success: res.success,
+    stdout: res.stdout,
+    stderr: res.stderr || '(empty)',
+    error: res.error || '(none)',
+    installed: isInstalled
+  });
+  
+  if (isInstalled) {
+    console.log(`✅ [WSL-HELPER] ${toolName} is INSTALLED`);
+  } else {
+    console.log(`❌ [WSL-HELPER] ${toolName} is MISSING`);
+  }
+  
+  return isInstalled;
 }
 
 async function getToolVersion(toolName) {

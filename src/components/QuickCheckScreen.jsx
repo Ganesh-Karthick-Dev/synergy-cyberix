@@ -424,83 +424,145 @@ function QuickCheckScreen({ onComplete }) {
         return
       }
 
-      // Get username from stored credentials (same as Installation Setup)
-      let username = 'root'
-      const storedCredentials = getWslCredentials()
-      if (storedCredentials?.username) {
-        username = storedCredentials.username
-        console.log('🔐 [QUICK-CHECK] Using username from stored credentials:', username)
-      } else if (window.cyberGuard?.getWslUsername) {
-        const wslUserResult = await window.cyberGuard.getWslUsername()
-        if (wslUserResult?.username) {
-          username = wslUserResult.username
-          console.log('🔐 [QUICK-CHECK] Using username from API:', username)
-        }
-      }
-
-      if (!window.cyberGuard?.runWslCommandAsRoot) {
+      if (!window.cyberGuard?.checkRequiredToolsOnly) {
         updateStep('tools', { 
           status: 'error', 
           description: 'Cannot check tools',
-          error: 'WSL command API not available',
+          error: 'Tool check API not available',
           completedAt: new Date().toISOString()
         })
         return
       }
 
-      // Required tools list (SAME as Installation Setup - Step4ToolsInstallation.jsx)
-      const requiredTools = [
-        'jq', 'unzip', 'curl', 'wget', 'nmap', 'nikto', 'sqlmap', 'hydra', 
-        'gobuster', 'dirb', 'sslscan', 'dnstwist', 'geoip-bin', 'wapiti', 
-        'golang-go', 'amass', 'ffuf', 'nuclei', 'dalfox'
-      ]
-
-      const missingTools = []
+      // Use the centralized tool checker
+      console.log('🔍 [QUICK-CHECK] Checking all required tools...')
+      const toolCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
       
-      // Check each tool individually using runWslCommandAsRoot (SAME as Installation Setup)
-      for (const toolName of requiredTools) {
-        try {
-          const result = await window.cyberGuard.runWslCommandAsRoot(
-            username,
-            `command -v ${toolName} >/dev/null 2>&1 && echo 'installed' || echo 'notinstalled'`,
-            password
-          )
-          
-          const output = result?.stdout || ''
-          if (!output.includes('installed')) {
-            missingTools.push(toolName)
-            console.log(`❌ [QUICK-CHECK] Tool missing: ${toolName}`)
-          } else {
-            console.log(`✅ [QUICK-CHECK] Tool found: ${toolName}`)
-          }
-        } catch (error) {
-          // If check fails, assume tool is missing
-          missingTools.push(toolName)
-          console.error(`❌ [QUICK-CHECK] Error checking ${toolName}:`, error.message)
+      console.log('🔍 [QUICK-CHECK] Tool check result:', {
+        success: toolCheck?.success,
+        missingCount: toolCheck?.missingTools?.length || 0,
+        missingTools: toolCheck?.missingTools || [],
+        totalChecked: toolCheck?.totalChecked || 0,
+        installedCount: toolCheck?.installedCount || 0
+      })
+
+      if (!toolCheck || !toolCheck.missingTools || toolCheck.missingTools.length === 0) {
+        // All tools are installed
+        updateStep('tools', { 
+          status: 'success', 
+          description: `All security tools are installed (${toolCheck?.installedCount || 0}/${toolCheck?.totalChecked || 0})`,
+          completedAt: new Date().toISOString()
+        })
+        return
+      }
+
+      // Some tools are missing - install them
+      const missingCount = toolCheck.missingTools.length
+      console.log(`⚠️ [QUICK-CHECK] ${missingCount} tools missing, starting installation...`)
+      
+      updateStep('tools', { 
+        status: 'checking', 
+        description: `${missingCount} tools missing. Installing...`,
+        error: null
+      })
+
+      // Set up progress listener to update step description
+      let currentInstallingTool = null
+      let installProgress = 0
+      
+      const progressListener = (progress) => {
+        if (progress?.tool) {
+          currentInstallingTool = progress.tool
+          installProgress = progress.progress || 0
+          updateStep('tools', { 
+            status: 'checking',
+            description: `Installing ${progress.tool}... (${installProgress}%)`
+          })
+        } else if (progress?.phase === 'installing') {
+          const current = progress.current || 0
+          const total = progress.total || missingCount
+          updateStep('tools', { 
+            status: 'checking',
+            description: `Installing tools... (${current}/${total}) - ${progress.message || ''}`
+          })
+        } else if (progress?.phase === 'complete') {
+          updateStep('tools', { 
+            status: 'checking',
+            description: 'Verifying installation...'
+          })
         }
       }
 
-      if (missingTools.length === 0) {
+      window.cyberGuard?.onInstallProgress?.(progressListener)
+
+      // Install all missing tools
+      console.log('🔧 [QUICK-CHECK] Starting installation of missing tools...')
+      await window.cyberGuard?.installAllToolsRootless?.()
+
+      // Install tgpt separately if missing
+      if (toolCheck.missingTools.includes('tgpt') || !toolCheck.tgptInstalled) {
+        console.log('🔧 [QUICK-CHECK] Installing tgpt...')
+        updateStep('tools', { 
+          status: 'checking',
+          description: 'Installing tgpt (AI analysis tool)...'
+        })
+        
+        if (password && window.cyberGuard?.checkAndInstallTgpt) {
+          try {
+            await window.cyberGuard.checkAndInstallTgpt(password)
+            console.log('✅ [QUICK-CHECK] tgpt installed successfully')
+          } catch (tgptError) {
+            console.warn('⚠️ [QUICK-CHECK] tgpt installation failed (non-critical):', tgptError)
+          }
+        }
+      }
+
+      // Verify installation
+      console.log('🔍 [QUICK-CHECK] Verifying tool installation...')
+      updateStep('tools', { 
+        status: 'checking',
+        description: 'Verifying installed tools...'
+      })
+      
+      const verifyCheck = await window.cyberGuard.checkRequiredToolsOnly(password)
+      
+      if (verifyCheck && verifyCheck.success && (!verifyCheck.missingTools || verifyCheck.missingTools.length === 0)) {
+        console.log('✅ [QUICK-CHECK] All tools verified and installed!')
         updateStep('tools', { 
           status: 'success', 
-          description: 'All security tools are installed',
+          description: `All security tools installed successfully (${verifyCheck.installedCount || 0}/${verifyCheck.totalChecked || 0})`,
           completedAt: new Date().toISOString()
         })
+        showSuccess(`✅ Successfully installed ${missingCount} tools!`)
       } else {
-        updateStep('tools', { 
-          status: 'error', 
-          description: `${missingTools.length} tools missing`,
-          error: `Missing tools: ${missingTools.join(', ')}`,
-          completedAt: new Date().toISOString()
-        })
+        const stillMissing = verifyCheck?.missingTools?.length || 0
+        if (stillMissing > 0) {
+          console.log(`⚠️ [QUICK-CHECK] ${stillMissing} tools still missing after installation`)
+          updateStep('tools', { 
+            status: 'error', 
+            description: `${stillMissing} tools failed to install`,
+            error: `Missing: ${verifyCheck.missingTools.join(', ')}`,
+            completedAt: new Date().toISOString()
+          })
+          showError(`${stillMissing} tools failed to install. Please install them manually from Settings.`)
+        } else {
+          updateStep('tools', { 
+            status: 'success', 
+            description: `All security tools installed (${verifyCheck.installedCount || 0}/${verifyCheck.totalChecked || 0})`,
+            completedAt: new Date().toISOString()
+          })
+          showSuccess(`✅ Successfully installed ${missingCount} tools!`)
+        }
       }
     } catch (error) {
+      console.error('❌ [QUICK-CHECK] Tool check/installation failed:', error)
       updateStep('tools', { 
         status: 'error', 
-        description: 'Tool check failed',
+        description: 'Tool check/installation failed',
         error: error.message,
         completedAt: new Date().toISOString()
       })
+      showError(`Tool installation failed: ${error?.message || 'Unknown error'}. Please install tools manually from Settings.`)
     }
   }
 

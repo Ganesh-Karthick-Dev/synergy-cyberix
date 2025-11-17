@@ -231,6 +231,71 @@ const AppContent = () => {
     }))
   }
 
+  // Pre-login tool check with auto-installation (NON-BLOCKING)
+  // This should be quick - just check, don't install (installation happens after login)
+  const checkAndInstallToolsPreLogin = async () => {
+    try {
+      console.log('🔍 [APP] Pre-login: Quick check of WSL and tools...')
+      
+      // Step 1: Quick WSL check (with timeout)
+      let hasWsl = false
+      if (window.cyberGuard?.checkWSLRootless) {
+        try {
+          const wslCheckPromise = window.cyberGuard.checkWSLRootless()
+          const wslTimeout = new Promise((resolve) => setTimeout(() => resolve(false), 5000))
+          hasWsl = await Promise.race([wslCheckPromise, wslTimeout])
+          console.log('🔍 [APP] Pre-login: WSL check result:', hasWsl)
+        } catch (wslError) {
+          console.warn('⚠️ [APP] Pre-login: WSL check error:', wslError)
+        }
+        
+        if (!hasWsl) {
+          console.log('⚠️ [APP] Pre-login: WSL not installed - will install after login')
+          return { wslInstalled: false, toolsInstalled: false, needsWslInstall: true }
+        }
+      }
+      
+      // Step 2: Quick tool check (with timeout) - DON'T install here, just check
+      if (window.cyberGuard?.checkAllToolsRootless) {
+        try {
+          const toolCheckPromise = window.cyberGuard.checkAllToolsRootless()
+          const toolTimeout = new Promise((resolve) => setTimeout(() => resolve(null), 10000))
+          const toolStatus = await Promise.race([toolCheckPromise, toolTimeout])
+          
+          if (toolStatus && typeof toolStatus === 'object') {
+            const missingTools = Object.entries(toolStatus)
+              .filter(([tool, installed]) => !installed)
+              .map(([tool]) => tool)
+            
+            const allInstalled = missingTools.length === 0
+            console.log('🔍 [APP] Pre-login: Tools check result:', { 
+              allInstalled, 
+              missingCount: missingTools.length,
+              missingTools 
+            })
+            
+            // Don't install here - just report status
+            // Installation will happen after login when password is available
+            if (!allInstalled && missingTools.length > 0) {
+              console.log('⚠️ [APP] Pre-login: Tools missing, will install after login:', missingTools)
+              return { wslInstalled: true, toolsInstalled: false, missingTools }
+            }
+            
+            return { wslInstalled: true, toolsInstalled: allInstalled }
+          }
+        } catch (toolError) {
+          console.warn('⚠️ [APP] Pre-login: Tool check error:', toolError)
+        }
+      }
+      
+      return { wslInstalled: hasWsl, toolsInstalled: false }
+    } catch (error) {
+      console.error('❌ [APP] Pre-login tool check error:', error)
+      // Don't block login on pre-login check errors
+      return { wslInstalled: false, toolsInstalled: false, error: error.message }
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsLoading(true)
@@ -240,6 +305,22 @@ const AppContent = () => {
     setCurrentToastId(loadingToastId)
     
     try {
+      // PRE-LOGIN CHECK: Check and install tools before authentication
+      // But don't block login if installation takes too long
+      updateToast(loadingToastId, { message: '🔍 Checking system requirements...' })
+      
+      // Add timeout to pre-login check to prevent hanging
+      const preLoginCheckPromise = checkAndInstallToolsPreLogin()
+      const timeoutPromise = new Promise((resolve) => {
+        setTimeout(() => {
+          console.log('⚠️ [APP] Pre-login check timeout, proceeding with login...')
+          resolve({ wslInstalled: false, toolsInstalled: false, timeout: true })
+        }, 60000) // 60 second timeout for pre-login check
+      })
+      
+      const preLoginCheck = await Promise.race([preLoginCheckPromise, timeoutPromise])
+      console.log('🔍 [APP] Pre-login check result:', preLoginCheck)
+      
       // TEMPORARY: Hardcoded login check (API integration commented out)
       // Check if email is "admin" and password is "1234"
       if (formData.username === 'admin' && formData.password === '1234') {
@@ -251,8 +332,34 @@ const AppContent = () => {
           duration: 3000
         })
         
+        // If tools were installed, show info
+        if (preLoginCheck.installedCount) {
+          showSuccess(`✅ ${preLoginCheck.installedCount} tools were installed automatically!`, {
+            duration: 4000
+          })
+        }
+        
         // Start the WSL credential and tool checking flow
-        await handlePostLoginFlow()
+        // Don't await - let it run in background so login can proceed
+        // But also set a fallback to navigate if post-login flow takes too long
+        const postLoginPromise = handlePostLoginFlow().catch(err => {
+          console.error('❌ [APP] Post-login flow error:', err)
+          // On error, still navigate to dashboard
+          setTimeout(() => {
+            setIsAuthenticated(true)
+          }, 1000)
+        })
+        
+        // Fallback: If post-login flow takes more than 5 seconds, navigate anyway
+        // Use a ref to track if we've already navigated
+        let hasNavigated = false
+        setTimeout(() => {
+          console.log('⚠️ [APP] Post-login flow timeout (5s), forcing navigation to dashboard...')
+          if (!hasNavigated) {
+            hasNavigated = true
+            setIsAuthenticated(true)
+          }
+        }, 5000)
       } else {
         // Dismiss loading toast
         dismissToast(loadingToastId)
@@ -574,52 +681,51 @@ const AppContent = () => {
             console.log('🔧 [APP] Tool check totalChecked:', toolCheck?.totalChecked)
             console.log('🔧 [APP] ===== END TOOL CHECK RESULT =====')
             
-            // Check tgpt in background (non-blocking)
-            if (password && window.cyberGuard && window.cyberGuard.checkAndInstallTgpt) {
-              window.cyberGuard.checkAndInstallTgpt(password).catch(err => {
-                console.log('⚠️ [APP] tgpt check/install failed (non-blocking):', err)
-              })
-            }
-            
+            // Tool check completed - installation (including tgpt) will happen in QuickCheckScreen
+            // Just log the status and navigate to dashboard (QuickCheckScreen will handle installation)
             if (toolCheck && toolCheck.success) {
               console.log('✅ [APP] All tools are ready!')
-              // Navigate directly to dashboard
-              setIsCheckingCredentials(false)
-              setTimeout(() => {
-                setIsAuthenticated(true)
-              }, 500)
             } else if (toolCheck && toolCheck.missingTools && toolCheck.missingTools.length > 0) {
-              console.log('⚠️ [APP] Some tools are missing:', toolCheck.missingTools)
-              console.log('🔧 [APP] Missing tools detected, proceeding anyway')
-              // Navigate to dashboard without showing error notification
-              setIsCheckingCredentials(false)
-              setTimeout(() => {
-                setIsAuthenticated(true)
-              }, 500)
-            } else {
-              console.log('✅ [APP] Tool check completed, navigating to dashboard')
-              setIsCheckingCredentials(false)
-              setTimeout(() => {
-                setIsAuthenticated(true)
-              }, 500)
+              console.log(`⚠️ [APP] ${toolCheck.missingTools.length} tools missing - will be installed in QuickCheckScreen:`, toolCheck.missingTools)
             }
+            
+            // Navigate to dashboard (QuickCheckScreen will handle tool installation)
+            setIsCheckingCredentials(false)
+            console.log('✅ [APP] Navigating to dashboard (QuickCheckScreen will handle tool installation)...')
+            setIsAuthenticated(true)
+            console.log('✅ [APP] isAuthenticated set to true')
           } else {
             console.log('✅ [APP] Tool check API not available, navigating to dashboard')
             setIsCheckingCredentials(false)
-            setTimeout(() => {
-              setIsAuthenticated(true)
-            }, 500)
+            console.log('✅ [APP] Setting isAuthenticated to true (no API)...')
+            // Navigate immediately
+            setIsAuthenticated(true)
+            console.log('✅ [APP] isAuthenticated set to true')
           }
         } else {
           console.log('❌ [APP] Stored password is invalid, asking for new password')
           setIsCheckingCredentials(false)
           // Password is invalid, ask for new password
+          // But also allow navigation after a delay if user doesn't respond
+          setTimeout(() => {
+            if (!isAuthenticated) {
+              console.log('⚠️ [APP] Password dialog timeout, navigating to dashboard anyway...')
+              setIsAuthenticated(true)
+            }
+          }, 30000) // 30 second timeout for password dialog
           setShowWslPasswordDialog(true)
         }
       } else {
         console.log('🔐 [APP] No stored WSL password found, asking for password')
         setIsCheckingCredentials(false)
         // No stored password, ask for password
+        // But also allow navigation after a delay if user doesn't respond
+        setTimeout(() => {
+          if (!isAuthenticated) {
+            console.log('⚠️ [APP] Password dialog timeout, navigating to dashboard anyway...')
+            setIsAuthenticated(true)
+          }
+        }, 30000) // 30 second timeout for password dialog
         setShowWslPasswordDialog(true)
       }
     } catch (error) {

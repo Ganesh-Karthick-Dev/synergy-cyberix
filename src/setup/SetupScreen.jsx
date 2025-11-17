@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 const ALL_TOOLS = [
   'pip3','curl','wget','unzip',
   'jq','ffuf','nuclei','dalfox','go',
-  'nmap','nikto','sqlmap','hydra','gobuster','dirb','theharvester','amass','john','medusa','mitmproxy','socat','fail2ban','dnstwist'
+  'nmap','nikto','sqlmap','hydra','gobuster','dirb','theharvester','amass','john','medusa','mitmproxy','socat','fail2ban','dnstwist','tgpt'
 ];
 
 const STORAGE_KEY = 'cybrix.setup.state.v1';
@@ -46,7 +46,8 @@ export default function SetupScreen({ onReady }) {
     tools: ALL_TOOLS.map(name => ({ name, status: 'pending', progress: 0, message: '' })),
     currentIndex: 0,
     overallInstalled: 0,
-    error: null
+    error: null,
+    installationStarted: false // Flag to prevent multiple simultaneous installations
   });
 
   const allInstalled = useMemo(() => state.tools.every(t => t.status === 'installed'), [state.tools]);
@@ -98,33 +99,169 @@ export default function SetupScreen({ onReady }) {
   // Auto-start installation in tools phase (rootless installer, no password)
   useEffect(() => {
     if (state.phase !== 'tools') return;
+    if (state.installationStarted) return; // Prevent multiple starts
+    
     const pending = state.tools.some(t => t.status !== 'installed');
     if (!pending) return;
-    (async () => {
+    
+    console.log('[SETUP] Auto-starting tool installation...');
+    console.log('[SETUP] Pending tools:', state.tools.filter(t => t.status !== 'installed').map(t => t.name));
+    
+    // Set flag to prevent multiple starts
+    setState(s => ({ ...s, installationStarted: true }));
+    
+    // Small delay to ensure state is settled
+    const timer = setTimeout(async () => {
       try {
         await startInstall(null);
-      } catch {}
-    })();
-  }, [state.phase, state.tools, state.askingPassword]);
+      } catch (error) {
+        console.error('[SETUP] Auto-installation error:', error);
+        setState(s => ({ 
+          ...s, 
+          error: error?.message || 'Installation failed. Please check console for details.',
+          installationStarted: false,
+          logs: [...s.logs, `❌ Installation error: ${error?.message || String(error)}`]
+        }));
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [state.phase, state.tools]);
 
   const promptPassword = () => {
     setState(s => ({ ...s, askingPassword: true }));
   };
 
   const startInstall = async (_pwd) => {
-    setState(s => ({ ...s, askingPassword: false, logs: [...s.logs, '🔐 Using WSL root session for installation'], error: null }));
+    setState(s => ({ 
+      ...s, 
+      askingPassword: false, 
+      logs: [...s.logs, '🔐 Starting automatic tool installation...'], 
+      error: null,
+      installationStarted: true
+    }));
+    
     try {
-      window.cyberGuard?.onInstallProgress?.((p) => {
+      console.log('[SETUP] Starting installation via installAllToolsRootless...');
+      
+      // Set up progress listener BEFORE calling install
+      const progressListener = (p) => {
         if (!p) return;
-        if (p.tool) {
-          setState(s => ({ ...s, tools: s.tools.map((t) => t.name === p.tool ? { ...t, status: p.progress >= 100 ? 'installed' : 'installing', progress: Math.max(t.progress, p.progress ?? t.progress), message: p.message || t.message } : t), logs: p.message ? [...s.logs, p.message] : s.logs }));
-        } else if (p.phase === 'installing') {
-          setState(s => ({ ...s, logs: [...s.logs, p.message || `Installing ${p.tool}…`], currentIndex: Math.max(0, (p.current || 1) - 1) }));
+        console.log('[SETUP] Installation progress:', p);
+        
+        setState(s => {
+          if (p.tool) {
+            const updatedTools = s.tools.map((t) => 
+              t.name === p.tool 
+                ? { 
+                    ...t, 
+                    status: p.progress >= 100 ? 'installed' : 'installing', 
+                    progress: Math.max(t.progress, p.progress ?? t.progress), 
+                    message: p.message || t.message 
+                  } 
+                : t
+            );
+            return { 
+              ...s, 
+              tools: updatedTools, 
+              logs: p.message ? [...s.logs, p.message] : s.logs 
+            };
+          } else if (p.phase === 'installing') {
+            return { 
+              ...s, 
+              logs: [...s.logs, p.message || `Installing ${p.tool}…`], 
+              currentIndex: Math.max(0, (p.current || 1) - 1) 
+            };
+          } else if (p.phase === 'complete') {
+            return { 
+              ...s, 
+              logs: [...s.logs, p.message || 'Installation complete'], 
+              overallInstalled: p.overallProgress || 100 
+            };
+          }
+          return s;
+        });
+      };
+
+      // Register the progress listener
+      window.cyberGuard?.onInstallProgress?.(progressListener);
+      
+      // Install all tools via rootless installer
+      console.log('[SETUP] Calling installAllToolsRootless...');
+      const result = await window.cyberGuard?.installAllToolsRootless?.();
+      console.log('[SETUP] Installation result:', result);
+      
+      // Install tgpt separately (it's not in apt package list, installed via curl script)
+      const tgptTool = state.tools.find(t => t.name === 'tgpt');
+      if (tgptTool && tgptTool.status !== 'installed') {
+        setState(s => ({ 
+          ...s, 
+          logs: [...s.logs, 'Installing tgpt (AI analysis tool)...'],
+          tools: s.tools.map(t => t.name === 'tgpt' ? { ...t, status: 'installing', progress: 0, message: 'Installing tgpt...' } : t)
+        }));
+        
+        try {
+          // Note: tgpt installation requires password, but we're using rootless installer
+          // Try to install tgpt - it will use root user if available
+          if (window.cyberGuard?.checkAndInstallTgpt) {
+            // For rootless installation, we can try without password (uses -u root)
+            // If password is needed, it will be handled by the backend
+            try {
+              // Try with empty password first (rootless mode)
+              const tgptResult = await window.cyberGuard.checkAndInstallTgpt(null);
+              if (tgptResult?.installed) {
+                setState(s => ({ 
+                  ...s, 
+                  logs: [...s.logs, '✅ tgpt installed successfully'],
+                  tools: s.tools.map(t => t.name === 'tgpt' ? { ...t, status: 'installed', progress: 100, message: 'tgpt installed ✓' } : t)
+                }));
+              } else {
+                setState(s => ({ 
+                  ...s, 
+                  logs: [...s.logs, '⚠️ tgpt installation may require password - will be installed when needed'],
+                  tools: s.tools.map(t => t.name === 'tgpt' ? { ...t, status: 'pending', message: 'Will install when password is available' } : t)
+                }));
+              }
+            } catch (tgptError) {
+              console.warn('tgpt installation failed:', tgptError);
+              setState(s => ({ 
+                ...s, 
+                logs: [...s.logs, `⚠️ tgpt installation failed: ${tgptError?.message || 'Unknown error'}. Will retry when password is available.`],
+                tools: s.tools.map(t => t.name === 'tgpt' ? { ...t, status: 'pending', message: 'Installation pending - requires password' } : t)
+              }));
+            }
+          } else {
+            setState(s => ({ 
+              ...s, 
+              logs: [...s.logs, '⚠️ tgpt installer not available'],
+              tools: s.tools.map(t => t.name === 'tgpt' ? { ...t, status: 'pending', message: 'Installer not available' } : t)
+            }));
+          }
+        } catch (tgptError) {
+          console.warn('tgpt installation error:', tgptError);
+          setState(s => ({ 
+            ...s, 
+            logs: [...s.logs, `⚠️ tgpt installation error: ${tgptError?.message || 'Unknown error'}`],
+            tools: s.tools.map(t => t.name === 'tgpt' ? { ...t, status: 'error', message: tgptError?.message || 'Installation failed' } : t)
+          }));
         }
-      });
-      await window.cyberGuard?.installAllToolsRootless?.();
+      }
+      
+      // Update state after installation completes
+      setState(s => ({ 
+        ...s, 
+        logs: [...s.logs, '✅ Tool installation completed'], 
+        installationStarted: false 
+      }));
+      
     } catch (e) {
-      setState(s => ({ ...s, error: e?.message || String(e) }));
+      console.error('[SETUP] Installation error:', e);
+      setState(s => ({ 
+        ...s, 
+        error: e?.message || String(e) || 'Installation failed. Please check console for details.',
+        logs: [...s.logs, `❌ Installation error: ${e?.message || String(e)}`],
+        installationStarted: false
+      }));
     }
   };
 

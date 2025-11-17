@@ -5641,7 +5641,7 @@ app.whenReady().then(async () => {
 
         // Install all security tools
         const installChild = spawn('C:\\Windows\\System32\\wsl.exe', ['-d', 'kali-linux', 'sudo', 'apt', 'install', '-y',
-          'nmap', 'dnsutils', 'dnsrecon', 'dnsenum', 'nikto', 'sqlmap', 'gobuster'
+          'nmap', 'dnsutils', 'dnsrecon', 'dnsenum', 'nikto', 'sqlmap', 'gobuster', 'whatweb', 'geoiplookup', 'ffuf', 'nuclei', 'dalfox', 'go'
         ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
         installChild.on('close', (installCode) => {
@@ -5653,7 +5653,8 @@ app.whenReady().then(async () => {
 
   // Tool checking only (no installation) - FIXED to use rootless WSL
   async function checkRequiredToolsOnly(password) {
-    console.log('🔧 [TOOL-CHECKER] Starting tool check (no installation)...');
+    console.log('🔧 [TOOL-CHECKER] ===== STARTING REQUIRED TOOLS CHECK =====');
+    console.log('🔧 [TOOL-CHECKER] Password provided:', password ? 'YES' : 'NO (using root)');
     // Password not needed anymore - we use wsl -u root directly
     
     const requiredTools = [
@@ -5665,25 +5666,63 @@ app.whenReady().then(async () => {
     const goTools = ['ffuf','nuclei','dalfox','go'];
     const allTools = [...requiredTools, ...goTools];
     
+    console.log(`🔧 [TOOL-CHECKER] Total tools to check: ${allTools.length + 1} (${allTools.length} apt tools + tgpt)`);
+    console.log(`🔧 [TOOL-CHECKER] Required tools (${requiredTools.length}):`, requiredTools.join(', '));
+    console.log(`🔧 [TOOL-CHECKER] Go tools (${goTools.length}):`, goTools.join(', '));
+    console.log(`🔧 [TOOL-CHECKER] Special tools: tgpt (installed via curl script)`);
+    
     // Use new wslHelper to check each tool individually (no broken bash loops)
     const status = {};
     const missingTools = [];
+    const installedTools = [];
     
-    for (const tool of allTools) {
+    console.log('🔧 [TOOL-CHECKER] Starting individual tool checks...');
+    for (let i = 0; i < allTools.length; i++) {
+      const tool = allTools[i];
+      console.log(`🔧 [TOOL-CHECKER] [${i + 1}/${allTools.length}] Checking: ${tool}`);
+      
       const installed = await wslHelper.checkTool(tool);
       status[tool] = installed;
-      if (!installed) missingTools.push(tool);
+      
+      if (installed) {
+        installedTools.push(tool);
+        console.log(`✅ [TOOL-CHECKER] [${i + 1}/${allTools.length}] ${tool} is INSTALLED`);
+      } else {
+        missingTools.push(tool);
+        console.log(`❌ [TOOL-CHECKER] [${i + 1}/${allTools.length}] ${tool} is MISSING`);
+      }
     }
   
+    // Also check tgpt (installed via curl script, not apt)
+    console.log(`🔧 [TOOL-CHECKER] [${allTools.length + 1}/${allTools.length + 1}] Checking: tgpt (installed via curl script)`);
+    const tgptInstalled = await wslHelper.checkTool('tgpt');
+    status.tgpt = tgptInstalled;
+    if (!tgptInstalled) {
+      missingTools.push('tgpt');
+      console.log(`❌ [TOOL-CHECKER] [${allTools.length + 1}/${allTools.length + 1}] tgpt is MISSING`);
+    } else {
+      installedTools.push('tgpt');
+      console.log(`✅ [TOOL-CHECKER] [${allTools.length + 1}/${allTools.length + 1}] tgpt is INSTALLED`);
+    }
+    
     const success = missingTools.length === 0;
-    console.log('🔧 [TOOL-CHECKER] Missing tools:', missingTools);
+    
+    console.log('🔧 [TOOL-CHECKER] ===== TOOL CHECK SUMMARY =====');
+    console.log(`✅ [TOOL-CHECKER] Installed tools (${installedTools.length}):`, installedTools.join(', '));
+    console.log(`❌ [TOOL-CHECKER] Missing tools (${missingTools.length}):`, missingTools.join(', '));
+    console.log(`📊 [TOOL-CHECKER] Total checked: ${allTools.length + 1} (${allTools.length} apt tools + tgpt)`);
+    console.log(`📊 [TOOL-CHECKER] Installed: ${installedTools.length}`);
+    console.log(`📊 [TOOL-CHECKER] Missing: ${missingTools.length}`);
+    console.log(`📊 [TOOL-CHECKER] Success: ${success ? 'YES (all installed)' : 'NO (some missing)'}`);
+    console.log('🔧 [TOOL-CHECKER] ===== REQUIRED TOOLS CHECK COMPLETE =====\n');
   
     return {
       success,
       missingTools,
       toolStatus: status,
-      totalChecked: allTools.length,
-      installedCount: allTools.length - missingTools.length
+      totalChecked: allTools.length + 1, // +1 for tgpt
+      installedCount: allTools.length + 1 - missingTools.length,
+      tgptInstalled // Add explicit tgpt status for App.jsx
     };
   }
 
@@ -5755,7 +5794,8 @@ app.whenReady().then(async () => {
 
   // Check and install tgpt
   async function checkAndInstallTgpt(password, event = null) {
-    console.log('🔧 [TGPT-CHECKER] Starting tgpt check...');
+    console.log('🔧 [TGPT-CHECKER] ===== STARTING TGPT CHECK & INSTALL =====');
+    console.log('🔧 [TGPT-CHECKER] Password provided:', password ? 'YES' : 'NO (using root)');
     
     const { exec } = require('child_process');
     const { promisify } = require('util');
@@ -5777,30 +5817,41 @@ app.whenReady().then(async () => {
       // Check if tgpt is installed - use detected distribution instead of kali-linux
       const checkCommand = `wsl -d ${wslDistro} -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
       
-      console.log('🔧 [TGPT-CHECKER] Running check command...');
+      console.log('🔧 [TGPT-CHECKER] [STEP 1] Checking if tgpt is installed...');
+      console.log(`💻 [TGPT-CHECKER] [COMMAND] ${checkCommand}`);
+      
       let stdout = '';
       let stderr = '';
+      const checkStartTime = Date.now();
       
       try {
         const result = await execAsync(checkCommand, { maxBuffer: 10 * 1024 * 1024 });
         stdout = result.stdout || '';
         stderr = result.stderr || '';
+        const checkDuration = Date.now() - checkStartTime;
+        console.log(`✅ [TGPT-CHECKER] [STEP 1] Check command completed (${checkDuration}ms)`);
       } catch (execError) {
+        const checkDuration = Date.now() - checkStartTime;
         stdout = execError.stdout || '';
         stderr = execError.stderr || '';
+        console.log(`⚠️  [TGPT-CHECKER] [STEP 1] Check command error (${checkDuration}ms):`, execError.message);
       }
 
-      console.log('🔧 [TGPT-CHECKER] Check output:', stdout);
+      console.log(`📤 [TGPT-CHECKER] [STEP 1] Check stdout:`, stdout);
+      if (stderr) console.log(`📤 [TGPT-CHECKER] [STEP 1] Check stderr:`, stderr);
       
       const isInstalled = stdout.includes('tgpt is INSTALLED');
       
       if (isInstalled) {
-        console.log('✅ [TGPT-CHECKER] tgpt is already installed');
-        return { installed: true, version: stdout.match(/tgpt is INSTALLED → (.+)/)?.[1] || 'unknown' };
+        const version = stdout.match(/tgpt is INSTALLED → (.+)/)?.[1] || 'unknown';
+        console.log(`✅ [TGPT-CHECKER] [STEP 1] tgpt is already INSTALLED`);
+        console.log(`📋 [TGPT-CHECKER] Version: ${version}`);
+        console.log('🔧 [TGPT-CHECKER] ===== TGPT CHECK COMPLETE (ALREADY INSTALLED) =====\n');
+        return { installed: true, version };
       }
 
       // Install tgpt if not installed
-      console.log('🔧 [TGPT-CHECKER] tgpt is not installed. Installing...');
+      console.log('🔧 [TGPT-CHECKER] [STEP 2] tgpt is NOT installed. Starting installation...');
       
       if (event) {
         event.sender.send('scan:progress', {
@@ -5812,30 +5863,62 @@ app.whenReady().then(async () => {
       // Use detected distribution instead of kali-linux, and use root user directly (no sudo needed)
       const installCommand = `wsl -d ${wslDistro} -u root -- bash -lc "curl -sSL https://raw.githubusercontent.com/aandrew-me/tgpt/main/install | bash"`;
       
-      console.log('🔧 [TGPT-CHECKER] Running install command...');
+      console.log('🔧 [TGPT-CHECKER] [STEP 2] Installing tgpt via curl script...');
+      console.log(`💻 [TGPT-CHECKER] [COMMAND] ${installCommand}`);
+      console.log(`💻 [TGPT-CHECKER] [INSTALL URL] https://raw.githubusercontent.com/aandrew-me/tgpt/main/install`);
+      console.log(`⏱️  [TGPT-CHECKER] [TIMEOUT] No explicit timeout (may take several minutes)`);
+      
+      const installStartTime = Date.now();
       try {
         const installResult = await execAsync(installCommand, { maxBuffer: 10 * 1024 * 1024 });
-        console.log('✅ [TGPT-CHECKER] tgpt installation completed');
-        console.log('🔧 [TGPT-CHECKER] Install output:', installResult.stdout);
+        const installDuration = Date.now() - installStartTime;
+        console.log(`✅ [TGPT-CHECKER] [STEP 2] Installation command completed (${installDuration}ms)`);
+        console.log(`📤 [TGPT-CHECKER] [STEP 2] Install stdout length: ${(installResult.stdout || '').length} chars`);
+        console.log(`📤 [TGPT-CHECKER] [STEP 2] Install stdout preview:`, installResult.stdout ? installResult.stdout.substring(0, 500) : '(empty)');
+        if (installResult.stderr) {
+          console.log(`📤 [TGPT-CHECKER] [STEP 2] Install stderr:`, installResult.stderr.substring(0, 500));
+        }
         
         // Verify installation
+        console.log('🔧 [TGPT-CHECKER] [STEP 3] Verifying tgpt installation...');
         const verifyCommand = `wsl -d ${wslDistro} -u root -- bash -lc "command -v tgpt && echo 'tgpt is INSTALLED → '$(tgpt --version) || echo 'tgpt NOT installed'"`;
+        console.log(`💻 [TGPT-CHECKER] [COMMAND] ${verifyCommand}`);
+        
+        const verifyStartTime = Date.now();
         const verifyResult = await execAsync(verifyCommand, { maxBuffer: 10 * 1024 * 1024 });
-        const verified = verifyResult.stdout.includes('tgpt is INSTALLED');
+        const verifyDuration = Date.now() - verifyStartTime;
+        const verifyOutput = verifyResult.stdout || '';
+        
+        console.log(`📤 [TGPT-CHECKER] [STEP 3] Verify stdout:`, verifyOutput);
+        console.log(`📤 [TGPT-CHECKER] [STEP 3] Verify completed (${verifyDuration}ms)`);
+        
+        const verified = verifyOutput.includes('tgpt is INSTALLED');
         
         if (verified) {
-          console.log('✅ [TGPT-CHECKER] tgpt verified as installed');
-          return { installed: true, version: verifyResult.stdout.match(/tgpt is INSTALLED → (.+)/)?.[1] || 'unknown' };
+          const version = verifyOutput.match(/tgpt is INSTALLED → (.+)/)?.[1] || 'unknown';
+          console.log(`✅ [TGPT-CHECKER] [STEP 3] Verification PASSED - tgpt is installed`);
+          console.log(`📋 [TGPT-CHECKER] Version: ${version}`);
+          console.log('🔧 [TGPT-CHECKER] ===== TGPT INSTALLATION COMPLETE =====\n');
+          return { installed: true, version };
         } else {
-          console.log('⚠️ [TGPT-CHECKER] tgpt installation may have failed');
+          console.log(`❌ [TGPT-CHECKER] [STEP 3] Verification FAILED - tgpt not found after installation`);
+          console.log(`⚠️  [TGPT-CHECKER] Installation command completed but tgpt is not in PATH`);
+          console.log('🔧 [TGPT-CHECKER] ===== TGPT INSTALLATION FAILED (VERIFICATION) =====\n');
           return { installed: false, error: 'Installation completed but verification failed' };
         }
       } catch (installError) {
-        console.log('❌ [TGPT-CHECKER] tgpt installation failed:', installError.message);
+        const installDuration = Date.now() - installStartTime;
+        console.error(`❌ [TGPT-CHECKER] [STEP 2] Installation FAILED (${installDuration}ms)`);
+        console.error(`❌ [TGPT-CHECKER] Error:`, installError.message);
+        console.error(`📤 [TGPT-CHECKER] Error stdout:`, installError.stdout ? installError.stdout.substring(0, 500) : '(empty)');
+        console.error(`📤 [TGPT-CHECKER] Error stderr:`, installError.stderr ? installError.stderr.substring(0, 500) : '(empty)');
+        console.error('🔧 [TGPT-CHECKER] ===== TGPT INSTALLATION FAILED =====\n');
         return { installed: false, error: installError.message };
       }
     } catch (error) {
-      console.log('❌ [TGPT-CHECKER] tgpt check failed:', error.message);
+      console.error('❌ [TGPT-CHECKER] Error in checkAndInstallTgpt:', error);
+      console.error('❌ [TGPT-CHECKER] Error message:', error.message);
+      console.error('🔧 [TGPT-CHECKER] ===== TGPT CHECK/INSTALL FAILED =====\n');
       return { installed: false, error: error.message };
     }
   }
