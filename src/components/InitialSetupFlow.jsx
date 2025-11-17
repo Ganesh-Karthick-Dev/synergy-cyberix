@@ -391,50 +391,98 @@ const InitialSetupFlow = ({ onComplete }) => {
    * Handle Step 5 completion (System Path)
    */
   const handleStep5Complete = async (selectedPath) => {
-    addLog('Step 5 completed: System Path Selection', 'success');
-    updateStep(4, { 
-      status: 'completed', 
-      progress: 100, 
-      completedAt: new Date().toISOString(),
-      message: 'Path selected'
-    });
-    
-    // Move installation logs to selected path
-    if (window.cyberGuard?.moveInstallationLogs) {
-      await window.cyberGuard.moveInstallationLogs(selectedPath);
-    }
-    
-    // Create System Logs folder
-    if (window.cyberGuard?.createSystemLogsFolder) {
-      await window.cyberGuard.createSystemLogsFolder(selectedPath);
-    }
-    
-    // Log to installation log file
-    if (window.cyberGuard?.logInstallationStep) {
-      await window.cyberGuard.logInstallationStep(5, 'System Path Selection', 'completed', `Path: ${selectedPath}`);
-    }
-    
-    // Save system path
-    await setupStateManager.setSystemPath(selectedPath);
-    await setupStateManager.setSetupComplete(true);
-    
-    // Sync files to both default and user-picked locations
-    if (window.cyberGuard?.syncFilesToBothLocations) {
-      try {
-        await window.cyberGuard.syncFilesToBothLocations(selectedPath);
-        addLog('✅ Files synced to both locations', 'success');
-      } catch (error) {
-        console.error('Error syncing files:', error);
-        addLog('⚠️ Warning: Could not sync files to both locations', 'warning');
+    try {
+      addLog('Step 5 completed: System Path Selection', 'success');
+      updateStep(4, { 
+        status: 'completed', 
+        progress: 100, 
+        completedAt: new Date().toISOString(),
+        message: 'Path selected'
+      });
+      
+      // Move installation logs to selected path
+      if (window.cyberGuard?.moveInstallationLogs) {
+        try {
+          await window.cyberGuard.moveInstallationLogs(selectedPath);
+        } catch (error) {
+          console.error('Error moving installation logs:', error);
+          addLog('⚠️ Warning: Could not move installation logs', 'warning');
+        }
       }
+      
+      // Create System Logs folder
+      if (window.cyberGuard?.createSystemLogsFolder) {
+        try {
+          await window.cyberGuard.createSystemLogsFolder(selectedPath);
+        } catch (error) {
+          console.error('Error creating system logs folder:', error);
+          addLog('⚠️ Warning: Could not create system logs folder', 'warning');
+        }
+      }
+      
+      // Log to installation log file
+      if (window.cyberGuard?.logInstallationStep) {
+        try {
+          await window.cyberGuard.logInstallationStep(5, 'System Path Selection', 'completed', `Path: ${selectedPath}`);
+        } catch (error) {
+          console.error('Error logging installation step:', error);
+        }
+      }
+      
+      // Save system path
+      try {
+        await setupStateManager.setSystemPath(selectedPath);
+        await setupStateManager.setSetupComplete(true);
+      } catch (error) {
+        console.error('Error saving system path:', error);
+        addLog('⚠️ Warning: Could not save system path', 'warning');
+        // Still continue with navigation even if saving fails
+      }
+      
+      // Sync files to both default and user-picked locations
+      if (window.cyberGuard?.syncFilesToBothLocations) {
+        try {
+          await window.cyberGuard.syncFilesToBothLocations(selectedPath);
+          addLog('✅ Files synced to both locations', 'success');
+        } catch (error) {
+          console.error('Error syncing files:', error);
+          addLog('⚠️ Warning: Could not sync files to both locations', 'warning');
+        }
+      }
+      
+      addLog('✅ All setup steps completed!', 'success');
+      addLog('🔄 Navigating to login screen...', 'info');
+      showSuccess('Setup completed successfully!');
+      
+      // Ensure onComplete is called even if there were warnings
+      // Use a shorter delay to make navigation feel more responsive
+      setTimeout(() => {
+        try {
+          if (onComplete && typeof onComplete === 'function') {
+            onComplete();
+          } else {
+            console.error('onComplete is not a function:', typeof onComplete);
+            addLog('❌ Error: Navigation callback not available', 'error');
+          }
+        } catch (error) {
+          console.error('Error calling onComplete:', error);
+          addLog('❌ Error during navigation', 'error');
+        }
+      }, 1000);
+    } catch (error) {
+      console.error('Error in handleStep5Complete:', error);
+      addLog(`❌ Error: ${error.message}`, 'error');
+      // Even on error, try to navigate to login screen
+      setTimeout(() => {
+        try {
+          if (onComplete && typeof onComplete === 'function') {
+            onComplete();
+          }
+        } catch (navError) {
+          console.error('Error calling onComplete after error:', navError);
+        }
+      }, 1000);
     }
-    
-    addLog('✅ All setup steps completed!', 'success');
-    showSuccess('Setup completed successfully!');
-    
-    setTimeout(() => {
-      onComplete();
-    }, 1500);
   };
 
   const handleStep5Error = async (error) => {

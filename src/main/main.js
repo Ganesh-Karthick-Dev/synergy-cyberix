@@ -5659,7 +5659,7 @@ app.whenReady().then(async () => {
     const requiredTools = [
       'jq','unzip','nmap','nikto','sqlmap','hydra','gobuster','dirb',
       'amass','john','medusa','mitmproxy','socat','fail2ban',
-      'curl','wget','wapiti','pip3','geoiplookup'
+      'curl','wget','wapiti','pip3','geoiplookup','whatweb'
     ];
   
     const goTools = ['ffuf','nuclei','dalfox','go'];
@@ -5847,7 +5847,7 @@ app.whenReady().then(async () => {
     const requiredTools = [
       'jq', 'unzip', 'nmap', 'nikto', 'sqlmap', 'hydra', 'gobuster', 'dirb', 
       'amass', 'john', 'medusa', 'mitmproxy', 'socat', 'fail2ban', 
-      'curl', 'wget', 'wapiti', 'sslscan', 'dnstwist', 'geoiplookup'
+      'curl', 'wget', 'wapiti', 'sslscan', 'dnstwist', 'geoiplookup', 'whatweb'
     ];
 
     const goTools = [

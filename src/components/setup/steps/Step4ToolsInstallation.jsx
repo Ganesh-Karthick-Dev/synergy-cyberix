@@ -31,6 +31,7 @@ const Step4ToolsInstallation = ({ username, password, onComplete, onError, onLog
     { name: 'dnstwist', command: 'sudo apt install -y dnstwist', type: 'apt' },
     { name: 'geoip-bin', command: 'sudo apt install -y geoip-bin', type: 'apt' },
     { name: 'wapiti', command: 'sudo apt install -y wapiti', type: 'apt' },
+    { name: 'whatweb', command: 'sudo apt install -y whatweb', type: 'apt' },
     { name: 'golang-go', command: 'sudo apt install -y golang-go', type: 'apt' },
     { name: 'amass', command: 'sudo snap install amass || sudo apt install -y amass', type: 'apt' },
   ];

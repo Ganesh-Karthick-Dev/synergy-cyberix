@@ -838,10 +838,32 @@ const AppContent = () => {
       <NetworkStatus>
         <InitialSetupFlow 
           onComplete={async () => {
-            console.log('[App] Setup flow completed');
-            await setupStateManager.setSetupComplete(true);
-            setSetupComplete(true);
-            setShowSetupFlow(false);
+            try {
+              console.log('[App] ========== Setup flow completed callback triggered ==========');
+              console.log('[App] Current state before update:', { setupComplete, showSetupFlow });
+              
+              // Ensure setup is marked as complete in state manager
+              try {
+                await setupStateManager.setSetupComplete(true);
+                console.log('[App] Setup marked as complete in state manager');
+              } catch (error) {
+                console.error('[App] Error setting setup complete in state manager:', error);
+                // Continue anyway - don't block navigation
+              }
+              
+              // Update React state to trigger navigation
+              console.log('[App] Updating React state to navigate to login...');
+              setSetupComplete(true);
+              setShowSetupFlow(false);
+              
+              console.log('[App] State updated - should navigate to login screen now');
+              console.log('[App] ========== Setup flow completion callback finished ==========');
+            } catch (error) {
+              console.error('[App] Error in setup completion callback:', error);
+              // Force navigation even on error
+              setSetupComplete(true);
+              setShowSetupFlow(false);
+            }
           }} 
         />
       </NetworkStatus>

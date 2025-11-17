@@ -73,23 +73,43 @@ const Step5SystemPath = ({ onComplete, onError, onLog }) => {
     addLog('💾 [SAVE] Saving system path...', 'info');
     addLog(`📋 [INFO] Selected path: ${selectedPath}`, 'info');
 
+    let hasErrors = false;
+    
     try {
       // Move installation logs to selected path
       addLog('📦 [MOVE] Moving installation logs to selected path...', 'info');
       
       if (window.cyberGuard?.moveInstallationLogs) {
-        const moveResult = await window.cyberGuard.moveInstallationLogs(selectedPath);
-        if (moveResult?.success) {
-          addLog('✅ [RESULT] Installation logs moved successfully', 'success');
+        try {
+          const moveResult = await window.cyberGuard.moveInstallationLogs(selectedPath);
+          if (moveResult?.success) {
+            addLog('✅ [RESULT] Installation logs moved successfully', 'success');
+          } else {
+            addLog('⚠️ [WARNING] Installation logs move may have failed', 'warning');
+            hasErrors = true;
+          }
+        } catch (error) {
+          console.error('Error moving installation logs:', error);
+          addLog('⚠️ [WARNING] Could not move installation logs', 'warning');
+          hasErrors = true;
         }
       }
 
       // Create System Logs subfolder
       addLog('📁 [CREATE] Creating System Logs folder...', 'info');
       if (window.cyberGuard?.createSystemLogsFolder) {
-        const createResult = await window.cyberGuard.createSystemLogsFolder(selectedPath);
-        if (createResult?.success) {
-          addLog('✅ [RESULT] System Logs folder created', 'success');
+        try {
+          const createResult = await window.cyberGuard.createSystemLogsFolder(selectedPath);
+          if (createResult?.success) {
+            addLog('✅ [RESULT] System Logs folder created', 'success');
+          } else {
+            addLog('⚠️ [WARNING] System Logs folder creation may have failed', 'warning');
+            hasErrors = true;
+          }
+        } catch (error) {
+          console.error('Error creating system logs folder:', error);
+          addLog('⚠️ [WARNING] Could not create System Logs folder', 'warning');
+          hasErrors = true;
         }
       }
 
@@ -105,12 +125,38 @@ const Step5SystemPath = ({ onComplete, onError, onLog }) => {
 
       addLog('✅ [COMPLETE] Step 5 completed successfully!', 'success');
       addLog('🎉 [SUCCESS] Setup complete!', 'success');
-      onComplete(selectedPath);
+      
+      // Always call onComplete, even if there were warnings
+      // The parent component will handle the actual saving and navigation
+      if (onComplete && typeof onComplete === 'function') {
+        onComplete(selectedPath);
+      } else {
+        console.error('onComplete is not a function:', typeof onComplete);
+        addLog('❌ [ERROR] Completion callback not available', 'error');
+        if (onError) {
+          onError(new Error('Completion callback not available'));
+        }
+      }
     } catch (error) {
       const errorMsg = error.message || 'Failed to save system path';
       addLog(`❌ [ERROR] ${errorMsg}`, 'error');
       setError(errorMsg);
-      onError(error);
+      
+      // Even on error, try to call onComplete to allow navigation
+      // The parent component can decide whether to proceed or not
+      if (onComplete && typeof onComplete === 'function') {
+        console.warn('Calling onComplete despite error to allow navigation');
+        try {
+          onComplete(selectedPath);
+        } catch (completeError) {
+          console.error('Error calling onComplete:', completeError);
+          if (onError) {
+            onError(error);
+          }
+        }
+      } else if (onError) {
+        onError(error);
+      }
     } finally {
       setSubmitting(false);
     }
