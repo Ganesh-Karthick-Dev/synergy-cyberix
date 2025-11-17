@@ -1411,10 +1411,17 @@ function WebsiteSecurityAudit() {
       return
     }
 
+    // Get password if available (will try without password if not available)
     const password = getSecurePassword()
-    if (!password) {
-      showError('WSL password is required. Please set it in settings.')
-      return
+    
+    // If not in localStorage, try to get from file system
+    let finalPassword = password
+    if (!finalPassword && window.cyberGuard?.getStoredRootPassword) {
+      try {
+        finalPassword = await window.cyberGuard.getStoredRootPassword()
+      } catch (error) {
+        // Continue without password
+      }
     }
 
     // Reset state
@@ -1475,7 +1482,7 @@ function WebsiteSecurityAudit() {
       const result = await window.cyberGuard.startWebsiteSecurityAudit({
         url: url.trim(),
         credentials: useCreds && creds.username && creds.password ? creds : null,
-        password: password
+        password: finalPassword
       })
 
       if (!result || !result.success) {
